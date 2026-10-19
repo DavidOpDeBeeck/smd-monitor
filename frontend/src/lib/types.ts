@@ -37,7 +37,7 @@ export interface Activity {
     typeKey: TypeKey;
     kind: MessageKind;
     messageType: string;
-    // An event is handled in processing groups; a command or query by its single handler, without a processing group.
+    // Only an event has handlings, one per processing group; a command's or query's dispatch covers its handler.
     handling: boolean;
     processingGroup: string | null;
     startedAtMillis: number;

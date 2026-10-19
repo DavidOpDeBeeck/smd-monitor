@@ -37,9 +37,7 @@ function Chain(props: { chain: FailureChain; showCount: boolean }) {
                             title={
                                 (step().processingGroup
                                     ? `Processing group ${step().processingGroup} handling ${KIND_LABEL[step().kind]} ${step().messageType}`
-                                    : step().handling
-                                      ? `Handler of ${KIND_LABEL[step().kind]} ${step().messageType}`
-                                      : `${KIND_LABEL[step().kind]} ${step().messageType}`) +
+                                    : `${KIND_LABEL[step().kind]} ${step().messageType}`) +
                                 `, failed with ${step().failureType}` +
                                 (index === origin() ? ', where the failure was raised' : '')
                             }

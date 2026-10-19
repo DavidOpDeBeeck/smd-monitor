@@ -47,7 +47,7 @@ class FrameViewTest {
         var event = MessageId.generate();
         var failed = new Outcome.Failed(Duration.ofMillis(3), IllegalStateException.class.getName());
         hub.receive(new SpanBatch(TICKETS, new InstanceName("tickets-1"), new SessionId("session-1"), List.of(
-            span("0000000000000003", Optional.of("0000000000000002"), event, new Stage.Handling(EVENT, Optional.of("ticket-view")), failed),
+            span("0000000000000003", Optional.of("0000000000000002"), event, new Stage.Handling(EVENT, "ticket-view"), failed),
             span("0000000000000002", Optional.of("0000000000000001"), event, new Stage.Dispatch(EVENT), failed),
             span("0000000000000001", Optional.empty(), command, new Stage.Dispatch(COMMAND), failed)), List.of()));
 
@@ -199,7 +199,7 @@ class FrameViewTest {
     @Test
     void from_failedHandling_countsTheFailureUnderItsStageAndExceptionTypeWithItsSeconds() {
         hub.receive(new SpanBatch(TICKETS, new InstanceName("tickets-1"), new SessionId("session-1"), List.of(
-            span("0000000000000001", Optional.empty(), MessageId.generate(), new Stage.Handling(EVENT, Optional.of("ticket-view")),
+            span("0000000000000001", Optional.empty(), MessageId.generate(), new Stage.Handling(EVENT, "ticket-view"),
                 new Outcome.Failed(Duration.ofMillis(1), "java.lang.IllegalStateException"))), List.of()));
 
         var failure = json(OptionalLong.of(HEAP)).get("applications").get(0).get("failures").get(0);
@@ -225,7 +225,7 @@ class FrameViewTest {
 
     // The span links to the span of the invocation it continues.
     private MessageSpan span(String spanId, Optional<String> continues, MessageId messageId, Stage stage, Outcome outcome) {
-        var delivery = stage instanceof Stage.Handling handling && handling.processingGroup().isPresent() ? Optional.of(EventDelivery.SYNC) : Optional.<EventDelivery>empty();
+        var delivery = stage instanceof Stage.Handling ? Optional.of(EventDelivery.SYNC) : Optional.<EventDelivery>empty();
         return new MessageSpan(SpanRef.of(TRACE, spanId), continues.map(continued -> SpanRef.of(TRACE, continued)), messageId, stage, delivery, start, "main", outcome);
     }
 }

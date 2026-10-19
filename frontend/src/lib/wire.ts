@@ -163,7 +163,7 @@ export interface WireApplication {
     provisionalFromEpochSecond: number;
 }
 
-// The processing group is null for a dispatch and for the handling of a command or query. A failure idle in the window has no seconds.
+// The processing group is null for a dispatch, and only an event has handlings. A failure idle in the window has no seconds.
 export interface WireFailure {
     kind: MessageKind;
     type: string;
@@ -262,7 +262,7 @@ export interface WireInvocation {
     kind: MessageKind;
     type: string;
     handling: boolean;
-    // Null for a dispatch, and for the handling of a command or query, which has a single handler.
+    // Null for a dispatch; only an event has handlings, as a command's or query's dispatch covers its handler.
     processingGroup: string | null;
     instance: string;
     startedAtMillis: number;

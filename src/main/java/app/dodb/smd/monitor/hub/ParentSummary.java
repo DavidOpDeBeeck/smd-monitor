@@ -9,9 +9,10 @@ import java.util.Optional;
 
 import static java.util.Objects.requireNonNull;
 
-// What a retained invocation keeps of the invocation it continues, the one its span links to: for a handling the dispatch of its message, for a
-// dispatch the handling that sent it, or, when delivered, a dispatch of the same message in another application (J4). It holds no reference
-// to the parent, which the hub may evict while the child stays; the sequence numbers the finding among everything the hub retains.
+// What a retained invocation keeps of the invocation it continues, the one its span links to: for a handling the dispatch of its event, for a
+// dispatch the handling or the command or query dispatch that sent it, or, when delivered, a dispatch of the same message in another application
+// (J4). It holds no reference to the parent, which the hub may evict while the child stays; the sequence numbers the finding among everything the
+// hub retains.
 public record ParentSummary(long sequence, InvocationId child, InvocationId parent, ApplicationName application, MessageId messageId, Stage stage,
                             boolean delivered) {
 
@@ -32,6 +33,6 @@ public record ParentSummary(long sequence, InvocationId child, InvocationId pare
     }
 
     public Optional<String> processingGroup() {
-        return stage instanceof Stage.Handling handling ? handling.processingGroup() : Optional.empty();
+        return stage instanceof Stage.Handling handling ? Optional.of(handling.processingGroup()) : Optional.empty();
     }
 }

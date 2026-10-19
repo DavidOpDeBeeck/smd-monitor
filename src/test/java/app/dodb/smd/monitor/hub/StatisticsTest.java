@@ -94,24 +94,10 @@ class StatisticsTest {
     }
 
     @Test
-    void new_handlingOfACommandInAProcessingGroup_rejectsNamingTheGroupAndType() {
-        assertThatThrownBy(() -> new Stage.Handling(OPEN, Optional.of("ticket-view")))
+    void new_handlingOfACommand_rejectsNamingTheGroupAndType() {
+        assertThatThrownBy(() -> new Stage.Handling(OPEN, "ticket-view"))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("'ticket-view'", "none for a command or query", "OpenTicket");
-    }
-
-    @Test
-    void new_handlingOfAnEventWithoutAProcessingGroup_rejectsNamingTheType() {
-        assertThatThrownBy(() -> new Stage.Handling(OPENED, Optional.empty()))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("requires a processing group for an event", "TicketOpened");
-    }
-
-    @Test
-    void new_handlingOfACommandWithoutAProcessingGroup_isAHandlingOfItsSingleHandler() {
-        var handling = new Stage.Handling(OPEN, Optional.empty());
-
-        assertThat(handling.processingGroup()).isEmpty();
+            .hasMessageContaining("'ticket-view'", "requires an event", "COMMAND OpenTicket", "dispatch covers its handler");
     }
 
     @Test

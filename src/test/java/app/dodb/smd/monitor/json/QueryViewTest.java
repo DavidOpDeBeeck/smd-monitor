@@ -54,24 +54,25 @@ class QueryViewTest {
         var page = json(TapePageView.from(hub.session(), hub.tape(new TapeQuery(InvocationFilter.EVERY_INVOCATION, Duration.ZERO, Optional.empty(), 2))));
 
         assertThat(page.propertyNames()).containsExactly("hubSession", "sequence", "invocations", "total", "matching", "slowestMillis", "next");
-        var handling = page.get("invocations").get(1);
-        assertThat(handling.get("invocation").propertyNames()).containsExactly("sequence", "application", "messageId", "hasParent", "kind", "type",
+        var publication = page.get("invocations").get(1);
+        assertThat(publication.get("invocation").propertyNames()).containsExactly("sequence", "application", "messageId", "hasParent", "kind", "type",
             "handling", "processingGroup", "instance", "startedAtMillis", "threadName", "outcome");
-        assertThat(handling.get("invocation").get("hasParent").asBoolean()).isTrue();
-        assertThat(handling.get("invocation").get("handling").asBoolean()).isTrue();
-        assertThat(handling.get("invocation").get("processingGroup").isNull()).isTrue();
-        assertThat(handling.get("parent").propertyNames()).containsExactly("sequence", "application", "messageId", "kind", "type", "handling",
+        assertThat(publication.get("invocation").get("hasParent").asBoolean()).isTrue();
+        assertThat(publication.get("invocation").get("kind").asString()).isEqualTo("EVENT");
+        assertThat(publication.get("invocation").get("handling").asBoolean()).isFalse();
+        assertThat(publication.get("invocation").get("processingGroup").isNull()).isTrue();
+        assertThat(publication.get("parent").propertyNames()).containsExactly("sequence", "application", "messageId", "kind", "type", "handling",
             "processingGroup", "delivered", "retained");
-        assertThat(handling.get("parent").get("messageId").asString()).isEqualTo(command.value().toString());
-        assertThat(handling.get("parent").get("type").asString()).isEqualTo(OPEN.name());
-        assertThat(handling.get("parent").get("handling").asBoolean()).isFalse();
-        assertThat(handling.get("parent").get("retained").asBoolean()).isTrue();
+        assertThat(publication.get("parent").get("messageId").asString()).isEqualTo(command.value().toString());
+        assertThat(publication.get("parent").get("type").asString()).isEqualTo(OPEN.name());
+        assertThat(publication.get("parent").get("handling").asBoolean()).isFalse();
+        assertThat(publication.get("parent").get("retained").asBoolean()).isTrue();
         var entryPoint = page.get("invocations").get(0);
         assertThat(entryPoint.get("parent").isNull()).isTrue();
         assertThat(entryPoint.get("invocation").get("hasParent").asBoolean()).isFalse();
         assertThat(entryPoint.get("invocation").get("outcome").get("status").asString()).isEqualTo("FAILED");
-        assertThat(page.get("next").asString()).isEqualTo("4");
-        assertThat(TapePageView.parseCursor(page.get("next").asString())).isEqualTo(new InvocationId(4));
+        assertThat(page.get("next").asString()).isEqualTo("2");
+        assertThat(TapePageView.parseCursor(page.get("next").asString())).isEqualTo(new InvocationId(2));
     }
 
     @Test
@@ -99,9 +100,9 @@ class QueryViewTest {
         assertThat(trace.propertyNames()).containsExactly("root", "startedAtMillis", "durationMillis", "messages", "handlings", "failures", "threads",
             "applications", "composition");
         assertThat(trace.get("composition").get("events").asInt()).isEqualTo(1);
-        assertThat(trace.get("composition").get("handlings").asInt()).isEqualTo(2);
+        assertThat(trace.get("composition").get("handlings").asInt()).isEqualTo(1);
         assertThat(trace.get("messages").asInt()).isEqualTo(2);
-        assertThat(TracePageView.parseCursor(page.get("next").asString())).isEqualTo(new TraceCursor(3_000_000, new InvocationId(6)));
+        assertThat(TracePageView.parseCursor(page.get("next").asString())).isEqualTo(new TraceCursor(3_000_000, new InvocationId(4)));
     }
 
     @Test
@@ -127,25 +128,23 @@ class QueryViewTest {
         assertThat(cause.get("cause").get("kind").asString()).isEqualTo("COMMAND");
         assertThat(cause.get("retained").asInt()).isEqualTo(1);
         assertThat(cause.get("chains").get(0).get("steps").valueStream().map(step -> step.get("kind").asString() + " " + step.get("handling").asBoolean()))
-            .containsExactly("COMMAND false", "COMMAND true", "EVENT false", "EVENT true");
-        assertThat(cause.get("chains").get(0).get("steps").get(3).get("processingGroup").asString()).isEqualTo("ticket-view");
+            .containsExactly("COMMAND false", "EVENT false", "EVENT true");
+        assertThat(cause.get("chains").get(0).get("steps").get(2).get("processingGroup").asString()).isEqualTo("ticket-view");
         assertThat(cause.get("latest").get(0).get("startedAtMillis").asDouble()).isEqualTo(start.toEpochMilli());
     }
 
-    // A command handling publishing an event that a processing group failed to handle, which failed the publication, the command handling, and
-    // the command.
+    // A command publishing an event that a processing group failed to handle, which failed the publication and the command.
     private void receiveHandledEvent() {
         var failed = new Outcome.Failed(Duration.ofMillis(3), IllegalStateException.class.getName());
         hub.receive(new SpanBatch(TICKETS, new InstanceName("tickets-1"), new SessionId("session-1"), List.of(
-            span("0000000000000004", Optional.of("0000000000000003"), event, new Stage.Handling(OPENED, Optional.of("ticket-view")), failed),
-            span("0000000000000003", Optional.of("0000000000000002"), event, new Stage.Dispatch(OPENED), failed),
-            span("0000000000000002", Optional.of("0000000000000001"), command, new Stage.Handling(OPEN, Optional.empty()), failed),
+            span("0000000000000003", Optional.of("0000000000000002"), event, new Stage.Handling(OPENED, "ticket-view"), failed),
+            span("0000000000000002", Optional.of("0000000000000001"), event, new Stage.Dispatch(OPENED), failed),
             span("0000000000000001", Optional.empty(), command, new Stage.Dispatch(OPEN), failed)), List.of()));
     }
 
     // The span links to the span of the invocation it continues.
     private MessageSpan span(String spanId, Optional<String> continues, MessageId messageId, Stage stage, Outcome outcome) {
-        var delivery = stage instanceof Stage.Handling handling && handling.processingGroup().isPresent() ? Optional.of(EventDelivery.SYNC) : Optional.<EventDelivery>empty();
+        var delivery = stage instanceof Stage.Handling ? Optional.of(EventDelivery.SYNC) : Optional.<EventDelivery>empty();
         return new MessageSpan(SpanRef.of(TRACE, spanId), continues.map(continued -> SpanRef.of(TRACE, continued)), messageId, stage, delivery, start, "main", outcome);
     }
 

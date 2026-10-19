@@ -199,7 +199,7 @@ export function Waterfall(props: { detail: TraceDetail }) {
             <p class="flex flex-wrap gap-[18px] px-5 pt-3.5 text-xs text-muted">
                 <Show when={trace().handlings}>
                     <span class="flex items-center gap-[7px]">
-                        <HandlingGlyph />a handling: a processing group handling its event, or the handler of a command or query
+                        <HandlingGlyph />a handling: a processing group handling its event
                     </span>
                 </Show>
                 <span class="flex items-center gap-[7px]">

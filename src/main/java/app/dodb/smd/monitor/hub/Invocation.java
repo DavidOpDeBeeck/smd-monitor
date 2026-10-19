@@ -47,7 +47,7 @@ public record Invocation(InvocationId id, ApplicationName application, InstanceN
     }
 
     public Optional<String> processingGroup() {
-        return span.stage() instanceof Stage.Handling handling ? handling.processingGroup() : Optional.empty();
+        return span.stage() instanceof Stage.Handling handling ? Optional.of(handling.processingGroup()) : Optional.empty();
     }
 
     public boolean failed() {

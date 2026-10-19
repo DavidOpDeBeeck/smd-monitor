@@ -56,15 +56,13 @@ class MonitorHubLineageTest {
     }
 
     @Test
-    void receive_queryDispatchedInACommandHandling_nestsTheHandlingUnderTheCommandAndTheQueryUnderTheHandling() {
+    void receive_queryDispatchedByACommand_nestsTheQueryUnderTheCommand() {
         var open = tickets.dispatch(OPEN);
-        var handling = tickets.handle(open);
-        var query = tickets.dispatch(AVAILABLE_AGENT, handling);
 
-        tickets.reportTo(hub, open, handling, query, tickets.handle(query));
+        tickets.reportTo(hub, open, tickets.dispatch(AVAILABLE_AGENT, open));
 
-        assertThat(parents()).extracting(ParentSummary::child, ParentSummary::parent, ParentSummary::delivered)
-            .containsExactly(tuple(id(2), id(1), false), tuple(id(4), id(2), false), tuple(id(6), id(4), false));
+        assertThat(parents()).extracting(ParentSummary::child, ParentSummary::parent, ParentSummary::delivered, ParentSummary::handling)
+            .containsExactly(tuple(id(2), id(1), false, false));
     }
 
     @Test

@@ -28,8 +28,7 @@ export function WaterfallRow(props: {
     const group = () => message().processingGroup;
     const description = () => {
         const name = `${KIND_LABEL[message().kind]} ${shortName(message().messageType)}`;
-        if (group()) return `Processing group ${group()} handling ${name}`;
-        return message().handling ? `Handler of ${name}` : name;
+        return group() ? `Processing group ${group()} handling ${name}` : name;
     };
     const length = () => message().outcome.durationMillis;
     // Where a moment of the trace falls in the window in view, and how much of the window a length takes, in percent.

@@ -66,7 +66,7 @@ final class ApplicationCounting {
             catalog.entered(span.stage().type());
         }
         if (span.stage() instanceof Stage.Handling handling) {
-            handling.processingGroup().ifPresent(group -> catalog.delivered(group, span.delivery().orElseThrow()));
+            catalog.delivered(handling.processingGroup(), span.delivery().orElseThrow());
         }
         var failure = span.outcome() instanceof Outcome.Failed(var ignored, var failureType)
             ? OptionalInt.of(catalog.failure(new RaisedFailure(span.stage(), failureType)))
@@ -90,7 +90,7 @@ final class ApplicationCounting {
         var child = linked.child();
         var parent = linked.parent();
         var startedAt = child.startedAt();
-        if (child.stage() instanceof Stage.Dispatch) {
+        if (!(child.stage() instanceof Stage.Handling(var event, var group))) {
             var link = new CausalLink(parent.type(), child.type());
             if (linked.local() && !linked.delivered()) {
                 counters.countOccurrence(Table.LINK, catalog.link(link), startedAt);
@@ -103,11 +103,7 @@ final class ApplicationCounting {
             }
             return;
         }
-        var group = child.processingGroup();
-        if (group.isEmpty()) {
-            return;
-        }
-        counters.countOccurrence(Table.EVENT_ROUTE, catalog.route(new EventRoute(parent.application(), child.type(), group.get())), startedAt);
+        counters.countOccurrence(Table.EVENT_ROUTE, catalog.route(new EventRoute(parent.application(), event, group)), startedAt);
         var delay = Duration.between(parent.completedAt(), startedAt);
         if (!delay.isNegative()) {
             var stage = catalog.stage(child.stage());
@@ -159,24 +155,20 @@ final class ApplicationCounting {
             dispatchesByKind.put(kind, IntStream.builder().add(Catalog.otherDispatch(kind)));
         }
         var allHandlings = IntStream.builder().add(Catalog.OTHER_HANDLING);
-        var ungroupedHandlings = IntStream.builder().add(Catalog.OTHER_HANDLING);
         for (var id = catalog.firstStage(); id < catalog.stagesEnd(); id++) {
-            var stage = catalog.stageOf(id);
-            if (stage instanceof Stage.Dispatch dispatch) {
-                dispatchesByKind.get(dispatch.type().kind()).add(id);
-                types.add(new TypeStatistics(dispatch.type(), catalog.entryPoint(dispatch.type()), counters.window(Table.STAGE, id),
-                    counters.history(Table.STAGE, id), retained.applyAsInt(stage), counters.startedPerSecond(id), counters.failedPerSecond(id)));
-                continue;
-            }
-            allHandlings.add(id);
-            if (stage instanceof Stage.Handling handling && handling.processingGroup().isPresent()) {
-                var group = handling.processingGroup().get();
-                handlings.computeIfAbsent(group, ignored -> new ArrayList<>())
-                    .add(new HandlingStatistics(handling.type(), counters.window(Table.STAGE, id), counters.history(Table.STAGE, id),
-                        counters.windowLatency(Table.DELAY, id), catalog.asynchronous(id)));
-                handlingsByGroup.computeIfAbsent(group, ignored -> IntStream.builder()).add(id);
-            } else {
-                ungroupedHandlings.add(id);
+            switch (catalog.stageOf(id)) {
+                case Stage.Dispatch dispatch -> {
+                    dispatchesByKind.get(dispatch.type().kind()).add(id);
+                    types.add(new TypeStatistics(dispatch.type(), catalog.entryPoint(dispatch.type()), counters.window(Table.STAGE, id),
+                        counters.history(Table.STAGE, id), retained.applyAsInt(dispatch), counters.startedPerSecond(id), counters.failedPerSecond(id)));
+                }
+                case Stage.Handling handling -> {
+                    allHandlings.add(id);
+                    handlings.computeIfAbsent(handling.processingGroup(), ignored -> new ArrayList<>())
+                        .add(new HandlingStatistics(handling.type(), counters.window(Table.STAGE, id), counters.history(Table.STAGE, id),
+                            counters.windowLatency(Table.DELAY, id), catalog.asynchronous(id)));
+                    handlingsByGroup.computeIfAbsent(handling.processingGroup(), ignored -> IntStream.builder()).add(id);
+                }
             }
         }
         var groups = handlings.entrySet().stream()
@@ -185,8 +177,8 @@ final class ApplicationCounting {
             .toList();
         var kinds = new EnumMap<MessageKind, Counts>(MessageKind.class);
         dispatchesByKind.forEach((kind, ids) -> kinds.put(kind, counters.windowSum(Table.STAGE, ids.build().toArray())));
-        // The handlings sum the groups' sums and the handlings of no group, so each handling's histogram is added once.
-        var handlingCounts = groups.stream().map(GroupStatistics::window).reduce(counters.windowSum(Table.STAGE, ungroupedHandlings.build().toArray()), Counts::plus);
+        // The handlings sum the groups' sums and the other handling, so each handling's histogram is added once.
+        var handlingCounts = groups.stream().map(GroupStatistics::window).reduce(counters.window(Table.STAGE, Catalog.OTHER_HANDLING), Counts::plus);
         return new StageFigures(types, groups, kinds, handlingCounts, counters.windowSum(Table.DELAY, allHandlings.build().toArray()).latency());
     }
 
@@ -268,8 +260,8 @@ final class ApplicationCounting {
         return IntStream.range(Catalog.OTHER + 1, end).mapToObj(statistics).toList();
     }
 
-    // The dispatches of every kind and the handlings sum the stages beyond the caps too; handlings include those of commands and queries, which
-    // have no processing group, and the event delay is over every processing group's handling of the window.
+    // The dispatches of every kind and the handlings sum the stages beyond the caps too. The handlings are the processing groups' handlings of
+    // events, as a command's or query's dispatch covers its handler; the event delay is over every handling of the window.
     record StageFigures(List<TypeStatistics> types, List<GroupStatistics> groups, Map<MessageKind, Counts> kinds, Counts handlings, LatencyHistogram eventDelay) {
 
         StageFigures {

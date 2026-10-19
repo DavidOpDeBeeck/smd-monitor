@@ -9,13 +9,6 @@ const SHAPE: Record<MessageKind, string> = {
     QUERY: 'rounded-full bg-query',
 };
 
-// A handling is the hollow shape of its message.
-const HOLLOW_SHAPE: Record<MessageKind, string> = {
-    COMMAND: 'rotate-45 scale-[.86] rounded-[1.5px] border-[1.5px] border-command',
-    EVENT: 'rounded-[2px] border-[1.5px] border-event',
-    QUERY: 'rounded-full border-[1.5px] border-query',
-};
-
 export function Glyph(props: { kind: MessageKind; class?: string }) {
     return <i aria-hidden="true" class={cx('inline-block size-[9px] flex-none align-[-0.5px]', SHAPE[props.kind], props.class)} />;
 }
@@ -23,7 +16,7 @@ export function Glyph(props: { kind: MessageKind; class?: string }) {
 export function ActivityGlyph(props: { message: Pick<Activity, 'kind' | 'handling'> }) {
     return (
         <Show when={props.message.handling} fallback={<Glyph kind={props.message.kind} />}>
-            <HandlingGlyph kind={props.message.kind} />
+            <HandlingGlyph />
         </Show>
     );
 }
@@ -48,7 +41,7 @@ export function MediumGlyph(props: { shape: MediumShape; class?: string }) {
     );
 }
 
-// An event's handling unless told otherwise.
-export function HandlingGlyph(props: { kind?: MessageKind }) {
-    return <i aria-hidden="true" class={cx('inline-block size-[9px] flex-none align-[-0.5px]', HOLLOW_SHAPE[props.kind ?? 'EVENT'])} />;
+// A processing group's handling is the hollow shape of its event; only events have handlings.
+export function HandlingGlyph() {
+    return <i aria-hidden="true" class="inline-block size-[9px] flex-none rounded-[2px] border-[1.5px] border-event align-[-0.5px]" />;
 }

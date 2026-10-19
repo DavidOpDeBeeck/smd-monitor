@@ -106,7 +106,7 @@ class CountingRecountTest {
                 assertThat(type.failedPerSecond()).isEqualTo(perSecond(own, dispatches, window, Received::failed));
             });
             assertThat(application.groups()).allSatisfy(group -> assertThat(group.handlings()).allSatisfy(handling -> {
-                Predicate<Received> handlings = span -> span.stage().equals(new Stage.Handling(handling.type(), Optional.of(group.processingGroup())));
+                Predicate<Received> handlings = span -> span.stage().equals(new Stage.Handling(handling.type(), group.processingGroup()));
                 assertThat(handling.window()).isEqualTo(recount(own, handlings, window));
                 assertThat(handling.history()).isEqualTo(recount(own, handlings, history));
             }));

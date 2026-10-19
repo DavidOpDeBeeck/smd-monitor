@@ -145,24 +145,23 @@ final class SpanReader {
         return new Stage.Dispatch(type);
     }
 
-    // Each processing group handles an event; a command or query has a single handler.
+    // Each processing group handles an event. Since SMD 0.0.12 a command's or query's send span covers its handler, and it has no process span.
     private static Stage.Handling handling(SpanRef span, MessageType type, Optional<String> processingGroup) {
-        var event = type.kind() == MessageKind.EVENT;
-        if (event && processingGroup.isEmpty()) {
+        if (type.kind() != MessageKind.EVENT) {
+            throw new IllegalArgumentException("SMD span " + span.spanId() + " handles " + type.kind() + " " + type.name() + ", but only an event has a '"
+                + PROCESS + "' span: a command's or query's '" + SEND + "' span covers its handler since SMD 0.0.12");
+        }
+        if (processingGroup.isEmpty()) {
             throw new IllegalArgumentException("SMD span " + span.spanId() + " handles event " + type.name() + " and requires " + PROCESSING_GROUP
                 + ", the processing group handling it");
         }
-        if (!event && processingGroup.isPresent()) {
-            throw new IllegalArgumentException("SMD span " + span.spanId() + " handles " + type.kind() + " " + type.name()
-                + ", which has a single handler, and requires no " + PROCESSING_GROUP + "; got '" + processingGroup.get() + "'");
-        }
-        return new Stage.Handling(type, processingGroup);
+        return new Stage.Handling(type, processingGroup.get());
     }
 
     // A processing group's handling names the delivery its group received the event by; no other span has one.
     private static Optional<EventDelivery> delivery(SpanRef span, Stage stage, Optional<String> delivery) {
         var type = stage.type();
-        if (!(stage instanceof Stage.Handling(var ignored, var processingGroup) && processingGroup.isPresent())) {
+        if (!(stage instanceof Stage.Handling(var ignored, var processingGroup))) {
             if (delivery.isPresent()) {
                 throw new IllegalArgumentException("SMD span " + span.spanId() + " of " + type.kind() + " " + type.name() + " is no processing group's handling "
                     + "and requires no " + DELIVERY + "; got '" + delivery.get() + "'");
@@ -170,7 +169,7 @@ final class SpanReader {
             return Optional.empty();
         }
         if (delivery.isEmpty()) {
-            throw new IllegalArgumentException("SMD span " + span.spanId() + " handles event " + type.name() + " in processing group '" + processingGroup.get()
+            throw new IllegalArgumentException("SMD span " + span.spanId() + " handles event " + type.name() + " in processing group '" + processingGroup
                 + "' and requires " + DELIVERY + ", the delivery the group received the event by");
         }
         try {

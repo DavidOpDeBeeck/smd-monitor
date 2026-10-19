@@ -113,7 +113,7 @@ class MonitorHubQueriesTest {
     @Test
     void failures_causeOfAGroupsHandling_answersItsRetainedOccurrences() {
         receive(new MessageSpan(SpanRef.of(TRACE, "0000000000000001"), Optional.empty(), MessageId.generate(),
-            new Stage.Handling(new MessageType(MessageKind.EVENT, "TicketOpened"), Optional.of("ticket-view")), Optional.of(EventDelivery.SYNC), Instant.now(), "main",
+            new Stage.Handling(new MessageType(MessageKind.EVENT, "TicketOpened"), "ticket-view"), Optional.of(EventDelivery.SYNC), Instant.now(), "main",
             new Outcome.Failed(Duration.ofMillis(1), "java.lang.IllegalStateException")));
 
         var response = queries.failures(List.of("tickets::EVENT:TicketOpened|java.lang.IllegalStateException|handling:ticket-view"));

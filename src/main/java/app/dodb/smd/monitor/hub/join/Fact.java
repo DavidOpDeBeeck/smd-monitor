@@ -30,7 +30,7 @@ public record Fact(InvocationId id, ApplicationName application, Stage stage, Me
     }
 
     public Optional<String> processingGroup() {
-        return stage instanceof Stage.Handling handling ? handling.processingGroup() : Optional.empty();
+        return stage instanceof Stage.Handling handling ? Optional.of(handling.processingGroup()) : Optional.empty();
     }
 
     public Instant completedAt() {

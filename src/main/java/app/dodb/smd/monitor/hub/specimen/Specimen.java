@@ -122,7 +122,7 @@ public final class Specimen {
     }
 
     public Optional<String> processingGroup() {
-        return stage instanceof Stage.Handling handling ? handling.processingGroup() : Optional.empty();
+        return stage instanceof Stage.Handling handling ? Optional.of(handling.processingGroup()) : Optional.empty();
     }
 
     public String threadName() {

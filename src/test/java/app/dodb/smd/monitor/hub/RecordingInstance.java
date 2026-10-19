@@ -77,17 +77,13 @@ final class RecordingInstance {
         return span(newTraceId(), Optional.of(SpanRef.of(newTraceId(), newSpanId())), MessageId.generate(), new Stage.Dispatch(type));
     }
 
-    MessageSpan handle(MessageSpan dispatch) {
-        return span(dispatch.span().traceId(), Optional.of(dispatch.span()), dispatch.messageId(), new Stage.Handling(dispatch.stage().type(), Optional.empty()));
-    }
-
     MessageSpan handle(String processingGroup, MessageSpan publication) {
         return handle(processingGroup, EventDelivery.SYNC, publication);
     }
 
     MessageSpan handle(String processingGroup, EventDelivery delivery, MessageSpan publication) {
         return new MessageSpan(SpanRef.of(publication.span().traceId(), newSpanId()), Optional.of(publication.span()), publication.messageId(),
-            new Stage.Handling(publication.stage().type(), Optional.of(processingGroup)), Optional.of(delivery), STARTED_AT, name.value(),
+            new Stage.Handling(publication.stage().type(), processingGroup), Optional.of(delivery), STARTED_AT, name.value(),
             new Outcome.Completed(Duration.ofMillis(1)));
     }
 

@@ -23,7 +23,7 @@ public record FailureCausesView(String hubSession, long sequence, List<CauseView
         }
     }
 
-    // The processing group is null for a dispatch and for the handling of a command or query.
+    // The processing group is null for a dispatch, and only an event has handlings.
     public record StepView(String application, String kind, String type, boolean handling, String processingGroup, String failureType) {
 
         static StepView from(FailureCause.Step step) {
@@ -31,7 +31,7 @@ public record FailureCausesView(String hubSession, long sequence, List<CauseView
             return switch (step.stage()) {
                 case Stage.Dispatch ignored -> new StepView(step.application().value(), type.kind().name(), type.name(), false, null, step.failureType());
                 case Stage.Handling handling -> new StepView(step.application().value(), type.kind().name(), type.name(), true,
-                    handling.processingGroup().orElse(null), step.failureType());
+                    handling.processingGroup(), step.failureType());
             };
         }
     }

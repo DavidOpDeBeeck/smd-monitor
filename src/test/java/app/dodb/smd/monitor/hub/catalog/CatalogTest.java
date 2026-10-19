@@ -7,7 +7,6 @@ import app.dodb.smd.monitor.hub.span.MessageType;
 import app.dodb.smd.monitor.hub.span.Stage;
 import org.junit.jupiter.api.Test;
 
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -22,14 +21,14 @@ class CatalogTest {
     @Test
     void stage_stagesSeenAgain_keepTheirIdsInTheOrderFirstSeen() {
         var open = catalog.stage(new Stage.Dispatch(OPEN));
-        var handling = catalog.stage(new Stage.Handling(OPEN, Optional.empty()));
+        var handling = catalog.stage(new Stage.Handling(OPENED, "projection"));
 
         var again = catalog.stage(new Stage.Dispatch(OPEN));
 
         assertThat(again).isEqualTo(open).isEqualTo(catalog.firstStage());
         assertThat(handling).isEqualTo(open + 1);
         assertThat(catalog.stagesEnd()).isEqualTo(handling + 1);
-        assertThat(catalog.stageOf(handling)).isEqualTo(new Stage.Handling(OPEN, Optional.empty()));
+        assertThat(catalog.stageOf(handling)).isEqualTo(new Stage.Handling(OPENED, "projection"));
     }
 
     @Test
@@ -38,7 +37,7 @@ class CatalogTest {
         catalog.stage(new Stage.Dispatch(ASSIGN));
 
         var dispatch = catalog.stage(new Stage.Dispatch(OPENED));
-        var handling = catalog.stage(new Stage.Handling(OPENED, Optional.of("projection")));
+        var handling = catalog.stage(new Stage.Handling(OPENED, "projection"));
 
         assertThat(dispatch).isEqualTo(Catalog.otherDispatch(MessageKind.EVENT));
         assertThat(handling).isEqualTo(Catalog.OTHER_HANDLING);
@@ -47,9 +46,9 @@ class CatalogTest {
 
     @Test
     void stage_handlingOfAGroupBeyondMaxGroups_isTheOtherHandling() {
-        catalog.stage(new Stage.Handling(OPENED, Optional.of("projection")));
+        catalog.stage(new Stage.Handling(OPENED, "projection"));
 
-        var beyond = catalog.stage(new Stage.Handling(OPENED, Optional.of("notifications")));
+        var beyond = catalog.stage(new Stage.Handling(OPENED, "notifications"));
 
         assertThat(beyond).isEqualTo(Catalog.OTHER_HANDLING);
     }
@@ -67,7 +66,7 @@ class CatalogTest {
 
     @Test
     void delivered_groupBeyondMaxGroups_keepsNoDelivery() {
-        catalog.stage(new Stage.Handling(OPENED, Optional.of("projection")));
+        catalog.stage(new Stage.Handling(OPENED, "projection"));
 
         catalog.delivered("projection", EventDelivery.SYNC);
         catalog.delivered("notifications", EventDelivery.SYNC);

@@ -65,9 +65,10 @@ class MonitorHubInvariantsTest {
     @Test
     void trace_chainAcrossApplicationsInAnyArrivalOrder_isOneTraceFromItsEntryPoint() {
         var open = tickets.dispatch(OPEN);
-        var handling = tickets.handle(open);
-        var assign = billing.dispatch(ASSIGN, handling);
-        var chain = List.of(new Arrival(tickets, open), new Arrival(tickets, handling), new Arrival(billing, assign), new Arrival(billing, billing.handle(assign)));
+        var assign = billing.dispatch(ASSIGN, open);
+        var publication = billing.dispatch(OPENED, assign);
+        var chain = List.of(new Arrival(tickets, open), new Arrival(billing, assign), new Arrival(billing, publication),
+            new Arrival(billing, billing.handle("ledger", publication)));
 
         assertThat(permutations(chain)).allSatisfy(order -> {
             var hub = receivedEach(order);
@@ -79,7 +80,8 @@ class MonitorHubInvariantsTest {
             });
             assertThat(application(hub, BILLING).crossings()).containsExactly(new CrossingStatistics(TICKETS, new LinkStatistics(new CausalLink(OPEN, ASSIGN), 1, 0)));
             assertThat(application(hub, TICKETS).types()).extracting(TypeStatistics::type, TypeStatistics::entryPoint).containsExactly(tuple(OPEN, true));
-            assertThat(application(hub, BILLING).types()).extracting(TypeStatistics::type, TypeStatistics::entryPoint).containsExactly(tuple(ASSIGN, false));
+            assertThat(application(hub, BILLING).types()).extracting(TypeStatistics::type, TypeStatistics::entryPoint)
+                .containsExactlyInAnyOrder(tuple(ASSIGN, false), tuple(OPENED, false));
         });
     }
 

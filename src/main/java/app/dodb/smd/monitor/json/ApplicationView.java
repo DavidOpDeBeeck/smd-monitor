@@ -130,7 +130,7 @@ public record ApplicationView(String name,
     public record KindView(String kind, BriefView window, List<Long> startedPerSecond) {
     }
 
-    // The processing group is null for a dispatch and for the handling of a command or query. A failure idle in the window has no seconds.
+    // The processing group is null for a dispatch, and only an event has handlings. A failure idle in the window has no seconds.
     public record FailureView(String kind, String type, boolean handling, String processingGroup, String failureType, long window, long history,
                               List<Long> windowPerSecond) {
 
@@ -138,7 +138,7 @@ public record ApplicationView(String name,
             var stage = statistics.failure().stage();
             var type = stage.type();
             return new FailureView(type.kind().name(), type.name(), stage instanceof Stage.Handling,
-                stage instanceof Stage.Handling handling ? handling.processingGroup().orElse(null) : null, statistics.failure().failureType(),
+                stage instanceof Stage.Handling handling ? handling.processingGroup() : null, statistics.failure().failureType(),
                 statistics.window(), statistics.history(), statistics.windowPerSecond());
         }
     }

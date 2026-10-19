@@ -1,10 +1,7 @@
 package app.dodb.smd.monitor.hub.otlp;
 
 import app.dodb.smd.api.command.Command;
-import app.dodb.smd.api.command.CommandHandlerContext;
-import app.dodb.smd.api.command.CommandHandlerInterceptorChain;
 import app.dodb.smd.api.command.CommandMessage;
-import app.dodb.smd.api.command.bus.CommandBusContext;
 import app.dodb.smd.api.command.bus.CommandBusInterceptorChain;
 import app.dodb.smd.api.event.AnnotatedEventHandler;
 import app.dodb.smd.api.event.Event;
@@ -13,18 +10,17 @@ import app.dodb.smd.api.event.EventMessage;
 import app.dodb.smd.api.event.ProcessingGroup;
 import app.dodb.smd.api.event.ProcessingGroupContext;
 import app.dodb.smd.api.event.ProcessingGroupInterceptorChain;
-import app.dodb.smd.api.event.bus.EventBusContext;
 import app.dodb.smd.api.event.bus.EventBusInterceptorChain;
 import app.dodb.smd.api.event.bus.EventBusSpec;
 import app.dodb.smd.api.event.delivery.EventDelivery;
 import app.dodb.smd.api.event.delivery.EventSink;
+import app.dodb.smd.api.event.delivery.EventSource;
+import app.dodb.smd.api.event.delivery.EventSubscriber;
+import app.dodb.smd.api.event.delivery.EventSubscription;
 import app.dodb.smd.api.message.Message;
 import app.dodb.smd.api.metadata.Metadata;
 import app.dodb.smd.api.query.Query;
-import app.dodb.smd.api.query.QueryHandlerContext;
-import app.dodb.smd.api.query.QueryHandlerInterceptorChain;
 import app.dodb.smd.api.query.QueryMessage;
-import app.dodb.smd.api.query.bus.QueryBusContext;
 import app.dodb.smd.api.query.bus.QueryBusInterceptorChain;
 import app.dodb.smd.monitor.hub.ApplicationStatistics;
 import app.dodb.smd.monitor.hub.GroupStatistics;
@@ -91,7 +87,7 @@ class OtlpTracesTest {
     void export_requestOfTheOtlpExporter_reachesTheHubAsTheInvocationsOfItsInstance() {
         var recording = recording(RESOURCE);
         send(recording, open(), received -> send(recording, CommandMessage.from(new AssignTicket(), sentFrom(received)), nothing -> null));
-        var assignDispatch = spans.getFinishedSpanItems().get(1);
+        var assignDispatch = spans.getFinishedSpanItems().get(0);
 
         var response = export(encoded());
 
@@ -100,24 +96,22 @@ class OtlpTracesTest {
         assertThat(statistics().instances()).extracting(Instance::name, Instance::session)
             .containsExactly(tuple(new InstanceName("tickets-1"), new SessionId("6d0f3b9e-instance")));
         assertThat(invocations).extracting(Invocation::type, Invocation::handling, Invocation::processingGroup).containsExactly(
-            tuple(type(AssignTicket.class), true, Optional.empty()),
             tuple(type(AssignTicket.class), false, Optional.empty()),
-            tuple(type(OpenTicket.class), true, Optional.empty()),
             tuple(type(OpenTicket.class), false, Optional.empty()));
-        assertThat(invocations.get(1)).satisfies(assign -> {
+        assertThat(invocations.get(0)).satisfies(assign -> {
             assertThat(assign.span().threadName()).isEqualTo(Thread.currentThread().getName());
             assertThat(assign.startedAt()).isEqualTo(Instant.ofEpochSecond(0, assignDispatch.getStartEpochNanos()));
             assertThat(assign.span().outcome())
                 .isEqualTo(new Outcome.Completed(Duration.ofNanos(assignDispatch.getEndEpochNanos() - assignDispatch.getStartEpochNanos())));
         });
-        assertThat(parents()).containsExactly(tuple(id(1), id(2)), tuple(id(2), id(4)), tuple(id(4), id(6)));
+        assertThat(parents()).containsExactly(tuple(id(1), id(2)));
         assertThat(statistics().links()).extracting(LinkStatistics::link).containsExactly(new CausalLink(type(OpenTicket.class), type(AssignTicket.class)));
         assertThat(statistics().types()).extracting(TypeStatistics::type, TypeStatistics::entryPoint)
             .containsExactlyInAnyOrder(tuple(type(OpenTicket.class), true), tuple(type(AssignTicket.class), false));
     }
 
     @Test
-    void export_childDispatchedWithinASpanOfTheApplication_findsTheHandlingItLinksTo() {
+    void export_childDispatchedWithinASpanOfTheApplication_findsTheDispatchItLinksTo() {
         var provider = tracerProvider(RESOURCE);
         var recording = new MessageTracing(openTelemetry(provider));
         send(recording, open(), received -> {
@@ -131,7 +125,7 @@ class OtlpTracesTest {
 
         export(encoded());
 
-        assertThat(parents()).containsExactly(tuple(id(1), id(2)), tuple(id(2), id(4)), tuple(id(4), id(6)));
+        assertThat(parents()).containsExactly(tuple(id(1), id(2)));
         assertThat(statistics().links()).extracting(LinkStatistics::link).containsExactly(new CausalLink(type(OpenTicket.class), type(AssignTicket.class)));
     }
 
@@ -152,23 +146,23 @@ class OtlpTracesTest {
             .singleElement()
             .satisfies(assign -> assertThat(assign.parent()).hasValueSatisfying(link -> {
                 assertThat(link.type()).isEqualTo(type(OpenTicket.class));
-                assertThat(link.handling()).isTrue();
+                assertThat(link.handling()).isFalse();
             }));
         assertThat(statistics().links()).extracting(LinkStatistics::link).containsExactly(new CausalLink(type(OpenTicket.class), type(AssignTicket.class)));
     }
 
     @Test
-    void export_queryDispatchedInACommandHandling_linksTheCommandToTheQuery() {
+    void export_queryDispatchedByACommandHandler_linksTheCommandToTheQuery() {
         var recording = recording(RESOURCE);
         var query = new MessageType(MessageKind.QUERY, AvailableAgent.class.getName());
-        send(recording, open(), received -> recording.intercept(new QueryBusContext<>(QueryMessage.from(new AvailableAgent(), sentFrom(received))),
-            QueryBusInterceptorChain.<Object, AvailableAgent>create(sent -> recording.intercept(new QueryHandlerContext<>(sent.queryMessage()),
-                QueryHandlerInterceptorChain.<Object, AvailableAgent>create(nothing -> "agent", List.of())), List.of())));
+        send(recording, open(), received -> recording.intercept(QueryMessage.from(new AvailableAgent(), sentFrom(received)),
+            QueryBusInterceptorChain.<Object, AvailableAgent>create(nothing -> "agent", List.of())));
 
         export(encoded());
 
         assertThat(invocations()).extracting(Invocation::type, Invocation::handling)
-            .containsExactly(tuple(query, true), tuple(query, false), tuple(type(OpenTicket.class), true), tuple(type(OpenTicket.class), false));
+            .containsExactly(tuple(query, false), tuple(type(OpenTicket.class), false));
+        assertThat(statistics().handlings().started()).isZero();
         assertThat(statistics().links()).extracting(LinkStatistics::link).containsExactly(new CausalLink(type(OpenTicket.class), query));
         assertThat(statistics().groups()).isEmpty();
     }
@@ -208,7 +202,7 @@ class OtlpTracesTest {
     @Test
     void export_publicationSentToNoSink_reachesTheHubWithoutSinkRoutes() {
         var recording = recording(RESOURCE);
-        recording.intercept(new EventBusContext<>(EventMessage.from(new TicketOpened(), Metadata.withProperties(Map.of()))), EventBusInterceptorChain.create(ignored -> {
+        recording.intercept(EventMessage.from(new TicketOpened(), Metadata.withProperties(Map.of())), EventBusInterceptorChain.create(ignored -> {
         }, List.of()));
 
         var response = export(encoded());
@@ -259,6 +253,25 @@ class OtlpTracesTest {
     }
 
     @Test
+    void export_processSpanOfACommand_answersAPartialSuccessNamingTheSpanAndKind() {
+        var handling = tracerProvider(RESOURCE).get(MessageSpans.INSTRUMENTATION_SCOPE).spanBuilder("process OpenTicket")
+            .setAttribute(MessageSpans.MESSAGE_KIND, MessageSpans.COMMAND)
+            .setAttribute(MessageSpans.OPERATION_TYPE, MessageSpans.PROCESS)
+            .setAttribute(MessageSpans.DESTINATION_NAME, OpenTicket.class.getName())
+            .setAttribute(MessageSpans.MESSAGE_ID, "6d0f3b9e-1c1a-4f2e-9a57-0b6d6f2b8c11")
+            .setAttribute(MessageSpans.THREAD_NAME, "main")
+            .startSpan();
+        handling.end();
+
+        var partialSuccess = ProtobufMessage.parse(export(encoded())).message(1).orElseThrow();
+
+        assertThat(partialSuccess.number(1)).isEqualTo(1);
+        assertThat(partialSuccess.string(2)).hasValueSatisfying(reason -> assertThat(reason).contains(handling.getSpanContext().getSpanId(), "COMMAND",
+            OpenTicket.class.getName(), "only an event has a 'process' span"));
+        assertThat(hub.statistics().applications()).isEmpty();
+    }
+
+    @Test
     void export_failedSpan_keepsItsFailureType() {
         var recording = recording(RESOURCE);
         assertThatThrownBy(() -> send(recording, open(), ignored -> {
@@ -267,8 +280,8 @@ class OtlpTracesTest {
 
         export(encoded());
 
-        assertThat(invocations()).extracting(invocation -> invocation.span().outcome()).hasSize(2)
-            .allSatisfy(outcome -> assertThat(outcome).isInstanceOfSatisfying(Outcome.Failed.class,
+        assertThat(invocations()).extracting(invocation -> invocation.span().outcome()).singleElement()
+            .satisfies(outcome -> assertThat(outcome).isInstanceOfSatisfying(Outcome.Failed.class,
                 failed -> assertThat(failed.failureType()).isEqualTo(IllegalStateException.class.getName())));
     }
 
@@ -295,7 +308,7 @@ class OtlpTracesTest {
     @Test
     void export_hostNameThatIsNoInstanceName_rejectsItsSpansNamingTheResourceAttribute() {
         recording(Resource.create(Attributes.of(SpanReader.SERVICE_NAME, TICKETS.value(), SpanReader.HOST_NAME, "my host")))
-            .intercept(new CommandBusContext<>(open()), CommandBusInterceptorChain.create(ignored -> null, List.of()));
+            .intercept(open(), CommandBusInterceptorChain.create(ignored -> null, List.of()));
 
         var partialSuccess = ProtobufMessage.parse(export(encoded())).message(1).orElseThrow();
 
@@ -325,13 +338,13 @@ class OtlpTracesTest {
         assertThat(partialSuccess.number(1)).isEqualTo(1);
         assertThat(partialSuccess.string(2)).hasValueSatisfying(reason -> assertThat(reason).contains(spans.getFinishedSpanItems().getFirst().getSpanId(),
             "messaging.smd.message.kind"));
-        assertThat(invocations()).hasSize(2);
+        assertThat(invocations()).hasSize(1);
     }
 
     @Test
     void export_resourceNamingNoInstance_reportsAsTheUnnamedInstance() {
         recording(Resource.create(Attributes.of(SpanReader.SERVICE_NAME, TICKETS.value())))
-            .intercept(new CommandBusContext<>(open()), CommandBusInterceptorChain.create(ignored -> null, List.of()));
+            .intercept(open(), CommandBusInterceptorChain.create(ignored -> null, List.of()));
 
         var response = export(encoded());
 
@@ -343,7 +356,7 @@ class OtlpTracesTest {
     @Test
     void export_resourceWithoutServiceName_rejectsItsSpans() {
         recording(Resource.create(Attributes.of(SpanReader.HOST_NAME, "tickets-1")))
-            .intercept(new CommandBusContext<>(open()), CommandBusInterceptorChain.create(ignored -> null, List.of()));
+            .intercept(open(), CommandBusInterceptorChain.create(ignored -> null, List.of()));
 
         var partialSuccess = ProtobufMessage.parse(export(encoded())).message(1).orElseThrow();
 
@@ -374,7 +387,7 @@ class OtlpTracesTest {
 
     @Test
     void export_truncatedRequest_failsWithContextBeforeTheHubReceivesAnything() {
-        recording(RESOURCE).intercept(new CommandBusContext<>(open()), CommandBusInterceptorChain.create(ignored -> null, List.of()));
+        recording(RESOURCE).intercept(open(), CommandBusInterceptorChain.create(ignored -> null, List.of()));
         var body = encoded();
 
         assertThatThrownBy(() -> OtlpTraces.read(Arrays.copyOf(body, body.length - 5)))
@@ -386,15 +399,13 @@ class OtlpTracesTest {
     // A command bus: its dispatch, and within it the handling.
     private static <C extends Command<Object>> Object send(MessageTracing tracing, CommandMessage<Object, C> message,
                                                            Function<CommandMessage<Object, C>, Object> handler) {
-        return tracing.intercept(new CommandBusContext<>(message), CommandBusInterceptorChain.<Object, C>create(
-            sent -> tracing.intercept(new CommandHandlerContext<>(sent.commandMessage()),
-                CommandHandlerInterceptorChain.<Object, C>create(handled -> handler.apply(handled.commandMessage()), List.of())), List.of()));
+        return tracing.intercept(message, CommandBusInterceptorChain.<Object, C>create(handler, List.of()));
     }
 
     // An event bus: the publication, and within it the handling of the group ticket-activity.
     private static void publish(MessageTracing tracing, EventDelivery delivery) {
-        tracing.intercept(new EventBusContext<>(EventMessage.from(new TicketOpened(), Metadata.withProperties(Map.of()))), EventBusInterceptorChain.<TicketOpened>create(
-            published -> tracing.intercept(new ProcessingGroupContext<>("ticket-activity", delivery, published.eventMessage()),
+        tracing.intercept(EventMessage.from(new TicketOpened(), Metadata.withProperties(Map.of())), EventBusInterceptorChain.<TicketOpened>create(
+            published -> tracing.intercept(new ProcessingGroupContext<>("ticket-activity", new Source(delivery), published),
                 ProcessingGroupInterceptorChain.<TicketOpened>create(ignored -> {
                 }, List.of())), List.of()));
     }
@@ -502,6 +513,14 @@ class OtlpTracesTest {
         @Override
         public EventDelivery delivery() {
             return new EventDelivery("shared-log");
+        }
+    }
+
+    private record Source(EventDelivery delivery) implements EventSource {
+
+        @Override
+        public EventSubscription subscribe(EventSubscriber subscriber) {
+            return EventSubscription.EMPTY;
         }
     }
 }

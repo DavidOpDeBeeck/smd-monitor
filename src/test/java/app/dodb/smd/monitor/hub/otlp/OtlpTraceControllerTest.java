@@ -2,7 +2,6 @@ package app.dodb.smd.monitor.hub.otlp;
 
 import app.dodb.smd.api.command.Command;
 import app.dodb.smd.api.command.CommandMessage;
-import app.dodb.smd.api.command.bus.CommandBusContext;
 import app.dodb.smd.api.command.bus.CommandBusInterceptorChain;
 import app.dodb.smd.api.metadata.Metadata;
 import app.dodb.smd.monitor.hub.HubConfig;
@@ -99,7 +98,7 @@ class OtlpTraceControllerTest {
         var resource = Resource.create(Attributes.of(SpanReader.SERVICE_NAME, application, SpanReader.HOST_NAME, application + "-1"));
         var provider = SdkTracerProvider.builder().setResource(resource).addSpanProcessor(SimpleSpanProcessor.create(spans)).build();
         var openTelemetry = OpenTelemetrySdk.builder().setTracerProvider(provider).setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance())).build();
-        new MessageTracing(openTelemetry).intercept(new CommandBusContext<>(CommandMessage.from(new OpenTicket(), Metadata.withProperties(Map.of()))),
+        new MessageTracing(openTelemetry).intercept(CommandMessage.from(new OpenTicket(), Metadata.withProperties(Map.of())),
             CommandBusInterceptorChain.create(ignored -> null, List.of()));
         var output = new ByteArrayOutputStream();
         try {

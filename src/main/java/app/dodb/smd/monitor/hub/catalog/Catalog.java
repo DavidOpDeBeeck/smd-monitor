@@ -12,7 +12,6 @@ import java.util.BitSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 import static java.util.Objects.requireNonNull;
@@ -65,8 +64,9 @@ public final class Catalog {
 
     public int stage(Stage stage) {
         var other = stage instanceof Stage.Dispatch ? otherDispatch(stage.type().kind()) : OTHER_HANDLING;
-        var group = stage instanceof Stage.Handling handling ? handling.processingGroup() : Optional.<String>empty();
-        if (!admitted(types, stage.type(), maxTypes) || group.isPresent() && !admitted(groups, group.get(), maxGroups)) {
+        var admitted = admitted(types, stage.type(), maxTypes)
+            && (!(stage instanceof Stage.Handling handling) || admitted(groups, handling.processingGroup(), maxGroups));
+        if (!admitted) {
             overflowed++;
             return other;
         }

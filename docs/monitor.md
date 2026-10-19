@@ -15,35 +15,44 @@ and what fails. It is read-only, keeps everything in memory, and starts empty af
 
 | What                                         | Where                                    | Does                                                                                |
 |----------------------------------------------|------------------------------------------|-------------------------------------------------------------------------------------|
-| `smd-opentelemetry` and an OpenTelemetry SDK | Every application you want to see        | Records the application's bus invocations as OpenTelemetry spans; serves nothing    |
+| The SMD starter and an OpenTelemetry SDK     | Every application you want to see        | Records the application's bus invocations as OpenTelemetry spans; serves nothing    |
 | The hub, `smd-monitor-hub`                   | Once, as an application of its own       | Receives the spans over OTLP/HTTP, combines them per application, serves the page   |
 
-The monitor needs SMD 0.0.12 or newer, which is not released yet; until then, run `./gradlew publishToMavenLocal` in
-[simple-message-dispatch](https://github.com/DavidOpDeBeeck/simple-message-dispatch).
+The monitor needs SMD 0.0.12 or newer.
 
 ### Record an application's messages
 
 ```kotlin
-implementation("app.dodb:smd-opentelemetry:0.0.12")
-implementation("org.springframework.boot:spring-boot-micrometer-tracing-opentelemetry")
-implementation("io.micrometer:micrometer-tracing-bridge-otel")
-implementation("io.opentelemetry:opentelemetry-exporter-otlp")
+implementation("org.springframework.boot:spring-boot-starter-opentelemetry")
 ```
 
 With `@EnableSMD`, the SMD starter then records the standard buses (see SMD's
-[OpenTelemetry](https://github.com/DavidOpDeBeeck/simple-message-dispatch/blob/master/docs/spring-boot.md#opentelemetry)). `spring-boot-starter-opentelemetry` works as
-well, but also brings the OTLP metrics registry. Then configure:
+[OpenTelemetry](https://github.com/DavidOpDeBeeck/simple-message-dispatch/blob/master/docs/spring-boot.md#opentelemetry)). Then configure:
 
-```properties
-spring.application.name=tickets
-management.tracing.sampling.probability=1.0
-management.opentelemetry.resource-attributes[host.name]=${HOSTNAME:${COMPUTERNAME:localhost}}
-management.opentelemetry.resource-attributes[service.instance.id]=${random.uuid}
-management.opentelemetry.tracing.export.otlp.endpoint=http://smd-monitor-hub:8080/v1/traces
-management.opentelemetry.tracing.export.schedule-delay=1s
+```yaml
+spring:
+  application:
+    name: tickets
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+  opentelemetry:
+    resource-attributes:
+      "[host.name]": ${HOSTNAME:${COMPUTERNAME:localhost}}
+      "[service.instance.id]": ${random.uuid}
+    tracing:
+      export:
+        otlp:
+          endpoint: http://smd-monitor-hub:8080/v1/traces
+        schedule-delay: 1s
+  otlp:
+    metrics:
+      export:
+        enabled: false
 ```
 
-Each line matters:
+Each setting matters:
 
 - **`spring.application.name`** sets `service.name`, which groups instances into an application.
 - **Sampling.** The hub counts the spans it receives, so a sampled-out span is an invocation it never counts. Spring Boot samples 10% by default and SMD does not change
@@ -54,6 +63,7 @@ Each line matters:
 - **`service.instance.id`** tells each run of an instance apart, so a restart is recognized. Spring Boot sets neither attribute.
 - **`schedule-delay`** is optional. Spring Boot exports every 5 seconds, so a second's spans reach the hub up to 5 seconds late. Exporting every second completes the
   newest seconds sooner; then set the hub's `settle` to `2s`.
+- **`otlp.metrics.export.enabled`** turns off the starter's OTLP metrics export, which otherwise sends metrics to `localhost:4318`. The hub receives spans only.
 
 The OpenTelemetry SDK exports on its own thread, so a slow or unavailable hub never delays a message. Gateways you create yourself need `MessageTracing` installed
 explicitly. Lineage travels in the message metadata through a text-map propagator, which Spring Boot configures by default.
@@ -90,9 +100,17 @@ Set `server.servlet.context-path` to serve them under a prefix, such as `/ops/mo
 ./gradlew demo
 ```
 
-Open <http://127.0.0.1:8080/>. The demo runs the hub and two applications in one JVM. `ticket-service` opens a ticket about every 700 ms, and an in-memory broker
-forwards each one to `billing-service`, which charges an invoice for it; every ninth ticket projection and every fifth payment fails. Pass
-`--args="--server.port=8083"` to change the port, and prefix an argument with `--tickets.` or `--billing.` to pass it to that application instead of the hub.
+Open <http://127.0.0.1:8080/>. The demo runs the hub and a web shop of four applications in one JVM. Each application appends its events to an in-memory
+topic that the processing groups of the next one read:
+
+- `storefront`, on two instances, serves searches and product pages and places an order about every 1.5 s per instance.
+- `inventory` reserves the stock of each order; about 3% of the reservations fail with `OutOfStockException`.
+- `payments` scores the fraud risk and charges the card gateway, which is sometimes slow and times out about 2% of the time; about 8% of the payments are
+  declined, and storefront cancels their orders, which releases their stock.
+- `shipping` schedules a shipment for each captured payment, and storefront emails the customer; about 5% of the shipping labels fail, asynchronously.
+
+Pass `--args="--server.port=8083"` to change the port, and prefix an argument with an application's name, such as `--storefront.smd.demo.orders-per-second=50`,
+to pass it to that application instead of the hub.
 
 ## Configuration
 
@@ -221,8 +239,8 @@ are counted as **+N**. Drag or scroll to move, **F** to recenter.
 
 **Traces** lists retained root messages with everything they caused, newest first, across applications. Filter by text or instance name, type, status, chains,
 or pins; sort by recency, duration, or size. The waterfall shows each invocation on the trace's time axis with its application, instance, thread, start, wait
-after its parent returned, and duration; every column header filters. Under each event, a row per processing group shows it handling the event, with what its
-handlers dispatched nested below. **Pin** keeps a copy of a trace in the tab so it survives eviction; **Copy JSON** exports it.
+after its parent returned, and duration; every column header filters. A command's or query's row covers its handler, with what the handler dispatched nested
+below; under each event, a row per processing group shows it handling the event, with what its handlers dispatched nested below. **Pin** keeps a copy of a trace in the tab so it survives eviction; **Copy JSON** exports it.
 
 **Failures** lists every **cause** of the last five minutes, a stage (a type's dispatch or a group's handling) failing with one exception class, ranked by the
 last minute. Each shows its counts, share, and a strip of failures per second. For the causes shown, the page asks for their latest retained traces and failure
@@ -273,8 +291,11 @@ and an event-store batch that fails is replayed, showing one handling per attemp
 counts at each of them. An asynchronous group's failure does not fail its publication, so it only shows under its group. A publication that returns may not have
 reached every listener yet.
 
-**Lineage comes from span links alone.** A handling's parent is the dispatch of its message; a message dispatched by a handler is a child of that handling, on any
-thread or instance, and in any application. A dispatch without a link is an entry point. The hub links a child and its parent in whichever order they arrive, as long
+**A command or query is one invocation, its dispatch, which covers its handler**: its latency includes the handler, and a handler's failure is its failure.
+Only events have handlings, one per processing group, and the handlings the figures count are theirs.
+
+**Lineage comes from span links alone.** A handling's parent is the dispatch of its event. A message dispatched by a command or query handler is a child of that
+command's or query's dispatch, and one dispatched by an event handler a child of its group's handling, on any thread or instance, and in any application. A dispatch without a link is an entry point. The hub links a child and its parent in whichever order they arrive, as long
 as the second arrives within the link horizon of the first, or while the first is retained; otherwise the link, and its arrow in Flow, is not counted. A span that
 arrives twice within the horizon counts once. A message forwarded to another application with its message ID and metadata, such as by a broker, continues the same
 trace. When a parent is evicted, the child names its type and application; when it was never received, the child says **Parent not found**.

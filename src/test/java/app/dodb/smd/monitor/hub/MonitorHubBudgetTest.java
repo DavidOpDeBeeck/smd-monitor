@@ -82,11 +82,11 @@ class MonitorHubBudgetTest {
     void tick_budgetSmallest_foldsCountsSoonerAndShortensTheHistoryButKeepsTheWindow() {
         var largest = new long[1];
 
-        var health = run(Budgets.total(8 * MEGABYTE), epoch -> largest[0] = Math.max(largest[0], epoch.memory().bytes()));
+        var health = run(Budgets.total(6 * MEGABYTE), epoch -> largest[0] = Math.max(largest[0], epoch.memory().bytes()));
 
         assertThat(health.foldsSooner()).isTrue();
         assertThat(health.effectiveHistory()).isLessThan(PROFILE.history()).isGreaterThanOrEqualTo(PROFILE.window());
-        assertThat(largest[0]).isLessThanOrEqualTo(Budgets.total(8 * MEGABYTE).total());
+        assertThat(largest[0]).isLessThanOrEqualTo(Budgets.total(6 * MEGABYTE).total());
     }
 
     @Test

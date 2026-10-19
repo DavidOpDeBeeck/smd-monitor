@@ -8,9 +8,9 @@ import java.util.Optional;
 
 import static java.util.Objects.requireNonNull;
 
-// A span continues the invocation it links to: a handling the dispatch of its message, a dispatch the handling that sent it or the dispatch
-// another application delivered it from. A dispatch that continues none is an entry point. A processing group's handling names the delivery its
-// group received the event by.
+// A span continues the invocation it links to: a handling the dispatch of its event, a dispatch the handling or the command or query dispatch that
+// sent it, or the dispatch another application delivered it from. A dispatch that continues none is an entry point. A processing group's handling
+// names the delivery its group received the event by.
 public record MessageSpan(SpanRef span,
                           Optional<SpanRef> continues,
                           MessageId messageId,
@@ -29,8 +29,7 @@ public record MessageSpan(SpanRef span,
         requireNonNull(startedAt);
         requireNonNull(threadName);
         requireNonNull(outcome);
-        var groupHandling = stage instanceof Stage.Handling handling && handling.processingGroup().isPresent();
-        if (delivery.isPresent() != groupHandling) {
+        if (delivery.isPresent() != (stage instanceof Stage.Handling)) {
             throw new IllegalArgumentException("SMD span " + span.spanId() + " of " + stage.type().kind() + " " + stage.type().name() + " requires a delivery for "
                 + "a processing group's handling and none otherwise; got " + delivery.map(each -> "delivery '" + each.name() + "'").orElse("no delivery"));
         }

@@ -276,12 +276,13 @@ class MonitorHubQueries {
             new MessageType(constant(MessageKind.class, type.substring(application + 2, kind), "kind"), type.substring(kind + 1)));
     }
 
-    // application::KIND:class|failure type|dispatch, |handling, or |handling:processing group, as the page names a failure cause.
+    // application::KIND:class|failure type|dispatch, or application::EVENT:class|failure type|handling:processing group, as the page names a
+    // failure cause.
     private static FailureCause.Step failureCause(String cause) {
         var type = cause.indexOf('|');
         var stage = cause.indexOf('|', type + 1);
         if (type < 0 || stage < 0) {
-            throw new IllegalArgumentException("A failure cause is named as application::KIND:class|failure type|dispatch, |handling, or |handling:group, "
+            throw new IllegalArgumentException("A failure cause is named as application::KIND:class|failure type|dispatch or |handling:group, "
                 + "such as tickets::COMMAND:app.OpenTicket|java.lang.IllegalStateException|dispatch; got '" + cause + "'");
         }
         var applicationType = applicationType(cause.substring(0, type));
@@ -290,12 +291,11 @@ class MonitorHubQueries {
         Stage parsed;
         if (named.equals("dispatch")) {
             parsed = new Stage.Dispatch(applicationType.type());
-        } else if (named.equals("handling")) {
-            parsed = new Stage.Handling(applicationType.type(), Optional.empty());
-        } else if (named.startsWith("handling:")) {
-            parsed = new Stage.Handling(applicationType.type(), Optional.of(named.substring("handling:".length())));
+        } else if (named.startsWith("handling:") && applicationType.type().kind() == MessageKind.EVENT) {
+            parsed = new Stage.Handling(applicationType.type(), named.substring("handling:".length()));
         } else {
-            throw new IllegalArgumentException("A failure cause names its stage as dispatch, handling, or handling:group; got '" + named + "' in '" + cause + "'");
+            throw new IllegalArgumentException("A failure cause names its stage as dispatch, or as handling:group for an event; got '" + named + "' in '"
+                + cause + "'");
         }
         return new FailureCause.Step(applicationType.application(), parsed, failureType);
     }

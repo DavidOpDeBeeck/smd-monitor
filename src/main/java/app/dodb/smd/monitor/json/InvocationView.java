@@ -11,7 +11,7 @@ import java.util.Optional;
 import static app.dodb.smd.monitor.json.FrameView.epochMillis;
 import static app.dodb.smd.monitor.json.FrameView.millis;
 
-// The processing group is null for a dispatch and for the handling of a command or query. An invocation has a parent when its span links to
+// The processing group is null for a dispatch, and only an event has handlings. An invocation has a parent when its span links to
 // the invocation it continues, which the hub may not have found or may no longer retain; a dispatch without one is an entry point.
 public record InvocationView(long sequence, String application, String messageId, boolean hasParent, String kind, String type, boolean handling,
                              String processingGroup, String instance, double startedAtMillis, String threadName, OutcomeView outcome) {

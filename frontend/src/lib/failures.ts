@@ -91,10 +91,9 @@ export function causesByApplication(causes: readonly FailureCount[], scope: stri
         .sort((a, b) => Number(b.application === scope) - Number(a.application === scope) || a.application.localeCompare(b.application));
 }
 
-// How many invocations of the cause's stage started over the history: its handlings, or the dispatches of its type, as a command or query has
-// one handling per dispatch.
+// How many invocations of the cause's stage started over the history: its processing group's handlings, or the dispatches of its type.
 export function stageStarted(cause: FailureCount, scoped: ScopedState): number {
-    if (cause.handling && cause.processingGroup !== null) {
+    if (cause.handling) {
         const handling = [...scoped.handlings.values()].find(each => each.typeKey === cause.typeKey && each.processingGroup === cause.processingGroup);
         return handling?.history.started ?? 0;
     }

@@ -85,22 +85,30 @@ class MonitorHubFlowTest {
     }
 
     @Test
-    void statistics_queryDispatchedInACommandHandling_linksTheCommandToTheQuery() {
+    void statistics_queryDispatchedByACommand_linksTheCommandToTheQuery() {
         var open = tickets.dispatch(OPEN);
-        var handling = tickets.handle(open);
-        var query = tickets.dispatch(AVAILABLE_AGENT, handling);
 
-        tickets.reportTo(hub, tickets.handle(query), query, handling, open);
+        tickets.reportTo(hub, tickets.dispatch(AVAILABLE_AGENT, open), open);
 
         assertThat(application(TICKETS).links()).containsExactly(new LinkStatistics(new CausalLink(OPEN, AVAILABLE_AGENT), 1, 0));
     }
 
     @Test
-    void statistics_handlingsOfACommandAndAnEvent_countNoLink() {
+    void statistics_eventPublishedByACommand_linksTheCommandToTheEvent() {
         var open = tickets.dispatch(OPEN);
+        var publication = tickets.dispatch(OPENED, open);
+
+        tickets.reportTo(hub, tickets.handle("assignment", publication), publication, open);
+
+        assertThat(application(TICKETS).links()).containsExactly(new LinkStatistics(new CausalLink(OPEN, OPENED), 1, 0));
+        assertThat(application(TICKETS).groupLinks()).isEmpty();
+    }
+
+    @Test
+    void statistics_commandAndAHandledEventUnrelated_countNoLink() {
         var publication = tickets.dispatch(OPENED);
 
-        tickets.reportTo(hub, open, tickets.handle(open), publication, tickets.handle("assignment", publication));
+        tickets.reportTo(hub, tickets.dispatch(OPEN), publication, tickets.handle("assignment", publication));
 
         assertThat(application(TICKETS).links()).isEmpty();
     }
@@ -285,11 +293,10 @@ class MonitorHubFlowTest {
     }
 
     @Test
-    void statistics_commandDispatchedByACommandHandling_linksNoGroup() {
+    void statistics_commandDispatchedByACommand_linksNoGroup() {
         var open = tickets.dispatch(OPEN);
-        var handling = tickets.handle(open);
 
-        tickets.reportTo(hub, tickets.dispatch(ASSIGN, handling), handling, open);
+        tickets.reportTo(hub, tickets.dispatch(ASSIGN, open), open);
 
         assertThat(application(TICKETS).groupLinks()).isEmpty();
         assertThat(application(TICKETS).routes()).isEmpty();

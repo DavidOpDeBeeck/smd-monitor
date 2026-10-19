@@ -7,7 +7,7 @@ import { Empty, EmptyLine } from '../components/empty';
 import { Loading } from '../components/loading';
 import { ActivityGlyph } from '../components/Glyph';
 import { cx } from '../lib/cx';
-import { activityName, ago, calendarDay, clock, duration, KIND_LABEL, threadLabel } from '../lib/format';
+import { activityName, ago, calendarDay, clock, duration, threadLabel } from '../lib/format';
 import { activity, hubRequest, linked, parentNote } from '../lib/api';
 import { endOf, failureTypeOf, parentMessageIdOf } from '../lib/model';
 import type { Activity } from '../lib/types';
@@ -126,7 +126,7 @@ export function MessageInspector(props: { sequence: number }) {
                         <dl class="mt-4 grid grid-cols-[92px_minmax(0,1fr)] gap-x-3 gap-y-[9px]">
                             <Show when={message().handling}>
                                 <Fact label="Handled by">
-                                    <Show when={message().processingGroup} fallback={<span>{KIND_LABEL[message().kind]} handler</span>}>
+                                    <Show when={message().processingGroup}>
                                         {group => (
                                             <>
                                                 <GroupChip name={group()} />
@@ -222,9 +222,9 @@ export function MessageInspector(props: { sequence: number }) {
                                 by="sequence"
                                 fallback={
                                     <EmptyLine class="text-left">
-                                        {message().processingGroup
+                                        {message().handling
                                             ? 'Its handlers dispatched nothing.'
-                                            : message().handling
+                                            : message().kind !== 'EVENT'
                                               ? 'Its handler dispatched nothing.'
                                               : 'Nothing was dispatched or handled with this message as parent.'}
                                     </EmptyLine>

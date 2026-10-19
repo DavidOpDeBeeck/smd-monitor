@@ -9,13 +9,50 @@ Applications record their messages as OpenTelemetry spans with SMD's `smd-opente
 counts, links, and retains them in memory and serves the monitor page. The monitor is optional: SMD does not depend on it, and the same spans can go to any
 OpenTelemetry backend.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-dark.png">
+  <img alt="The Overview of the demo web shop: entry points, failure rate, latency, and event delay, its four applications, five minutes of activity, and every message type with its latency" src="docs/screenshots/overview-light.png">
+</picture>
+
 ## Try it
 
 ```shell
 ./gradlew demo
 ```
 
-Open <http://127.0.0.1:8080/>. The demo runs a hub and two applications that export to it, in one JVM, with no database or Collector.
+Open <http://127.0.0.1:8080/>. The demo runs a hub and a web shop of four applications that export to it, in one JVM, with no database or Collector:
+storefront takes orders on two instances, and inventory, payments, and shipping each read the previous application's events from an in-memory topic.
+
+## A look around
+
+**Flow** follows a message across applications and the topics between them: what caused it, what it led to, and how each step fares.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/flow-dark.png">
+  <img alt="The Flow view around AuthorizePaymentCommand: a reserved order arrives from inventory over a topic, and its captured or declined payment goes on to shipping and storefront" src="docs/screenshots/flow-light.png">
+</picture>
+
+**Traces** lays out a retained trace as a waterfall, with the application, instance, and thread of every message and handling: here a declined payment,
+which storefront compensates by cancelling the order and inventory by releasing its stock.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/traces-dark.png">
+  <img alt="The Traces view showing a PlaceOrderCommand trace across storefront, inventory, and payments as a waterfall, ending in a cancelled order" src="docs/screenshots/traces-light.png">
+</picture>
+
+**Failures** groups failures by cause and shows the chain from the entry point to where each was raised.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/failures-dark.png">
+  <img alt="The Failures view listing out-of-stock and payment gateway timeout causes per application, with their chains and failure rates per message type and group" src="docs/screenshots/failures-light.png">
+</picture>
+
+**Live** shows every invocation of the last seconds or minutes as it happens.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/live-dark.png">
+  <img alt="The Live view showing the invocations of every message type in lanes over the last 30 seconds" src="docs/screenshots/live-light.png">
+</picture>
 
 ## Run the hub
 
@@ -27,10 +64,10 @@ java -jar build/libs/smd-monitor-hub-0.0.1.jar
 The hub serves the page at <http://127.0.0.1:8080/> and receives spans at `/v1/traces`. It listens on the loopback address only, because it has no authentication: put
 a reverse proxy in front of it to reach it from other hosts.
 
-Then add `smd-opentelemetry` and Spring Boot's OpenTelemetry tracing to each application, sample every span, and point its OTLP exporter at the hub. See
+Then add `spring-boot-starter-opentelemetry` to each application, sample every span, and point its OTLP exporter at the hub. See
 [Set up the monitor](docs/monitor.md#set-up-the-monitor).
 
-The monitor needs SMD 0.0.12 or newer, which is not released yet.
+The monitor needs SMD 0.0.12 or newer.
 
 ## Documentation
 
@@ -40,8 +77,7 @@ The monitor needs SMD 0.0.12 or newer, which is not released yet.
 
 ## Build
 
-Building needs Java 25 and Node.js 22.12 or newer on the `PATH`. The build uses the published SMD artifacts of the version in `gradle/libs.versions.toml`; until SMD
-0.0.12 is released, run `./gradlew publishToMavenLocal` in [simple-message-dispatch](https://github.com/DavidOpDeBeeck/simple-message-dispatch) first.
+Building needs Java 25 and Node.js 22.12 or newer on the `PATH`. The build uses the published SMD artifacts of the version in `gradle/libs.versions.toml`.
 
 ```shell
 ./gradlew check

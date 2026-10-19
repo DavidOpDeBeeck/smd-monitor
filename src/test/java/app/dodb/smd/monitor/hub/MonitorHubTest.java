@@ -99,15 +99,14 @@ class MonitorHubTest {
     }
 
     @Test
-    void statistics_commandHandling_countsAHandlingOutsideTheProcessingGroups() {
-        var open = first.dispatch(OPEN);
-
-        first.reportTo(hub, open, first.handle(open));
+    void statistics_command_countsItsDispatchAndNoHandling() {
+        first.reportTo(hub, first.dispatch(OPEN));
 
         assertThat(statistics().groups()).isEmpty();
-        assertThat(statistics().handlings().started()).isEqualTo(1);
+        assertThat(statistics().handlings().started()).isZero();
         assertThat(statistics().dispatches()).extracting(Counts::started, Counts::entered).containsExactly(1L, 1L);
-        assertThat(statistics().instances()).extracting(Instance::handlings).extracting(Counts::started).containsExactly(1L);
+        assertThat(statistics().instances()).extracting(instance -> instance.dispatches().started(), instance -> instance.handlings().started())
+            .containsExactly(tuple(1L, 0L));
         assertThat(statistics().eventDelay()).isEqualTo(LatencyHistogram.EMPTY);
     }
 

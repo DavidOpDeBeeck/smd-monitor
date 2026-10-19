@@ -33,10 +33,11 @@ import static java.util.Objects.requireNonNull;
 // profile, seed, and clock steps give the same reports, without sleeping or reading the system clock.
 //
 // Every whole second the clock passes starts traces worth the profile's spans per second, each at an entry command of a random application and
-// instance, the popular commands more often. A command's handling may send a query and publishes an event, which processing groups handle:
-// synchronously, on a worker thread the publication awaits, or later through an event store on any instance of the application. A group
-// handling may dispatch a further command. Some events continue in the next application: published there again with their message ID, or
-// handled there through a shared event store. A share of handlings fails, failing the dispatches that wait for them. Each instance exports
+// instance, the popular commands more often. A command's dispatch covers its handler, which may send a query and publishes an event, which
+// processing groups handle: synchronously, on a worker thread the publication awaits, or later through an event store on any instance of the
+// application. A group handling may dispatch a further command. Some events continue in the next application: published there again with
+// their message ID, or handled there through a shared event store. A share of command dispatches and handlings fails, failing the dispatches
+// that wait for them. Each instance exports
 // the spans that ended every five seconds, in batches of at most 512, shuffled, so children often arrive before their parents; like
 // OpenTelemetry's batch span processor, an instance that holds a full batch of ended spans exports it in the next second instead of waiting.
 final class LoadGenerator {
@@ -293,43 +294,27 @@ final class LoadGenerator {
         private final String traceId = hex(random.nextLong()) + hex(random.nextLong());
         private int spans;
 
+        // A command's dispatch covers its handler: the handler's query and publication continue the dispatch.
         private Done dispatchCommand(Application application, Instance instance, int command, Optional<SpanRef> continues, long start, int depth, String thread) {
             var span = newSpan();
             var messageId = newMessageId();
-            var handling = handleCommand(application, instance, command, span, messageId, start + OVERHEAD_NANOS, depth, thread);
-            var end = handling.endNanos() + OVERHEAD_NANOS;
-            emit(instance, new MessageSpan(span, continues, messageId, new Stage.Dispatch(application.commands.get(command)), Optional.empty(), instant(start), thread,
-                outcome(end - start, handling.failure())), end);
-            return new Done(end, handling.failure());
-        }
-
-        private Done handleCommand(Application application, Instance instance, int command, SpanRef dispatch, MessageId messageId, long start, int depth,
-                                   String thread) {
-            var span = newSpan();
-            var cursor = start + work();
+            var cursor = start + OVERHEAD_NANOS + work();
             if (random.nextInt(4) == 0) {
                 cursor = dispatchQuery(application, instance, command % application.queries.size(), span, cursor, thread) + work();
             }
             var event = command % application.events.size();
             var publication = publish(application, instance, application.events.get(event), event, newMessageId(), span, cursor, depth, thread, true);
-            cursor = publication.endNanos() + work();
+            var end = publication.endNanos() + work() + OVERHEAD_NANOS;
             var failure = publication.failure().or(LoadGenerator.this::maybeFail);
-            emit(instance, new MessageSpan(span, Optional.of(dispatch), messageId, new Stage.Handling(application.commands.get(command), Optional.empty()),
-                Optional.empty(), instant(start), thread, outcome(cursor - start, failure)), cursor);
-            return new Done(cursor, failure);
+            emit(instance, new MessageSpan(span, continues, messageId, new Stage.Dispatch(application.commands.get(command)), Optional.empty(), instant(start), thread,
+                outcome(end - start, failure)), end);
+            return new Done(end, failure);
         }
 
         private long dispatchQuery(Application application, Instance instance, int query, SpanRef sender, long start, String thread) {
-            var type = application.queries.get(query);
-            var dispatch = newSpan();
-            var messageId = newMessageId();
-            var handlingStart = start + OVERHEAD_NANOS;
-            var handlingEnd = handlingStart + work();
-            var end = handlingEnd + OVERHEAD_NANOS;
-            emit(instance, new MessageSpan(newSpan(), Optional.of(dispatch), messageId, new Stage.Handling(type, Optional.empty()), Optional.empty(),
-                instant(handlingStart), thread, outcome(handlingEnd - handlingStart, Optional.empty())), handlingEnd);
-            emit(instance, new MessageSpan(dispatch, Optional.of(sender), messageId, new Stage.Dispatch(type), Optional.empty(), instant(start), thread,
-                outcome(end - start, Optional.empty())), end);
+            var end = start + OVERHEAD_NANOS + work() + OVERHEAD_NANOS;
+            emit(instance, new MessageSpan(newSpan(), Optional.of(sender), newMessageId(), new Stage.Dispatch(application.queries.get(query)), Optional.empty(),
+                instant(start), thread, outcome(end - start, Optional.empty())), end);
             return end;
         }
 
@@ -398,7 +383,7 @@ final class LoadGenerator {
                 failure = command.failure();
             }
             failure = failure.or(LoadGenerator.this::maybeFail);
-            emit(instance, new MessageSpan(span, Optional.of(publication), messageId, new Stage.Handling(type, Optional.of(application.groups.get(group))),
+            emit(instance, new MessageSpan(span, Optional.of(publication), messageId, new Stage.Handling(type, application.groups.get(group)),
                 Optional.of(application.delivery(group)), instant(start), thread, outcome(cursor - start, failure)), cursor);
             return new Done(cursor, failure);
         }

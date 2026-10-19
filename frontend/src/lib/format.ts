@@ -19,9 +19,9 @@ export const applicationTitle = (name: string) =>
 export const activityName = (message: Activity) => message.processingGroup ?? shortName(message.messageType);
 export const typeKey = (application: string, kind: MessageKind, messageType: string): TypeKey => `${application}::${kind}:${messageType}`;
 export const handlingKey = (type: TypeKey, processingGroup: string): HandlingKey => `${type}@${processingGroup}`;
-// A failure cause as the hub names it: the type, the exception type, and the stage, a dispatch or the handling of its processing group, if any.
+// A failure cause as the hub names it: the type, the exception type, and the stage, a dispatch or the handling of its processing group.
 export const failureKey = (type: TypeKey, handling: boolean, processingGroup: string | null, failureType: string) =>
-    `${type}|${failureType}|${handling ? (processingGroup === null ? 'handling' : `handling:${processingGroup}`) : 'dispatch'}`;
+    `${type}|${failureType}|${handling ? `handling:${processingGroup}` : 'dispatch'}`;
 export const groupKey = (application: string, processingGroup: string): GroupKey => `${application}::GROUP:${processingGroup}`;
 export const threadLabel = (name: string | null) => name || 'virtual thread';
 

@@ -1,13 +1,12 @@
 package app.dodb.smd.monitor.hub.span;
 
-import java.util.Optional;
-
 import static java.util.Objects.requireNonNull;
 
 public sealed interface Stage {
 
     MessageType type();
 
+    // A command's or query's dispatch covers its handler too.
     record Dispatch(MessageType type) implements Stage {
 
         public Dispatch {
@@ -15,15 +14,15 @@ public sealed interface Stage {
         }
     }
 
-    // Each processing group handles an event; a command or query has a single handler and no processing group.
-    record Handling(MessageType type, Optional<String> processingGroup) implements Stage {
+    // Each processing group handles an event; commands and queries have no handling of their own.
+    record Handling(MessageType type, String processingGroup) implements Stage {
 
         public Handling {
             requireNonNull(type);
             requireNonNull(processingGroup);
-            if (processingGroup.isPresent() != (type.kind() == MessageKind.EVENT)) {
-                throw new IllegalArgumentException("Handling of " + type.kind() + " " + type.name() + " requires a processing group for an event and none for "
-                    + "a command or query; got " + processingGroup.map(group -> "processing group '" + group + "'").orElse("no processing group"));
+            if (type.kind() != MessageKind.EVENT) {
+                throw new IllegalArgumentException("Handling in processing group '" + processingGroup + "' requires an event; got " + type.kind() + " "
+                    + type.name() + ", whose dispatch covers its handler");
             }
         }
     }
