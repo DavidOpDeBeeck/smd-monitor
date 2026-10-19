@@ -297,9 +297,9 @@ reference: 50 applications × 10 instances, 200 types and 50 groups each, 2 GB, 
 ```
 
 A run writes a table, every second as CSV, and its limits and steps as JSON to `build/saturation`, and the latest progress line to `build/saturation/progress.txt`.
-Name the machine with `-PsaturationMachine="..."`, pass collector flags with `-PsaturationJvmArgs`, and choose the Python of `saturationDashboard` with
-`-PsaturationPython`. `docs/saturation` keeps every run added; its page compares them on one scale, so an improvement shows as a limit that moves right. Compare only
-runs of the same machine, and run on an idle one.
+Name the machine with `-PsaturationMachine="..."`, pass collector flags with `-PsaturationJvmArgs`, name the run on the page with `-PsaturationName="..."`
+instead of Run N, and choose the Python of `saturationDashboard` with `-PsaturationPython`. `docs/saturation` keeps every run added; its page compares
+them on one scale, so an improvement shows as a limit that moves right. Compare only runs of the same machine, and run on an idle one.
 
 Run 6, 2026-10-19, on the machine of [Results](#results), in spans per second:
 

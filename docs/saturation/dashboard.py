@@ -2,9 +2,11 @@
 
 The runs, steps, seconds and scenarios files hold every run added so far; setup and profile describe how they were measured. With --add, the results of
 one run that SaturationRun wrote (<scenario>.json and <scenario>.csv in build/saturation) are merged into them first: the run becomes the next Run N, or
-replaces itself when it is already there. Either way the page is written again as one self-contained HTML file, the data inlined, that opens from disk.
+replaces itself when it is already there. --name gives the run added a short name the page shows instead of Run N, and --rename names a run kept by its
+number. Either way the page is written again as one self-contained HTML file, the data inlined, that opens from disk.
 
-Usage: python -I docs/saturation/dashboard.py [--add build/saturation [--only <scenario,...>]] [--keep-seconds 3] [--out build/saturation/dashboard.html]
+Usage: python -I docs/saturation/dashboard.py [--add build/saturation [--only <scenario,...>] [--name <name>]] [--rename <N>=<name> ...] [--keep-seconds 3]
+       [--out build/saturation/dashboard.html]
 """
 import argparse
 import csv
@@ -136,7 +138,7 @@ def seconds_of(result, csv_path, step_seconds):
     return seconds
 
 
-def add_run(data, results_dir, only, keep_seconds, step_seconds):
+def add_run(data, results_dir, only, name, keep_seconds, step_seconds):
     results = [read_json(path) for path in sorted(results_dir.glob('*.json'))]
     results = [result for result in results if 'steps' in result and 'run' in result and (not only or result['scenario'] in only)]
     if not results:
@@ -152,7 +154,8 @@ def add_run(data, results_dir, only, keep_seconds, step_seconds):
     orders = {run['run']: run['order'] for run in data['runs']}
     replaced = run_id in orders
     order = orders.get(run_id, max(orders.values(), default=0) + 1)
-    label = f'Run {order}, {run_id}'
+    name = name or next((run['name'] for run in data['runs'] if run['run'] == run_id and run.get('name')), None)
+    label = label_of(order, name, run_id)
 
     runs = [run for run in data['runs'] if run['run'] != run_id]
     steps = [step for step in data['steps'] if step['run'] != run_id]
@@ -164,6 +167,7 @@ def add_run(data, results_dir, only, keep_seconds, step_seconds):
             'run': run_id,
             'label': label,
             'order': order,
+            **({'name': name} if name else {}),
             'machine': result['machine'],
             'scenario': result['scenario'],
             'keepsUp': result['keepsUp'],
@@ -210,6 +214,27 @@ def add_run(data, results_dir, only, keep_seconds, step_seconds):
     }
 
 
+# A run is labelled by its name when it has one, and by its number otherwise, followed by when it started and the commit it ran.
+def label_of(order, name, run_id):
+    return f'{name or f"Run {order}"}, {run_id}'
+
+
+# Names the runs kept by their number: "7=Reserved queue room" names Run 7; an empty name, "7=", takes the name away.
+def rename_runs(runs, renames):
+    orders = {run['order'] for run in runs}
+    for rename in renames:
+        number, separator, name = rename.partition('=')
+        if not separator or not number.strip().isdigit() or int(number) not in orders:
+            fail(f'--rename takes <N>=<name> for a run kept, N one of {sorted(orders)}; got {rename!r}')
+        for run in runs:
+            if run['order'] == int(number):
+                run.pop('name', None)
+                if name.strip():
+                    run['name'] = name.strip()
+                run['label'] = label_of(run['order'], run.get('name'), run['run'])
+    return [{field: run[field] for field in ['run', 'label', 'order', 'name'] if field in run} | run for run in runs]
+
+
 # The data goes into a script element as JSON; "</" is escaped so no value can end that element.
 def write_page(data, out):
     template = (HERE / 'dashboard.html').read_text(encoding='utf-8')
@@ -224,6 +249,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--add', type=Path, help='a results directory of one run to add, such as build/saturation')
     parser.add_argument('--only', default='', help='comma-separated scenario IDs to take from the results; all by default')
+    parser.add_argument('--name', help='a short name for the run --add adds, which the page shows instead of Run N; a run added again keeps its name')
+    parser.add_argument('--rename', action='append', default=[], help='<N>=<name>: names Run N of the runs kept; <N>= takes its name away')
     parser.add_argument('--keep-seconds', type=int, default=3, help='how many of the latest runs keep their seconds')
     parser.add_argument('--step-seconds', type=int, default=30, help="SaturationScenario's STEP, for results that record neither steps' seconds nor stepS")
     parser.add_argument('--out', type=Path, default=ROOT / 'build' / 'saturation' / 'dashboard.html')
@@ -231,13 +258,18 @@ def main():
 
     data = {name: read_json(HERE / f'{name}.json') for name in DATASETS}
     data['seconds'] = expand_seconds(data['seconds'])
+    if args.name and not args.add:
+        fail('--name names the run --add adds; name a run kept with --rename <N>=<name>')
     if args.add:
         only = {each.strip() for each in args.only.split(',') if each.strip()}
-        data, summary = add_run(data, args.add, only, args.keep_seconds, args.step_seconds)
+        data, summary = add_run(data, args.add, only, args.name, args.keep_seconds, args.step_seconds)
         for name in ['runs', 'steps', 'scenarios']:
             write_rows(HERE / f'{name}.json', data[name])
         write_rows(HERE / 'seconds.json', compact_seconds(data['seconds']))
         print(json.dumps(summary, indent=2, ensure_ascii=False))
+    if args.rename:
+        data['runs'] = rename_runs(data['runs'], args.rename)
+        write_rows(HERE / 'runs.json', data['runs'])
     write_page(dict(data, seconds=compact_seconds(data['seconds'])), args.out)
     print(f'Wrote {args.out}')
 

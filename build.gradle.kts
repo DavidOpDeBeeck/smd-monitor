@@ -173,7 +173,8 @@ tasks.register<JavaExec>("saturation") {
 }
 
 // Adds the run in build/saturation to the runs kept in docs/saturation and writes build/saturation/dashboard.html (docs/saturation/dashboard.py).
-// Take some scenarios of the results only with -PsaturationOnly=reference,applications-200. Runs Python with the py launcher on Windows, where
+// Take some scenarios of the results only with -PsaturationOnly=reference,applications-200, and name the run on the page with
+// -PsaturationName="Reserved queue room" instead of Run N. Runs Python with the py launcher on Windows, where
 // python often opens the Microsoft Store instead, and python3 elsewhere; choose another with -PsaturationPython=/path/to/python.
 tasks.register<Exec>("saturationDashboard") {
     group = "verification"
@@ -181,11 +182,13 @@ tasks.register<Exec>("saturationDashboard") {
     val windows = System.getProperty("os.name").startsWith("Windows")
     val python = providers.gradleProperty("saturationPython").orElse(if (windows) "py" else "python3")
     val only = providers.gradleProperty("saturationOnly").orElse("")
+    val name = providers.gradleProperty("saturationName")
     val results = layout.buildDirectory.dir("saturation")
     workingDir = layout.projectDirectory.asFile
     executable = python.get()
     argumentProviders.add(CommandLineArgumentProvider {
-        listOf("-I", "docs/saturation/dashboard.py", "--add", results.get().asFile.path, "--only", only.get())
+        listOf("-I", "docs/saturation/dashboard.py", "--add", results.get().asFile.path, "--only", only.get()) +
+            (name.orNull?.let { listOf("--name", it) } ?: emptyList())
     })
 }
 

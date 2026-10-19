@@ -543,7 +543,8 @@
   const orders = [...new Set(runs.map((run) => run.order))].sort((a, b) => a - b);
   const allRuns = orders.map((order, index) => {
     const row = runs.find((run) => run.order === order);
-    return { run: row.run, order, label: row.label, machine: row.machine, name: `Run ${order}`, ...partsOf(row.run), color: `var(${SERIES[index % SERIES.length]})` };
+    // A run shows its name when dashboard.py gave it one, and its number otherwise; the query string always picks runs by number.
+    return { run: row.run, order, label: row.label, machine: row.machine, name: row.name || `Run ${order}`, ...partsOf(row.run), color: `var(${SERIES[index % SERIES.length]})` };
   });
   const runById = new Map(allRuns.map((run) => [run.run, run]));
   const rowsByRun = new Map(groupsInOrder(runs, (row) => row.run));
@@ -694,6 +695,13 @@
   const dot = (svg, cx, cy, color, r = 4, key) => el(svg, 'circle', { cx, cy, r, fill: color, stroke: 'var(--panel)', 'stroke-width': 2, 'data-key': key });
   const axisTitle = (svg, x, y, text) => el(svg, 'text', { class: 'title', x, y, 'text-anchor': 'end' }, text);
   // A name in a small pill, its box measured first so the pill fits.
+  // A name cut to the room it has, ending in an ellipsis; the legend above the chart holds it whole.
+  const fitText = (svg, text, room) => {
+    if (textWidth(svg, text, 'strong') <= room) return text;
+    let cut = text;
+    while (cut.length > 1 && textWidth(svg, `${cut}…`, 'strong') > room) cut = cut.slice(0, -1);
+    return `${cut.trimEnd()}…`;
+  };
   const pillText = (svg, x, y, text) => {
     const width = textWidth(svg, text, 'strong') + 12;
     el(svg, 'rect', { class: 'pill', x: x - 6, y: y - 10, width, height: 20, rx: 10 });
@@ -817,8 +825,10 @@
     const limitOf = (run, scenario) => (rowsOf(run.run).get(scenario.scenario) || {})[limit];
     const baselineOf = (scenario) => picked.find((run) => rowsOf(run.run).has(scenario.scenario));
     const changeOf = (run, scenario) => {
+      const baseline = baselineOf(scenario);
+      if (!baseline) return null;
       const mine = limitOf(run, scenario);
-      const base = limitOf(baselineOf(scenario), scenario);
+      const base = limitOf(baseline, scenario);
       return present(mine) && present(base) && base > 0 ? mine / base - 1 : null;
     };
     let x;
@@ -899,7 +909,8 @@
     const { svg, width } = svgIn(container, height);
     const yTicks = (scale) => (linear() ? scale.ticks(6) : [1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, max].filter((tick) => tick <= max));
     const left = Math.ceil(maxOf(yTicks(rateScale([0, 1])), (tick) => textWidth(svg, compact(tick)))) + 12;
-    const right = Math.ceil(textWidth(svg, 'Run 00', 'strong')) + 36;
+    // Room for the longest name picked at the lines' ends, up to a quarter of the chart.
+    const right = Math.ceil(Math.min(width / 4, maxOf(picked, (run) => textWidth(svg, run.name, 'strong')))) + 36;
     const margin = { top: 16, right, bottom: 48, left };
     const x = pointScale(members.map((scenario) => scenario.scenario), [margin.left + 18, width - margin.right - 18]);
     const y = rateScale([height - margin.bottom, margin.top]);
@@ -933,7 +944,7 @@
     const labelYs = spreadApart(ends.map((end) => end.y), 22, margin.top + 10, height - margin.bottom - 10);
     ends.forEach((end, index) => {
       el(svg, 'line', { x1: end.x + 6, y1: end.y, x2: labelX - 8, y2: labelYs[index], stroke: end.run.color, 'stroke-width': 1, 'stroke-opacity': 0.7, 'data-key': end.run.run });
-      pillText(svg, labelX, labelYs[index], end.run.name);
+      pillText(svg, labelX, labelYs[index], fitText(svg, end.run.name, right - 36));
     });
     const tip = tooltip(container);
     const rule = el(svg, 'line', { class: 'rule', y1: margin.top, y2: height - margin.bottom, opacity: 0 });
@@ -1235,6 +1246,7 @@
       lede.append('Each sweep changes one thing of the reference shape, so the difference between two of its points has one cause.');
     }
     fillTable(document.getElementById('runs-table'), [
+      { label: 'Number', value: (run) => run.order },
       { label: 'Run', text: true, value: (run) => run.name, color: (run) => run.color },
       { label: 'Started', text: true, value: (run) => run.when },
       { label: 'Commit', text: true, value: (run) => run.short },
@@ -1268,7 +1280,7 @@
       chip.className = 'btn run-chip';
       chip.setAttribute('aria-pressed', String(pickedIds.has(run.run)));
       chip.disabled = full && !pickedIds.has(run.run);
-      chip.title = `${run.name}: started ${run.when}, commit ${run.commit}${run.changed ? ' with uncommitted changes' : ''}, on ${run.machine}. `
+      chip.title = `${run.name} (run ${run.order}): started ${run.when}, commit ${run.commit}${run.changed ? ' with uncommitted changes' : ''}, on ${run.machine}. `
         + (pickedIds.has(run.run) ? 'Click to leave it out.' : full ? `At most ${MAX_PICKED} runs compare at once.` : 'Click to compare it.');
       chip.style.setProperty('--run', run.color);
       const mark = document.createElement('i');

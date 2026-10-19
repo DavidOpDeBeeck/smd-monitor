@@ -16,9 +16,10 @@
     },
     {
       "name": "saturation-page",
-      "runtimeExecutable": "python",
-      "runtimeArgs": ["-I", "-m", "http.server", "8765", "--bind", "127.0.0.1", "--directory", "build/saturation"],
-      "port": 8765
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "python3 -I docs/saturation/dashboard.py --out build/saturation-page/dashboard.html && exec python3 -I -m http.server 8765 --bind 0.0.0.0 --directory build/saturation-page"],
+      "port": 8765,
+      "url": "http://127.0.0.1:8765/dashboard.html"
     }
   ]
 }
