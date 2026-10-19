@@ -1,0 +1,25 @@
+{
+    "name": "smd-monitor-ui",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "vite",
+        "build": "tsc --noEmit && vite build",
+        "typecheck": "tsc --noEmit",
+        "format": "prettier --write .",
+        "format:check": "prettier --check ."
+    },
+    "dependencies": {
+        "@solid-primitives/keyed": "^1.5.3",
+        "solid-js": "^1.9.17"
+    },
+    "devDependencies": {
+        "@tailwindcss/vite": "^4.3.3",
+        "prettier": "^3.9.9",
+        "prettier-plugin-tailwindcss": "^0.8.1",
+        "tailwindcss": "^4.3.3",
+        "typescript": "^7.0.2",
+        "vite": "^8.3.4",
+        "vite-plugin-solid": "^2.11.14"
+    }
+}

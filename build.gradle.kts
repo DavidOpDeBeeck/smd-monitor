@@ -1,0 +1,206 @@
+plugins {
+    java
+    alias(libs.plugins.spring.boot)
+    alias(libs.plugins.jmh)
+}
+
+group = "app.dodb"
+version = libs.versions.smd.monitor.get()
+
+base {
+    archivesName = "smd-monitor-hub"
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_25
+}
+
+springBoot {
+    mainClass = "app.dodb.smd.monitor.hub.spring.MonitorHubApplication"
+}
+
+repositories {
+    mavenCentral()
+    mavenLocal()
+}
+
+val integrationTest = sourceSets.create("integrationTest") {
+    compileClasspath += sourceSets.main.get().output + configurations.testRuntimeClasspath.get()
+    runtimeClasspath += output + compileClasspath
+}
+
+configurations[integrationTest.implementationConfigurationName].extendsFrom(configurations.testImplementation.get())
+configurations[integrationTest.runtimeOnlyConfigurationName].extendsFrom(configurations.testRuntimeOnly.get())
+
+dependencies {
+    implementation(platform(libs.spring.boot.dependencies))
+    implementation(libs.smd.api)
+    implementation(libs.smd.opentelemetry)
+    // Includes Spring MVC.
+    implementation("org.springframework.boot:spring-boot-starter-websocket")
+    implementation(libs.jackson.databind)
+    compileOnly(libs.opentelemetry.sdk.trace)
+
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.assertj)
+    testImplementation(libs.awaitility)
+    testRuntimeOnly(libs.junit.platform.launcher)
+    testImplementation(libs.opentelemetry.sdk.testing)
+    // The OTLP exporter's own encoder, so decoding is tested against what exporters send.
+    testImplementation(libs.opentelemetry.exporter.otlp.common)
+
+    "integrationTestImplementation"(libs.spring.boot.starter.test)
+    "integrationTestImplementation"(libs.smd.spring.boot.starter)
+    "integrationTestImplementation"(libs.bundles.spring.boot.opentelemetry.tracing)
+}
+
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
+    maxParallelForks = Runtime.getRuntime().availableProcessors()
+}
+
+val integrationTestTask = tasks.register<Test>("integrationTest") {
+    description = "Runs integration tests"
+    group = "verification"
+    testClassesDirs = integrationTest.output.classesDirs
+    classpath = integrationTest.runtimeClasspath
+    shouldRunAfter(tasks.test)
+}
+
+tasks.check {
+    dependsOn(integrationTestTask)
+}
+
+// The browser UI is a SolidJS + Tailwind project bundled by Vite; it needs Node.js 22.12 or newer on the PATH.
+val frontend = layout.projectDirectory.dir("frontend")
+
+// npm is a batch script on Windows, which a process can only start through cmd.
+fun npm(vararg arguments: String): List<String> =
+    if (System.getProperty("os.name").startsWith("Windows")) listOf("cmd", "/c", "npm", *arguments) else listOf("npm", *arguments)
+
+val installMonitorUi = tasks.register<Exec>("installMonitorUi") {
+    description = "Installs the locked npm dependencies of the monitor UI"
+    group = "build"
+    workingDir = frontend.asFile
+    // Not `npm ci`: it deletes node_modules first, which fails on Windows while an IDE has a native module loaded.
+    commandLine(npm("install", "--no-audit", "--no-fund"))
+    inputs.files(frontend.file("package.json"), frontend.file("package-lock.json"))
+    outputs.file(frontend.file("node_modules/.package-lock.json"))
+}
+
+val buildMonitorUi = tasks.register<Exec>("buildMonitorUi") {
+    description = "Type-checks and bundles the monitor UI into classpath resources under smd-monitor/"
+    group = "build"
+    dependsOn(installMonitorUi)
+    workingDir = frontend.asFile
+    commandLine(npm("run", "build"))
+    inputs.dir(frontend.dir("src"))
+    inputs.files(frontend.file("index.html"), frontend.file("vite.config.ts"), frontend.file("tsconfig.json"), frontend.file("package-lock.json"))
+    outputs.dir(layout.buildDirectory.dir("generated/monitor-ui"))
+}
+
+sourceSets.main {
+    resources.srcDir(buildMonitorUi)
+}
+
+val demo = sourceSets.create("demo") {
+    compileClasspath += sourceSets.main.get().output + configurations.runtimeClasspath.get()
+    runtimeClasspath += output + compileClasspath
+}
+
+dependencies {
+    "demoImplementation"(libs.smd.spring.boot.starter)
+    "demoImplementation"(libs.bundles.spring.boot.opentelemetry.tracing)
+}
+
+tasks.register<JavaExec>("demo") {
+    description = "Runs a monitor hub with a ticket service and a billing service exporting their spans to it"
+    group = "application"
+    classpath = demo.runtimeClasspath
+    mainClass.set("app.dodb.smd.monitor.hub.demo.HubDemo")
+}
+
+// Benchmarks of ingest, frames, and queries at the design targets of docs/monitor-hub-design.md; they share the load generator of the tests.
+// Narrow them with -PjmhIncludes=<regex>, for example -PjmhIncludes=ReceiveBenchmark.
+jmh {
+    jmhVersion = libs.versions.jmh
+    includeTests = true
+    fork = 1
+    warmupIterations = 2
+    warmup = "5s"
+    iterations = 3
+    timeOnIteration = "5s"
+    jvmArgs = listOf("-Xms12g", "-Xmx12g")
+    resultFormat = "JSON"
+    providers.gradleProperty("jmhIncludes").orNull?.let { includes = listOf(it) }
+    // For example -PjmhProfilers=stack, to see where a benchmark spends its time.
+    providers.gradleProperty("jmhProfilers").orNull?.let { profilers = it.split(",") }
+}
+
+// The JVM of a saturation run: the heap the benchmarks use, a GC log per process in the output directory, which the JVM opens before the run
+// creates it, and optionally a flight recording, for example -PsaturationJfr=build/saturation/B100.jfr, to see where the writer and the
+// collector spend their time.
+fun JavaExec.saturationJvm(output: Provider<Directory>) {
+    group = "verification"
+    classpath = sourceSets["jmh"].runtimeClasspath
+    jvmArgs("-Xms12g", "-Xmx12g", "-Xlog:gc:file=${output.get().file("gc-%p.log").asFile.path}")
+    providers.gradleProperty("saturationJfr").orNull?.let { jvmArgs("-XX:StartFlightRecording=filename=$it,settings=profile") }
+    // For example -PsaturationJvmArgs="-XX:+UseZGC", to measure with another collector than the default G1.
+    providers.gradleProperty("saturationJvmArgs").orNull?.let { jvmArgs(it.split(" ").filter(String::isNotBlank)) }
+    // For example -PsaturationMachine="i5-12600K, 64 GB, Windows 11", to name the machine in the results; described from the JVM otherwise.
+    providers.gradleProperty("saturationMachine").orNull?.let { jvmArgs("-Dsaturation.machine=$it") }
+    doFirst { output.get().asFile.mkdirs() }
+}
+
+// Open-loop saturation runs of the hub with its writer thread, which raise the span rate step by step until it sheds, falls behind, or refuses;
+// see SaturationScenario. Narrow them with -PsaturationScenarios=quick (the reference and the profiles), a sweep such as applications, or IDs such as
+// applications-200, and shorten the history filled first with -PsaturationFill=PT2M. Offer only some rates instead of the ladder with
+// -PsaturationRates=40000,50000,60000, and write into another directory of build than saturation with -PsaturationOutput=saturation-probe, so a
+// probe leaves the full run's results alone. Each run prints a line per rate after where the run stands and about how long it still takes, keeps
+// the latest in <output>/progress.txt, appends a table per scenario to <output>/summary.md, and writes every second to <output>/<scenario>.csv.
+tasks.register<JavaExec>("saturation") {
+    description = "Runs the hub's open-loop saturation scenarios"
+    val output = layout.buildDirectory.dir(providers.gradleProperty("saturationOutput").orElse("saturation"))
+    saturationJvm(output)
+    mainClass.set("app.dodb.smd.monitor.hub.SaturationRun")
+    val scenarios = providers.gradleProperty("saturationScenarios").orElse("all")
+    val fill = providers.gradleProperty("saturationFill").orElse("-")
+    val rates = providers.gradleProperty("saturationRates")
+    argumentProviders.add(CommandLineArgumentProvider {
+        listOf(scenarios.get(), output.get().asFile.path, fill.get()) + listOfNotNull(rates.orNull)
+    })
+}
+
+// Adds the run in build/saturation to the runs kept in docs/saturation and writes build/saturation/dashboard.html (docs/saturation/dashboard.py).
+// Take some scenarios of the results only with -PsaturationOnly=reference,applications-200. Runs Python with the py launcher on Windows, where
+// python often opens the Microsoft Store instead, and python3 elsewhere; choose another with -PsaturationPython=/path/to/python.
+tasks.register<Exec>("saturationDashboard") {
+    group = "verification"
+    description = "Adds the saturation run in build/saturation to docs/saturation and writes the saturation page"
+    val windows = System.getProperty("os.name").startsWith("Windows")
+    val python = providers.gradleProperty("saturationPython").orElse(if (windows) "py" else "python3")
+    val only = providers.gradleProperty("saturationOnly").orElse("")
+    val results = layout.buildDirectory.dir("saturation")
+    workingDir = layout.projectDirectory.asFile
+    executable = python.get()
+    argumentProviders.add(CommandLineArgumentProvider {
+        listOf("-I", "docs/saturation/dashboard.py", "--add", results.get().asFile.path, "--only", only.get())
+    })
+}
+
+// Checks the throughput docs/monitor.md documents for the reference machine, scenario by scenario (SaturationCheck); about 40 minutes on a quiet
+// machine, so it is left out of check. Narrow it with -PsaturationScenarios=profiles, for example.
+tasks.register<JavaExec>("saturationCheck") {
+    description = "Checks that the hub sustains the throughput its documentation promises"
+    val output = layout.buildDirectory.dir("saturation-check")
+    saturationJvm(output)
+    mainClass.set("app.dodb.smd.monitor.hub.SaturationCheck")
+    val scenarios = providers.gradleProperty("saturationScenarios").orElse("")
+    argumentProviders.add(CommandLineArgumentProvider { listOf(output.get().asFile.path, scenarios.get()) })
+}
+
+// Keeps the benchmarks compiling as the hub changes; running them is left to the jmh task.
+tasks.check {
+    dependsOn(tasks.jmhClasses)
+}

@@ -1,0 +1,52 @@
+[versions]
+smd-monitor = "0.0.1"
+smd = "0.0.12"
+
+# Core libraries
+jackson = "3.0.4"
+
+# Spring
+spring = "4.0.3"
+
+# Testing
+assertj = "3.27.7"
+awaitility = "4.3.0"
+junit = "6.0.3"
+
+# Benchmarks
+jmh = "1.37"
+gradle-jmh-plugin = "0.7.3"
+
+[libraries]
+# Simple Message Dispatch
+smd-api = { module = "app.dodb:smd-api", version.ref = "smd" }
+smd-opentelemetry = { module = "app.dodb:smd-opentelemetry", version.ref = "smd" }
+smd-spring-boot-starter = { module = "app.dodb:smd-spring-boot-starter", version.ref = "smd" }
+
+# Core libraries
+jackson-databind = { module = "tools.jackson.core:jackson-databind", version.ref = "jackson" }
+opentelemetry-sdk-testing = { module = "io.opentelemetry:opentelemetry-sdk-testing" }
+opentelemetry-sdk-trace = { module = "io.opentelemetry:opentelemetry-sdk-trace" }
+opentelemetry-exporter-otlp = { module = "io.opentelemetry:opentelemetry-exporter-otlp" }
+opentelemetry-exporter-otlp-common = { module = "io.opentelemetry:opentelemetry-exporter-otlp-common" }
+
+# Spring Boot
+spring-boot-dependencies = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring" }
+spring-boot-micrometer-tracing-opentelemetry = { module = "org.springframework.boot:spring-boot-micrometer-tracing-opentelemetry" }
+micrometer-tracing-bridge-otel = { module = "io.micrometer:micrometer-tracing-bridge-otel" }
+spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
+
+# Testing
+assertj = { module = "org.assertj:assertj-core", version.ref = "assertj" }
+awaitility = { module = "org.awaitility:awaitility", version.ref = "awaitility" }
+junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+
+[bundles]
+# Spring Boot's OpenTelemetry tracing with OTLP span export, without the OTLP metrics registry of spring-boot-starter-opentelemetry.
+spring-boot-opentelemetry-tracing = ["spring-boot-micrometer-tracing-opentelemetry", "micrometer-tracing-bridge-otel", "opentelemetry-exporter-otlp"]
+
+[plugins]
+jmh = { id = "me.champeau.jmh", version.ref = "gradle-jmh-plugin" }
+spring-boot = { id = "org.springframework.boot", version.ref = "spring" }

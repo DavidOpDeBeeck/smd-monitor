@@ -1,0 +1,1509 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor hub saturation</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f4f3ee;
+    --panel: #ffffff;
+    --sunken: #faf9f5;
+    --line: #e2dfd5;
+    --fg: #1f1e1b;
+    --muted: #6b6860;
+    --grid: #ece9e1;
+    --axis: #cbc7ba;
+    --reference: #9a968b;
+    --accent: #5148e0;
+    --ok: #0ca30c;
+    --warn: #b88600;
+    --bad: #d03c3c;
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --series-3: #1baf7a;
+    --series-4: #eda100;
+    --series-5: #e87ba4;
+    --series-6: #008300;
+    --series-7: #6250d6;
+    --series-8: #e34948;
+    --shadow: 0 2px 4px rgb(40 36 20 / 10%), 0 14px 32px -12px rgb(40 36 20 / 30%);
+    --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: ui-monospace, 'Cascadia Code', 'JetBrains Mono', SFMono-Regular, Consolas, monospace;
+    --control-h: 28px;
+    --radius: 8px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #101113;
+      --panel: #17181b;
+      --sunken: #1c1d21;
+      --line: #292b30;
+      --fg: #ebeae6;
+      --muted: #a19f98;
+      --grid: #23252a;
+      --axis: #3b3e45;
+      --reference: #6d6b66;
+      --accent: #8d87ff;
+      --ok: #0ca30c;
+      --warn: #e3b23c;
+      --bad: #f2665f;
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --series-3: #199e70;
+      --series-4: #c98500;
+      --series-5: #d55181;
+      --series-6: #008300;
+      --series-7: #9085e9;
+      --series-8: #e66767;
+      --shadow: 0 2px 6px rgb(0 0 0 / 50%), 0 16px 36px -12px rgb(0 0 0 / 80%);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #101113;
+    --panel: #17181b;
+    --sunken: #1c1d21;
+    --line: #292b30;
+    --fg: #ebeae6;
+    --muted: #a19f98;
+    --grid: #23252a;
+    --axis: #3b3e45;
+    --reference: #6d6b66;
+    --accent: #8d87ff;
+    --ok: #0ca30c;
+    --warn: #e3b23c;
+    --bad: #f2665f;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+    --series-7: #9085e9;
+    --series-8: #e66767;
+    --shadow: 0 2px 6px rgb(0 0 0 / 50%), 0 16px 36px -12px rgb(0 0 0 / 80%);
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { margin: 0; overflow: hidden; background: var(--bg); color: var(--fg); font-family: var(--font-sans); font-size: 14px; line-height: 1.4; -webkit-font-smoothing: antialiased; }
+  .app { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100vh; }
+
+  /* The top bar: the product, the runs to compare, the theme. */
+  .topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 8px 20px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 9px; font-size: 14px; color: var(--muted); white-space: nowrap; }
+  .brand b { color: var(--fg); font-weight: 800; }
+  .brand svg { width: 24px; height: auto; }
+  .brand .product { color: var(--fg); font-weight: 600; padding-left: 10px; margin-left: 2px; border-left: 1px solid var(--line); }
+  .runs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 1 1 auto; }
+  .runs-label { font-size: 12px; color: var(--muted); margin-right: 4px; }
+  .run-chip { --run: var(--muted); border-radius: 999px; padding: 0 11px 0 9px; color: var(--muted); }
+  .run-chip[aria-pressed="true"] { color: var(--fg); border-color: color-mix(in srgb, var(--run) 55%, var(--line)); background: color-mix(in srgb, var(--run) 16%, var(--panel)); }
+  .run-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; border: 2px solid var(--run); }
+  .run-chip[aria-pressed="true"] .run-dot { border: 0; background: var(--run); }
+  .run-name { font-weight: 600; }
+  .run-commit { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+  .note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+  .note.warn { color: var(--warn); }
+
+  /* The body: the rail of views and the stage. */
+  .body { display: grid; grid-template-columns: 15rem minmax(0, 1fr); min-height: 0; }
+  .rail { overflow: auto; padding: 18px 12px; border-right: 1px solid var(--line); display: grid; gap: 20px; align-content: start; }
+  .rail-group { display: grid; gap: 2px; }
+  .rail-title { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 0 12px 5px; }
+  .rail button { font: inherit; font-size: 13px; text-align: left; padding: 7px 12px; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease; }
+  .rail button:hover { background: var(--panel); color: var(--fg); }
+  .rail button[aria-current="true"] { background: color-mix(in srgb, var(--accent) 14%, var(--panel)); color: var(--fg); font-weight: 600;
+    box-shadow: inset 3px 0 0 var(--accent); }
+  .stage { display: flex; flex-direction: column; gap: 10px; padding: 16px 22px 14px; min-height: 0; min-width: 0; }
+  .stage-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 6px 20px; }
+  .stage-head > div { display: grid; gap: 3px; min-width: 0; }
+  h2 { font-size: 24px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+  h3 { font-size: 16px; font-weight: 600; margin: 0; }
+  .how { margin: 0; color: var(--muted); max-width: 100ch; line-height: 1.5; font-size: 14px; }
+  .how b { color: var(--fg); font-weight: 600; }
+  /* The series key: one line per series the chart draws, its name and what it did; resting on one lights it on the chart. */
+  .facts { display: flex; flex-wrap: wrap; gap: 2px 6px; margin: 0 -8px; }
+  .fact { display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border-radius: 6px; font-size: 12.5px; color: var(--muted); line-height: 1.35; }
+  .fact[data-key]:hover { background: var(--panel); color: var(--fg); }
+  .fact b { color: var(--fg); font-weight: 600; white-space: nowrap; }
+  .fact .dot { width: 9px; height: 9px; }
+  .stage-chart { flex: 1 1 auto; min-height: 0; overflow: auto; position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .stage-table { flex: 1 1 auto; min-height: 0; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
+  .stage-about { flex: 1 1 auto; min-height: 0; overflow: auto; display: grid; gap: 14px; align-content: start; padding-right: 4px; }
+  .stage-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; }
+  .chart { position: relative; }
+  .chart svg { display: block; overflow: visible; }
+  .chart svg text { fill: var(--muted); font-size: 12.5px; font-family: var(--font-sans); font-variant-numeric: tabular-nums; }
+  .chart svg text.strong { fill: var(--fg); }
+  .chart svg text.title { font-size: 11.5px; letter-spacing: 0.02em; }
+  .chart svg text.group { fill: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+  .chart svg text.pick { cursor: pointer; }
+  .chart svg text.pick:hover { fill: var(--fg); }
+  .chart svg .gridline { stroke: var(--grid); }
+  .chart svg .axis line { stroke: var(--axis); }
+  .chart svg .rule { stroke: var(--axis); }
+  .chart svg .reference { stroke: var(--reference); stroke-dasharray: 4 4; }
+  .chart svg .hit { fill: transparent; }
+  .chart svg .hit.pick { cursor: pointer; }
+  .chart svg .row-band { fill: var(--sunken); }
+  .chart svg .row-glow { fill: var(--accent); opacity: 0; }
+  .chart svg .row-glow.on { opacity: 0.08; }
+  .chart svg .pill { fill: var(--panel); stroke: var(--line); }
+  .chart svg [data-key] { transition: opacity 0.15s ease; }
+  .chart.dimmed svg [data-key] { opacity: 0.12; }
+  .chart.dimmed svg [data-key].lit { opacity: 1; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .swatch { width: 14px; height: 3px; border-radius: 2px; display: inline-block; flex: none; }
+  .swatch.block { height: 11px; width: 11px; border-radius: 3px; }
+  .swatch.dashed { background: none; border-top: 2px dashed var(--reference); height: 0; }
+  .tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow);
+    padding: 8px 12px; font-size: 12.5px; white-space: nowrap; z-index: 6; display: grid; gap: 3px; }
+  .tip-head { color: var(--muted); font-weight: 600; margin-bottom: 2px; }
+  .tip-row { display: grid; grid-template-columns: 14px auto 1fr; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; }
+  .tip-row .swatch { grid-column: 1; }
+  .tip-row b { font-weight: 600; grid-column: 2; }
+  .tip-row span { grid-column: 3; color: var(--muted); }
+  /* Controls: a button, a select, and a segmented choice share one height, border, and radius, so any strip of them lines up. */
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; }
+  .controls.strip { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; }
+  .control { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .btn, .select, .segmented { height: var(--control-h); font: inherit; font-size: 13px; color: var(--fg); background: var(--sunken); border: 1px solid var(--line); border-radius: var(--radius); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 11px; white-space: nowrap; cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease; }
+  .btn:hover, .select:hover { border-color: var(--axis); }
+  .btn[disabled] { cursor: not-allowed; opacity: 0.5; }
+  .btn.icon { width: var(--control-h); padding: 0; font-size: 16px; line-height: 1; }
+  .stepper { display: inline-flex; align-items: center; gap: 4px; }
+  .select { appearance: none; min-width: 0; max-width: 100%; padding: 0 30px 0 10px; cursor: pointer; text-overflow: ellipsis;
+    background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+    background-position: calc(100% - 15px) 50%, calc(100% - 10px) 50%; background-size: 5px 5px; background-repeat: no-repeat; }
+  .select option, .select optgroup { background: var(--panel); color: var(--fg); }
+  .segmented { display: inline-flex; align-items: stretch; gap: 2px; padding: 2px; }
+  .segmented button { font: inherit; font-size: 12.5px; padding: 0 10px; border: 0; border-radius: 6px; background: none; color: var(--muted); white-space: nowrap; cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease; }
+  .segmented button:hover { color: var(--fg); }
+  .segmented button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 16%, var(--panel)); color: var(--fg); font-weight: 600;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, var(--line)); }
+  kbd { font-family: var(--font-sans); font-size: 11px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; color: var(--muted); background: var(--panel); }
+  button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .segmented button:focus-visible { outline-offset: 0; }
+
+  .ladder-box { overflow: auto; }
+  .ladder { display: grid; gap: 4px; font-size: 13px; min-width: 100%; }
+  .ladder-head { color: var(--muted); text-align: center; padding: 2px 4px 6px; font-variant-numeric: tabular-nums; }
+  .ladder-head.text { text-align: left; }
+  .ladder-run { display: flex; align-items: center; gap: 6px; font-weight: 600; padding: 0 6px; white-space: nowrap; }
+  .ladder-cell { text-align: center; padding: 11px 6px; border-radius: 8px; background: var(--sunken); color: var(--muted); white-space: nowrap; font-weight: 500; }
+  .ladder-cell.empty { background: transparent; }
+  .ladder-cell.tone-ok { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--fg); box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--ok) 60%, transparent); }
+  .ladder-cell.tone-warn { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--fg); box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--warn) 70%, transparent); }
+  .ladder-cell.tone-bad { background: color-mix(in srgb, var(--bad) 20%, transparent); color: var(--fg); box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--bad) 65%, transparent); }
+  .ladder-cell.tone-muted { background: color-mix(in srgb, var(--reference) 25%, transparent); color: var(--fg); box-shadow: inset 0 -2px 0 var(--reference); }
+  .key-ok { background: color-mix(in srgb, var(--ok) 35%, transparent); }
+  .key-warn { background: color-mix(in srgb, var(--warn) 40%, transparent); }
+  .key-bad { background: color-mix(in srgb, var(--bad) 38%, transparent); }
+  .key-muted { background: color-mix(in srgb, var(--reference) 45%, transparent); }
+
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+  .tone-ok { color: var(--ok); } .tone-warn { color: var(--warn); } .tone-bad { color: var(--bad); } .tone-muted { color: var(--muted); }
+  .dot.tone-ok { background: var(--ok); } .dot.tone-warn { background: var(--warn); } .dot.tone-bad { background: var(--bad); } .dot.tone-muted { background: var(--reference); }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 8px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child, td.text, th.text { text-align: left; }
+  td.text .dot { margin-right: 2px; }
+  th { position: sticky; top: 0; background: var(--sunken); color: var(--muted); font-weight: 600; z-index: 1; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:hover td { background: var(--sunken); }
+  tbody tr.group-start td { border-top: 2px solid var(--line); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+  .lede { margin: 0; max-width: 90ch; font-size: 16px; line-height: 1.55; }
+  .lede b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .profile { display: grid; gap: 10px; }
+  .profile-row { display: grid; grid-template-columns: minmax(0, 16rem) minmax(0, 1fr) 3.5rem; gap: 4px 10px; align-items: center; }
+  .profile-row code { font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+  .profile-row .what { grid-column: 1 / -1; color: var(--muted); font-size: 12px; margin-top: -2px; }
+  .bar-track { height: 10px; background: var(--grid); border-radius: 5px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 5px; }
+  .profile-row .share { text-align: right; font-variant-numeric: tabular-nums; font-size: 12px; }
+  .explain { margin: 0; max-width: 90ch; line-height: 1.55; }
+  .setup td { white-space: normal; text-align: left; }
+  .setup td:first-child { color: var(--muted); width: 12rem; }
+  .empty-line { display: flex; align-items: center; justify-content: center; height: 100%; min-height: 240px; color: var(--muted); font-size: 13px; text-align: center; }
+
+  /* Below a laptop width the page scrolls instead: the rail becomes a row of chips and the chart keeps a sensible height. */
+  @media (max-width: 900px) {
+    html, body { height: auto; }
+    body { overflow: auto; }
+    .app { height: auto; display: block; }
+    .topbar { position: static; }
+    .body { display: block; }
+    .rail { display: flex; flex-wrap: wrap; gap: 4px; padding: 12px 16px 4px; border-right: 0; overflow: visible; }
+    .rail-group { display: contents; }
+    .rail-title { display: none; }
+    .rail button { white-space: nowrap; border: 1px solid var(--line); background: var(--panel); }
+    .rail button[aria-current="true"] { box-shadow: none; border-color: var(--accent); }
+    .stage { padding: 12px 16px 32px; }
+    .stage-chart { flex: none; min-height: 440px; overflow: visible; }
+    .stage-table { max-height: 70vh; }
+    .keys { display: none; }
+    .empty-line { min-height: 400px; }
+  }
+  @media (max-width: 560px) {
+    .profile-row { grid-template-columns: minmax(0, 1fr) 3.5rem; }
+    .profile-row .bar-track { grid-column: 1 / -1; grid-row: 2; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 15 11" aria-hidden="true"><g fill="var(--fg)"><rect x="0" y="0" width="3" height="3" rx="1.5"/><rect x="4" y="0" width="3" height="3" rx="1.5"/><rect x="8" y="0" width="3" height="3" rx="1.5"/><rect x="0" y="4" width="7" height="3" rx="1.5"/><rect x="8" y="4" width="7" height="3" rx="1.5"/><rect x="0" y="8" width="7" height="3" rx="1.5"/><rect x="8" y="8" width="3" height="3" rx="1.5"/></g><rect x="12" y="8" width="3" height="3" rx="1.5" fill="var(--accent)"/></svg>
+      <span><b>smd</b> monitor</span>
+      <span class="product">Hub saturation</span>
+    </div>
+    <div class="runs" role="group" aria-label="Runs to compare">
+      <span class="runs-label">Compare</span>
+      <span id="run-picker" class="runs" style="flex: 0 1 auto"></span>
+      <p class="note" id="runs-note" hidden></p>
+    </div>
+    <span class="segmented theme" role="group" aria-label="Theme">
+      <button type="button" data-theme="auto">Auto</button>
+      <button type="button" data-theme="light">Light</button>
+      <button type="button" data-theme="dark">Dark</button>
+    </span>
+  </header>
+
+  <div class="body">
+    <nav class="rail" id="rail" aria-label="Views"></nav>
+    <main class="stage">
+      <div class="stage-head">
+        <div>
+          <h2 id="stage-title"></h2>
+          <p class="how" id="stage-how"></p>
+        </div>
+        <span class="segmented" role="group" aria-label="Chart or table" id="show-switch">
+          <button type="button" data-param="show" data-value="chart">Chart</button>
+          <button type="button" data-param="show" data-value="table">Table</button>
+        </span>
+      </div>
+      <div class="controls strip" id="strip">
+        <span class="control" id="ctl-series">Lines
+          <span class="segmented" role="group" aria-label="What the lines are">
+            <button type="button" data-param="series" data-value="runs">Runs</button>
+            <button type="button" data-param="series" data-value="scenarios">Scenarios of a sweep</button>
+          </span>
+        </span>
+        <span class="control" id="ctl-scenario"><label for="scenario-select">Scenario</label>
+          <span class="stepper">
+            <button type="button" class="btn icon" id="scenario-previous" aria-label="Previous scenario" title="Previous scenario">‹</button>
+            <select class="select" id="scenario-select"></select>
+            <button type="button" class="btn icon" id="scenario-next" aria-label="Next scenario" title="Next scenario">›</button>
+          </span>
+        </span>
+        <label class="control" id="ctl-sweep">Sweep <select class="select" id="sweep-select"></select></label>
+        <label class="control" id="ctl-run">Run <select class="select" id="run-select"></select></label>
+        <label class="control" id="ctl-measure">Measure <select class="select" id="measure-select"></select></label>
+        <span class="control" id="ctl-seconds"><label for="seconds-select">Measure</label> <select class="select" id="seconds-select"></select>
+          <button type="button" class="btn" id="all-steps">‹ Every step</button>
+        </span>
+        <span class="control" id="ctl-limit">Limit
+          <span class="segmented" role="group" aria-label="The limit the chart draws">
+            <button type="button" data-param="limit" data-value="keepsUp">Keeps up, nothing shed</button>
+            <button type="button" data-param="limit" data-value="holds">Sheds, without refusing</button>
+            <button type="button" data-param="limit" data-value="failsAt">First failure</button>
+          </span>
+        </span>
+        <span class="control" id="ctl-scale">Rate axis
+          <span class="segmented" role="group" aria-label="Rate axis">
+            <button type="button" data-param="scale" data-value="log">Log</button>
+            <button type="button" data-param="scale" data-value="linear">Linear</button>
+          </span>
+        </span>
+      </div>
+      <div class="facts" id="facts"></div>
+      <div class="chart stage-chart" id="stage-chart"></div>
+      <div class="stage-table" id="stage-table-box" hidden><table id="stage-table"><thead></thead><tbody></tbody></table></div>
+      <div class="stage-about" id="stage-about" hidden>
+        <div class="card">
+          <p class="lede" id="lede"></p>
+          <p class="note" id="runline"></p>
+        </div>
+        <div class="card">
+          <h3>The runs</h3>
+          <p class="note">A run climbs one ladder of rates for every scenario it ran, so its limits compare with any other run's on one scale. A commit marked with an
+            asterisk ran with uncommitted changes.</p>
+          <table id="runs-table"><thead></thead><tbody></tbody></table>
+        </div>
+        <div class="card">
+          <h3>The scenarios</h3>
+          <p class="note">The reference shape, four sweeps that each change one thing of it, and the two deployment profiles the documentation sizes the hub for.</p>
+          <table class="setup" id="scenarios-table"><thead></thead><tbody></tbody></table>
+        </div>
+        <div class="card">
+          <h3>How it was measured</h3>
+          <table class="setup" id="setup-table"><thead></thead><tbody></tbody></table>
+        </div>
+        <div class="card">
+          <h3>Where the writer's time goes with the most applications</h3>
+          <p class="note">Share of the writer thread's CPU samples that include each method (a sample counts for every method on its stack), over the fill and both
+            steps of a JFR recording of the baseline.</p>
+          <div class="legend">
+            <span><i class="swatch block" style="background: var(--series-1)"></i>Receiving</span>
+            <span><i class="swatch block" style="background: var(--series-2)"></i>Fitting the specimens and the span index</span>
+            <span><i class="swatch block" style="background: var(--reference)"></i>The tick</span>
+          </div>
+          <div class="profile" id="profile-list"></div>
+          <p class="explain">The hub fits its specimens into their allowance after every batch. At steady state it is always at the allowance, so each batch evicts
+            hundreds of traces, and each eviction recomputes every application's bytes, builds a map of their usage, and picks the one furthest above its fair
+            share before dropping a single trace. The span index forgets its entries the same way at every tick. Both cost evictions times applications, so the
+            ceiling falls as services are added. The other large cost is rebuilding every key's statistics for each epoch.</p>
+        </div>
+      </div>
+      <div class="stage-foot">
+        <div class="legend" id="stage-legend"></div>
+        <p class="note" id="stage-note"></p>
+        <span class="control keys" id="keys"><kbd>←</kbd><kbd>→</kbd> scenario <kbd>↑</kbd><kbd>↓</kbd> view</span>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script id="saturation-data" type="application/json">/*SATURATION_DATA*/</script>
+<script>
+(() => {
+  let DATA;
+  try {
+    DATA = JSON.parse(document.getElementById('saturation-data').textContent);
+  } catch {
+    document.querySelector('main').replaceChildren(Object.assign(document.createElement('p'), {
+      textContent: 'This is the page template, without data. Write the page with: python -I docs/saturation/dashboard.py',
+    }));
+    return;
+  }
+
+  const LOG_FLOOR = 1000;
+  const DEFAULT_RUNS = 4;
+  // Each run keeps one of these colors; past eight, the picker refuses more runs at once rather than reuse a color.
+  const SERIES = ['--series-1', '--series-2', '--series-3', '--series-4', '--series-5', '--series-6', '--series-7', '--series-8'];
+  const MAX_PICKED = SERIES.length;
+  const VERDICTS = {
+    KEEPS_UP: { label: 'Keeps up', short: 'Keeps up', tone: 'ok' },
+    SHEDS: { label: 'Sheds', short: 'Sheds', tone: 'warn' },
+    BEHIND: { label: 'Falls behind', short: 'Behind', tone: 'bad' },
+    REFUSES: { label: 'Refuses', short: 'Refuses', tone: 'bad' },
+    STALLED: { label: 'Stalled', short: 'Stalled', tone: 'bad' },
+    GENERATOR_BOUND: { label: 'Load generator bound', short: 'Generator', tone: 'muted' },
+  };
+  const LIMITS = {
+    keepsUp: { label: 'keeps up with, nothing shed', short: 'keeps up with', what: 'the highest rate it kept up with, nothing shed' },
+    holds: { label: 'holds without refusing', short: 'holds without refusing', what: 'the highest rate it held without refusing spans, shedding what it had to' },
+    failsAt: { label: 'first fails at', short: 'first fails at', what: 'the first rate it failed at, falling behind or refusing' },
+  };
+  const SWEEP_LABELS = { reference: 'Reference', applications: 'Applications', instances: 'Instances per application', types: 'Message types per application',
+    budget: 'Memory budget', profile: 'Deployment profiles' };
+  const SWEEPS = {
+    applications: { field: 'applications', format: (value) => count(value), unit: 'applications', what: 'how the limit falls as services are added' },
+    instances: { field: 'instances', format: (value) => count(value), unit: 'instances each', what: 'whether more replicas of the same services cost anything' },
+    types: { field: 'typesPerApplication', format: (value) => count(value), unit: 'types each', what: 'whether key cardinality matters; a quarter as many processing groups as types' },
+    budget: { field: 'memoryMb', format: (value) => (value >= 1024 ? `${value / 1024} GB` : `${value} MB`), unit: '', what: 'what memory buys' },
+  };
+
+  // Formats.
+  const count = (value) => Math.round(value).toLocaleString('en-US');
+  const share = (value) => `${(value * 100).toFixed(1)}%`;
+  const signed = (value) => `${value > 0 ? '+' : value < 0 ? '−' : ''}${Math.abs(Math.round(value * 100))}%`;
+  const compact = (value) => (value >= 1e6 ? `${+(value / 1e6).toPrecision(3)}M` : value >= 1000 ? `${+(value / 1000).toPrecision(3)}k` : String(value));
+  const millis = (value) => `${count(value)} ms`;
+  const megabytes = (value) => `${count(value)} MB`;
+  const kilobytes = (value) => `${count(value)} KB`;
+  const secondsOf = (value) => `${count(value)} s`;
+  const cores = (value) => value.toFixed(1);
+  const present = (value) => value !== null && value !== undefined;
+  const orNone = (value, format) => (present(value) ? format(value) : '');
+  const verdict = (code) => VERDICTS[code] || { label: code, short: code, tone: 'muted' };
+  const listOf = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names.join(''));
+  // A run's limits on a scenario, in words: "keeps up with 100k, sheds up to 150k, falls behind at 200k".
+  const limitsOf = (row) => (row
+    ? [present(row.keepsUp) ? `keeps up with ${compact(row.keepsUp)}` : 'keeps up with none',
+      present(row.holds) && row.holds > (row.keepsUp || 0) ? `sheds up to ${compact(row.holds)}` : null,
+      present(row.failsAt) ? `${verdict(row.failsAs).label.toLowerCase()} at ${compact(row.failsAt)}` : 'never failed up to the most offered'].filter(Boolean).join(', ')
+    : 'did not run it');
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const pad = (value) => String(value).padStart(2, '0');
+  // A run is named by when it started and the commit it ran: "2026-10-17T18:17:22Z 167568f with changes".
+  const partsOf = (run) => {
+    const [started, commit, ...rest] = run.split(' ');
+    const at = new Date(started);
+    const when = Number.isNaN(at.getTime()) ? started
+      : `${MONTHS[at.getUTCMonth()]} ${at.getUTCDate()}, ${pad(at.getUTCHours())}:${pad(at.getUTCMinutes())} UTC`;
+    const changed = rest.join(' ').includes('changes');
+    return { when, commit: commit || '', changed, short: `${commit || ''}${changed ? '*' : ''}`, detail: [when, [commit, ...rest].filter(Boolean).join(' ')].filter(Boolean).join(' · ') };
+  };
+
+  // Every measure of a step, as the steps file names it, with its unit; a few have a line worth drawing beside the data.
+  const MEASURES = {
+    processed: { group: 'Throughput', label: 'Processed per second', format: count, what: 'Spans the hub processed each second of the step, once it settled.' },
+    offered: { group: 'Throughput', label: 'Offered per second', format: count, what: 'Spans the generators offered each second of the step.' },
+    busy: { group: 'Given up', label: 'Refused', format: share, max: 1, what: 'Share of offered spans refused with a full queue.' },
+    shedUnretained: { group: 'Given up', label: 'Not retained', format: share, max: 1, what: 'Share of processed spans counted but not retained.' },
+    shedUnjoined: { group: 'Given up', label: 'Not linked', format: share, max: 1, what: 'Share of processed spans counted but not linked to their trace.' },
+    queueMax: { group: 'Given up', label: 'Queue, most waiting', format: count, what: 'The most spans waiting in the intake queues at once during the step.' },
+    queueEnd: { group: 'Given up', label: 'Queue at the end', format: count, what: 'Spans waiting in the intake queues when the step ended.' },
+    writerBusy: { group: 'Writer', label: 'Writer busy', format: share, max: 1, references: [{ y: 0.9, label: 'falls behind above 90%' }],
+      what: 'Share of each second the single writer thread was busy, not waiting for a batch. Close to fully busy, it falls behind.' },
+    writerBusyMax: { group: 'Writer', label: 'Writer busy, worst second', format: share, max: 1, what: 'The busiest second of the step for the writer thread.' },
+    writerCpu: { group: 'Writer', label: 'Writer on a core', format: share, max: 1,
+      what: 'Share of each second the writer thread ran on a core. Its gap to Writer busy is collection pauses and waiting for a core.' },
+    processCores: { group: 'Writer', label: 'Process cores', format: cores, what: 'Cores the whole hub process used on average, the writer and the submitting threads.' },
+    gcMsPerS: { group: 'Memory', label: 'Collection time per second', format: millis, what: 'Milliseconds of each second spent in garbage collection.' },
+    heapMb: { group: 'Memory', label: 'Heap, most used', format: megabytes, what: 'The most heap in use during the step.' },
+    accountedMb: { group: 'Memory', label: 'Accounted', format: megabytes, what: 'Bytes the hub accounts for against its budget.' },
+    retained: { group: 'Memory', label: 'Retained spans', format: count, what: 'Spans the hub retained as specimens.' },
+    horizonS: { group: 'Memory', label: 'Link horizon', format: secondsOf, configured: () => 60,
+      what: 'How far apart a child and its parent may arrive and still link, as far as the budget allows. It shrinks before throughput does.' },
+    historyS: { group: 'Memory', label: 'Counted history', format: secondsOf, configured: (scenario) => scenario.historyS,
+      what: 'How much history the counts still cover, as far as the budget allows. It shrinks before throughput does.' },
+    tickLateMs: { group: 'Publishing', label: 'Tick late, p99', format: millis, what: 'How late the tick ran after its due time.' },
+    epochLagMs: { group: 'Publishing', label: 'Epoch lag, p99', format: millis, references: [{ y: 1000, label: 'one second' }],
+      what: 'How long after its tick an epoch was published. Past one second a page misses frames.' },
+    frameMs: { group: 'Publishing', label: 'Frame, median', format: millis, references: [{ y: 1000, label: 'one second' }],
+      what: 'How long the publisher took to write a frame’s delta. Past one second a page misses frames.' },
+    frameMaxMs: { group: 'Publishing', label: 'Frame, slowest', format: millis, what: 'The slowest frame of the step.' },
+    deltaKb: { group: 'Publishing', label: 'Frame delta, median', format: kilobytes, what: 'The size of a frame’s delta.' },
+  };
+  // Every measure of a second, as the seconds file names it.
+  const SECONDS = {
+    processed: { label: 'Processed per second', format: count, also: { field: 'offered', label: 'Offered per second' },
+      what: 'Spans processed each second, with the spans offered dashed.' },
+    queued: { label: 'Queued spans', format: count, capacity: true, what: 'Spans waiting in the intake queues at the end of each second, with their capacity.' },
+    busy: { label: 'Refused per second', format: count, what: 'Spans refused each second with a full queue.' },
+    shed: { label: 'Shed per second', format: count, what: 'Spans counted but not retained or not linked each second.' },
+    writerCpuMs: { label: 'Writer on a core', format: share, max: 1, value: (row) => row.writerCpuMs / 1000, what: 'Share of each second the writer thread ran on a core.' },
+    horizonS: { label: 'Link horizon', format: secondsOf, what: 'The link horizon the budget allowed at the end of each second.' },
+    historyS: { label: 'Counted history', format: secondsOf, what: 'The history the counts covered at the end of each second.' },
+  };
+  const VIEWS = [
+    { id: 'overview', group: 'Overview', title: 'All scenarios at a glance', controls: ['limit', 'scale'] },
+    { id: 'change', group: 'Overview', title: 'What changed between runs', controls: ['limit'] },
+    { id: 'sweep-applications', group: 'What limits throughput', title: 'Applications', sweep: 'applications', controls: ['limit', 'scale'] },
+    { id: 'sweep-instances', group: 'What limits throughput', title: 'Instances per application', sweep: 'instances', controls: ['limit', 'scale'] },
+    { id: 'sweep-types', group: 'What limits throughput', title: 'Message types', sweep: 'types', controls: ['limit', 'scale'] },
+    { id: 'sweep-budget', group: 'What limits throughput', title: 'Memory budget', sweep: 'budget', controls: ['limit', 'scale'] },
+    { id: 'ladder', group: 'One scenario in depth', title: 'Verdict ladder', controls: ['scenario', 'series', 'sweep', 'run'] },
+    { id: 'steps', group: 'One scenario in depth', title: 'Any measure, rate by rate', controls: ['scenario', 'measure', 'series', 'sweep', 'run', 'scale'] },
+    { id: 'seconds', group: 'One scenario in depth', title: 'Second by second', controls: ['scenario', 'seconds'] },
+    { id: 'about', group: 'About', title: 'How it was measured', controls: [] },
+  ];
+  const viewOf = (id) => VIEWS.find((view) => view.id === id);
+
+  // Collections.
+  const maxOf = (rows, value) => rows.reduce((max, row) => Math.max(max, value(row)), -Infinity);
+  const minOf = (rows, value) => rows.reduce((min, row) => Math.min(min, value(row)), Infinity);
+  const nearest = (values, value, at) => values.reduce((best, each) => (Math.abs(at(each) - value) < Math.abs(at(best) - value) ? each : best));
+  const groupsInOrder = (rows, key) => {
+    const groups = new Map();
+    for (const row of rows) {
+      if (!groups.has(key(row))) groups.set(key(row), []);
+      groups.get(key(row)).push(row);
+    }
+    return [...groups];
+  };
+  // Moves positions apart until none are closer than gap, inside [lo, hi]; the order of the positions is kept.
+  const spreadApart = (positions, gap, lo, hi) => {
+    const order = positions.map((value, index) => ({ value, index })).sort((a, b) => a.value - b.value);
+    let floor = lo;
+    for (const each of order) {
+      each.value = Math.max(each.value, floor);
+      floor = each.value + gap;
+    }
+    let ceiling = hi;
+    for (let at = order.length - 1; at >= 0; at -= 1) {
+      order[at].value = Math.min(order[at].value, ceiling);
+      ceiling = order[at].value - gap;
+    }
+    const spread = [];
+    for (const each of order) spread[each.index] = each.value;
+    return spread;
+  };
+
+  // Every run in order. A run keeps its color on every chart whichever runs are picked.
+  // The seconds come as one entry per run and scenario, every measure an array and the rate as [rate, seconds] runs; the charts take one row per second.
+  const expandSeconds = (groups) => groups.flatMap(({ run, scenario, rates, t, ...measures }) => rates
+    .flatMap(([rate, count]) => Array(count).fill(rate))
+    .map((rate, index) => ({ run, scenario, t: t ? t[index] : index + 1, rate, ...Object.fromEntries(Object.entries(measures).map(([key, values]) => [key, values[index]])) })));
+  const { runs, steps, scenarios, profile, setup } = DATA;
+  const seconds = expandSeconds(DATA.seconds);
+  const orders = [...new Set(runs.map((run) => run.order))].sort((a, b) => a - b);
+  const allRuns = orders.map((order, index) => {
+    const row = runs.find((run) => run.order === order);
+    return { run: row.run, order, label: row.label, machine: row.machine, name: `Run ${order}`, ...partsOf(row.run), color: `var(${SERIES[index % SERIES.length]})` };
+  });
+  const runById = new Map(allRuns.map((run) => [run.run, run]));
+  const rowsByRun = new Map(groupsInOrder(runs, (row) => row.run));
+  const rowsOf = (id) => new Map((rowsByRun.get(id) || []).map((row) => [row.scenario, row]));
+  const max = maxOf(runs, (run) => run.maxRate);
+  const scenarioById = new Map(scenarios.map((scenario) => [scenario.scenario, scenario]));
+  const stepsOf = (runId, scenarioId) => steps.filter((row) => row.run === runId && row.scenario === scenarioId).sort((a, b) => a.rate - b.rate);
+  const sweepIds = [...new Set(scenarios.map((scenario) => scenario.sweep))].filter((sweep) => sweep !== 'reference');
+  // A sweep's scenarios with the reference, in the order of the swept value; the profiles have none, so they follow the reference.
+  const membersOf = (sweep) => {
+    const field = (SWEEPS[sweep] || {}).field;
+    return scenarios.filter((scenario) => scenario.sweep === sweep || scenario.sweep === 'reference')
+      .sort((a, b) => (field ? a[field] - b[field] : (a.sweep === 'reference' ? -1 : 0) - (b.sweep === 'reference' ? -1 : 0)));
+  };
+
+  // The page's state lives in the query string, so a view can be linked; runs are named there by their number.
+  const PARAMS = {
+    view: { allowed: VIEWS.map((view) => view.id), fallback: 'overview' },
+    show: { allowed: ['chart', 'table'], fallback: 'chart' },
+    scale: { allowed: ['log', 'linear'], fallback: 'log' },
+    limit: { allowed: Object.keys(LIMITS), fallback: 'keepsUp' },
+    series: { allowed: ['runs', 'scenarios'], fallback: 'runs' },
+    sweep: { allowed: sweepIds, fallback: sweepIds[0] || 'applications' },
+    measure: { allowed: Object.keys(MEASURES), fallback: 'writerBusy' },
+    seconds: { allowed: Object.keys(SECONDS), fallback: 'processed' },
+    scenario: { allowed: scenarios.map((scenario) => scenario.scenario), fallback: 'reference' },
+  };
+  const query = new URLSearchParams(location.search);
+  const state = Object.fromEntries(Object.entries(PARAMS).map(([name, { allowed, fallback }]) => [name, allowed.includes(query.get(name)) ? query.get(name) : fallback]));
+  state.runs = (query.get('runs') || '').split(',').map(Number).filter((order) => order > 0);
+  state.run = Number(query.get('run')) || null;
+  state.step = Number(query.get('step')) || null;
+  const setState = (patch) => {
+    Object.assign(state, patch);
+    const next = new URLSearchParams();
+    for (const [name, { fallback }] of Object.entries(PARAMS)) if (state[name] !== fallback) next.set(name, state[name]);
+    if (state.runs.length) next.set('runs', state.runs.join(','));
+    if (state.run) next.set('run', state.run);
+    if (state.step) next.set('step', state.step);
+    try {
+      history.replaceState(null, '', `${location.pathname}${next.size ? `?${next}` : ''}`);
+    } catch {
+      // A browser that refuses to change a file URL keeps the state for this page only.
+    }
+    render();
+  };
+  const linear = () => state.scale === 'linear';
+
+  // Scales, axes, and paths, enough for these charts.
+  const linearScale = ([d0, d1], [r0, r1]) => {
+    const scale = (value) => r0 + ((value - d0) / (d1 - d0 || 1)) * (r1 - r0);
+    scale.range = () => [r0, r1];
+    scale.ticks = (wanted) => niceTicks(d0, d1, wanted);
+    return scale;
+  };
+  const logScale = ([d0, d1], [r0, r1]) => {
+    const scale = (value) => r0 + ((Math.log(Math.min(d1, Math.max(d0, value))) - Math.log(d0)) / (Math.log(d1) - Math.log(d0))) * (r1 - r0);
+    scale.range = () => [r0, r1];
+    return scale;
+  };
+  const pointScale = (keys, [r0, r1]) => {
+    const index = new Map(keys.map((key, at) => [key, at]));
+    return (key) => (keys.length > 1 ? r0 + (index.get(key) * (r1 - r0)) / (keys.length - 1) : (r0 + r1) / 2);
+  };
+  const niceTicks = (lo, hi, wanted) => {
+    if (!(hi > lo)) return [lo];
+    const raw = (hi - lo) / Math.max(1, wanted);
+    const power = 10 ** Math.floor(Math.log10(raw));
+    const error = raw / power;
+    const step = (error >= Math.sqrt(50) ? 10 : error >= Math.sqrt(10) ? 5 : error >= Math.sqrt(2) ? 2 : 1) * power;
+    const ticks = [];
+    for (let value = Math.ceil(lo / step) * step; value <= hi + step * 1e-9; value += step) ticks.push(+value.toPrecision(12));
+    return ticks;
+  };
+  // A rate axis fixed to the maximum a run offers, whatever the data: logarithmic from a thousand, or linear from zero.
+  const rateScale = (range) => (linear() ? linearScale([0, max], range) : logScale([LOG_FLOOR, max], range));
+  const rateTicks = (scale, svg, spacing = 10) => {
+    const candidates = linear() ? scale.ticks(8) : [1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, max].filter((tick) => tick <= max);
+    const ticks = [];
+    let lastEnd = -Infinity;
+    for (const tick of [...new Set(candidates)].sort((a, b) => a - b)) {
+      const half = textWidth(svg, compact(tick)) / 2;
+      if (scale(tick) - half > lastEnd + spacing || tick === max) {
+        if (tick === max && ticks.length && scale(tick) - half <= lastEnd + spacing) ticks.pop();
+        ticks.push(tick);
+        lastEnd = scale(tick) + half;
+      }
+    }
+    return ticks;
+  };
+  const rateAxisTitle = () => `spans per second offered, ${linear() ? 'linear' : 'log scale'}`;
+
+  const SVG = 'http://www.w3.org/2000/svg';
+  const el = (parent, tag, attributes = {}, text) => {
+    const node = document.createElementNS(SVG, tag);
+    for (const [name, value] of Object.entries(attributes)) if (present(value)) node.setAttribute(name, value);
+    if (present(text)) node.textContent = text;
+    parent.append(node);
+    return node;
+  };
+  const svgIn = (container, height) => {
+    container.replaceChildren();
+    const width = Math.max(240, container.clientWidth - 32);
+    const svg = el(container, 'svg', { width: '100%', height, viewBox: `0 0 ${width} ${height}` });
+    return { svg, width, height };
+  };
+  const textWidth = (svg, text, className) => {
+    const node = el(svg, 'text', { class: className }, text);
+    const width = node.getComputedTextLength();
+    node.remove();
+    return width;
+  };
+  const axisBottom = (svg, at, range, ticks, format, y) => {
+    const group = el(svg, 'g', { class: 'axis' });
+    el(group, 'line', { x1: range[0], x2: range[1], y1: y, y2: y });
+    for (const tick of ticks) {
+      el(group, 'line', { x1: at(tick), x2: at(tick), y1: y, y2: y + 6 });
+      el(group, 'text', { x: at(tick), y: y + 9, dy: '0.71em', 'text-anchor': 'middle' }, format(tick));
+    }
+  };
+  const axisLeft = (svg, at, ticks, format, x) => {
+    for (const tick of ticks) el(svg, 'text', { x: x - 4, y: at(tick), dy: '0.32em', 'text-anchor': 'end' }, format(tick));
+  };
+  const gridLines = (svg, ticks, line) => {
+    for (const tick of ticks) el(svg, 'line', { class: 'gridline', ...line(tick) });
+  };
+  const linePath = (points, x, y, defined = () => true) => {
+    let path = '';
+    let drawing = false;
+    for (const point of points) {
+      if (!defined(point)) {
+        drawing = false;
+        continue;
+      }
+      path += `${drawing ? 'L' : 'M'}${x(point).toFixed(1)},${y(point).toFixed(1)}`;
+      drawing = true;
+    }
+    return path;
+  };
+  const areaPath = (points, x, y0, y1) => (points.length
+    ? `M${points.map((point) => `${x(point).toFixed(1)},${y1(point).toFixed(1)}`).join('L')}`
+      + `L${[...points].reverse().map((point) => `${x(point).toFixed(1)},${y0.toFixed(1)}`).join('L')}Z`
+    : '');
+  const pointer = (event, svg, width, height) => {
+    const box = svg.getBoundingClientRect();
+    return [((event.clientX - box.left) * width) / box.width, ((event.clientY - box.top) * height) / box.height];
+  };
+  const dot = (svg, cx, cy, color, r = 4, key) => el(svg, 'circle', { cx, cy, r, fill: color, stroke: 'var(--panel)', 'stroke-width': 2, 'data-key': key });
+  const axisTitle = (svg, x, y, text) => el(svg, 'text', { class: 'title', x, y, 'text-anchor': 'end' }, text);
+  // A name in a small pill, its box measured first so the pill fits.
+  const pillText = (svg, x, y, text) => {
+    const width = textWidth(svg, text, 'strong') + 12;
+    el(svg, 'rect', { class: 'pill', x: x - 6, y: y - 10, width, height: 20, rx: 10 });
+    el(svg, 'text', { class: 'strong', x, y, dy: '0.35em' }, text);
+    return width;
+  };
+
+  // Tooltips, legends, facts, and tables.
+  const tooltip = (container) => {
+    const tip = document.createElement('div');
+    tip.className = 'tip';
+    tip.hidden = true;
+    container.append(tip);
+    return tip;
+  };
+  const showTip = (container, tip, x, y, head, rows) => {
+    tip.replaceChildren();
+    tip.append(Object.assign(document.createElement('div'), { className: 'tip-head', textContent: head }));
+    for (const row of rows) {
+      const line = document.createElement('div');
+      line.className = 'tip-row';
+      if (row.color) {
+        const swatch = document.createElement('i');
+        swatch.className = 'swatch';
+        swatch.style.background = row.color;
+        line.append(swatch);
+      }
+      line.append(Object.assign(document.createElement('b'), { textContent: row.value }), Object.assign(document.createElement('span'), { textContent: row.name }));
+      tip.append(line);
+    }
+    tip.hidden = false;
+    const available = container.clientWidth;
+    const width = tip.offsetWidth;
+    const left = x + 12 + width > available ? x - width - 12 : x + 12;
+    tip.style.left = `${Math.max(0, Math.min(left, available - width))}px`;
+    tip.style.top = `${Math.max(0, y - 10 + container.scrollTop)}px`;
+  };
+  // The marks that are not a series: a dashed line or the verdicts' colors.
+  const legend = (element, marks) => {
+    element.replaceChildren(...marks.map((each) => {
+      const item = document.createElement('span');
+      const swatch = document.createElement('i');
+      swatch.className = each.block ? `swatch block ${each.block}` : 'swatch dashed';
+      item.append(swatch, document.createTextNode(each.name));
+      return item;
+    }));
+  };
+  const VERDICT_KEY = [{ name: 'Keeps up, nothing shed', block: 'key-ok' }, { name: 'Sheds, counts stay exact', block: 'key-warn' },
+    { name: 'Fails: falls behind or refuses', block: 'key-bad' }, { name: 'Load generator bound', block: 'key-muted' }];
+  // One fact per series: its name and what it did, in words. Resting on a fact lights its series on the chart and dims the others; every mark of a
+  // series carries its key.
+  const facts = (items) => {
+    const chart = document.getElementById('stage-chart');
+    chart.classList.remove('dimmed');
+    document.getElementById('facts').replaceChildren(...items.map((item) => {
+      const fact = document.createElement('span');
+      fact.className = 'fact';
+      if (item.title) fact.title = item.title;
+      const mark = document.createElement('i');
+      mark.className = 'dot';
+      mark.style.background = item.color;
+      fact.append(mark, Object.assign(document.createElement('b'), { textContent: item.name }), document.createTextNode(item.text));
+      if (present(item.key)) {
+        fact.dataset.key = item.key;
+        fact.addEventListener('mouseenter', () => {
+          chart.classList.add('dimmed');
+          for (const node of chart.querySelectorAll('[data-key]')) node.classList.toggle('lit', node.dataset.key === String(item.key));
+        });
+        fact.addEventListener('mouseleave', () => chart.classList.remove('dimmed'));
+      }
+      return fact;
+    }));
+  };
+  const emptyLine = (element, text) => element.replaceChildren(Object.assign(document.createElement('div'), { className: 'empty-line', textContent: text }));
+  const dotIn = (cell, tone, color) => {
+    const mark = document.createElement('i');
+    mark.className = tone ? `dot tone-${tone}` : 'dot';
+    if (color) mark.style.background = color;
+    cell.prepend(mark, ' ');
+  };
+  const fillTable = (table, columns, rows, groupOf) => {
+    const head = document.createElement('tr');
+    for (const column of columns) {
+      const th = document.createElement('th');
+      th.textContent = column.label;
+      if (column.text) th.classList.add('text');
+      head.append(th);
+    }
+    table.querySelector('thead').replaceChildren(head);
+    let previous;
+    table.querySelector('tbody').replaceChildren(...rows.map((row, index) => {
+      const tr = document.createElement('tr');
+      if (groupOf) {
+        if (index > 0 && groupOf(row) !== previous) tr.className = 'group-start';
+        previous = groupOf(row);
+      }
+      for (const column of columns) {
+        const td = document.createElement('td');
+        td.textContent = column.value(row);
+        if (column.text) td.classList.add('text');
+        if (column.className && column.className(row)) td.classList.add(column.className(row));
+        if (column.tone || column.color) dotIn(td, column.tone && column.tone(row), column.color && column.color(row));
+        tr.append(td);
+      }
+      return tr;
+    }));
+  };
+
+  // Every scenario in rows grouped by sweep; in each row one dot per picked run at its limit, or one bar per run with its change against the
+  // earliest picked run that ran the scenario. The runs sit on their own thin lanes within the row, so equal limits still show as a column of dots.
+  const drawDots = (container, picked, limit, mode) => {
+    const laneGap = 7;
+    const rowHeight = 18 + picked.length * laneGap;
+    const headHeight = 32;
+    const rows = groupsInOrder(scenarios, (scenario) => scenario.sweep)
+      .flatMap(([sweep, members]) => [{ head: SWEEP_LABELS[sweep] || sweep }, ...members.map((scenario) => ({ scenario }))]);
+    const plotHeight = rows.reduce((total, row) => total + (row.head ? headHeight : rowHeight), 0);
+    const { svg, width, height } = svgIn(container, plotHeight + 44);
+    const left = Math.ceil(maxOf(scenarios, (scenario) => textWidth(svg, scenario.name, 'strong'))) + 16;
+    const margin = { top: 4, right: 20, bottom: 44, left };
+    const limitOf = (run, scenario) => (rowsOf(run.run).get(scenario.scenario) || {})[limit];
+    const baselineOf = (scenario) => picked.find((run) => rowsOf(run.run).has(scenario.scenario));
+    const changeOf = (run, scenario) => {
+      const mine = limitOf(run, scenario);
+      const base = limitOf(baselineOf(scenario), scenario);
+      return present(mine) && present(base) && base > 0 ? mine / base - 1 : null;
+    };
+    let x;
+    let ticks;
+    if (mode === 'change') {
+      const widest = maxOf(scenarios.flatMap((scenario) => picked.map((run) => Math.abs(changeOf(run, scenario) ?? 0))), (value) => value);
+      const reach = Math.max(0.25, Math.ceil(widest / 0.25) * 0.25);
+      x = linearScale([-reach, reach], [margin.left, width - margin.right]);
+      ticks = niceTicks(-reach, reach, 8);
+    } else {
+      x = rateScale([margin.left, width - margin.right]);
+      ticks = rateTicks(x, svg);
+    }
+    gridLines(svg, ticks, (tick) => ({ x1: x(tick), x2: x(tick), y1: margin.top, y2: height - margin.bottom }));
+    if (mode === 'change') el(svg, 'line', { class: 'rule', x1: x(0), x2: x(0), y1: margin.top, y2: height - margin.bottom });
+    axisBottom(svg, x, x.range(), ticks, mode === 'change' ? signed : compact, height - margin.bottom);
+    axisTitle(svg, width - margin.right, height - 4, mode === 'change' ? `change in the rate each run ${LIMITS[limit].short}, further right is better`
+      : `${rateAxisTitle()}: the rate each run ${LIMITS[limit].short}, further right is better`);
+    const tip = tooltip(container);
+    let y = margin.top;
+    let band = false;
+    for (const row of rows) {
+      if (row.head) {
+        el(svg, 'text', { class: 'group', x: 0, y: y + headHeight - 9 }, row.head);
+        el(svg, 'line', { class: 'gridline', x1: 0, x2: width, y1: y + headHeight - 1, y2: y + headHeight - 1 });
+        y += headHeight;
+        band = false;
+        continue;
+      }
+      const { scenario } = row;
+      const middle = y + rowHeight / 2;
+      const laneY = (index) => middle + (index - (picked.length - 1) / 2) * laneGap;
+      if (band) el(svg, 'rect', { class: 'row-band', x: 0, y, width, height: rowHeight, rx: 6 });
+      band = !band;
+      const glow = el(svg, 'rect', { class: 'row-glow', x: 0, y, width, height: rowHeight, rx: 6 });
+      el(svg, 'text', { class: 'strong', x: margin.left - 10, y: middle, dy: '0.35em', 'text-anchor': 'end' }, scenario.name);
+      const baseline = baselineOf(scenario);
+      if (mode === 'change') {
+        picked.forEach((run, index) => {
+          if (run === baseline) {
+            el(svg, 'rect', { x: x(0) - 1.5, width: 3, y: laneY(index) - 3, height: 6, rx: 1.5, fill: run.color, 'data-key': run.run });
+            return;
+          }
+          const change = changeOf(run, scenario);
+          if (!present(change)) return;
+          const [from, to] = [x(0), x(change)].sort((a, b) => a - b);
+          el(svg, 'rect', { x: from, width: Math.max(2, to - from), y: laneY(index) - 2.5, height: 5, rx: 2.5, fill: run.color, 'data-key': run.run });
+        });
+      } else {
+        const values = picked.map((run, index) => ({ run, index, value: limitOf(run, scenario) })).filter((each) => present(each.value));
+        if (values.length > 1) {
+          el(svg, 'line', { class: 'rule', x1: x(minOf(values, (each) => each.value)), x2: x(maxOf(values, (each) => each.value)), y1: middle, y2: middle });
+        }
+        for (const each of values) dot(svg, x(each.value), laneY(each.index), each.run.color, 5, each.run.run);
+      }
+      const hit = el(svg, 'rect', { class: 'hit pick', x: 0, y, width, height: rowHeight });
+      hit.addEventListener('mousemove', (event) => {
+        const [px, py] = pointer(event, svg, width, height);
+        glow.classList.add('on');
+        showTip(container, tip, (px * container.clientWidth) / width, py, scenario.name, picked.map((run) => {
+          const mine = rowsOf(run.run).get(scenario.scenario);
+          const change = changeOf(run, scenario);
+          const value = mode === 'change' ? (run === baseline ? 'baseline' : present(change) ? `${signed(change)} vs ${baseline.name}` : '—')
+            : present(limitOf(run, scenario)) ? compact(limitOf(run, scenario)) : '—';
+          return { name: `${run.name} ${limitsOf(mine)}`, value, color: run.color };
+        }));
+      });
+      hit.addEventListener('mouseleave', () => { tip.hidden = true; glow.classList.remove('on'); });
+      hit.addEventListener('click', () => setState({ scenario: scenario.scenario, view: 'steps', series: 'runs', show: 'chart' }));
+      y += rowHeight;
+    }
+  };
+
+  // One sweep: the swept value across, the chosen limit on the fixed rate axis, one line per picked run, named at its end.
+  const drawSweep = (container, key, picked, limit, height) => {
+    const sweep = SWEEPS[key];
+    const members = membersOf(key);
+    const { svg, width } = svgIn(container, height);
+    const yTicks = (scale) => (linear() ? scale.ticks(6) : [1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, max].filter((tick) => tick <= max));
+    const left = Math.ceil(maxOf(yTicks(rateScale([0, 1])), (tick) => textWidth(svg, compact(tick)))) + 12;
+    const right = Math.ceil(textWidth(svg, 'Run 00', 'strong')) + 36;
+    const margin = { top: 16, right, bottom: 48, left };
+    const x = pointScale(members.map((scenario) => scenario.scenario), [margin.left + 18, width - margin.right - 18]);
+    const y = rateScale([height - margin.bottom, margin.top]);
+    gridLines(svg, yTicks(y), (tick) => ({ x1: margin.left, x2: width - margin.right, y1: y(tick), y2: y(tick) }));
+    axisLeft(svg, y, yTicks(y), compact, margin.left);
+    el(svg, 'line', { class: 'rule', x1: margin.left, x2: width - margin.right, y1: y(max), y2: y(max) });
+    el(svg, 'text', { x: margin.left + 4, y: y(max) - 5 }, 'the most a run offers');
+    el(svg, 'line', { x1: margin.left, x2: width - margin.right, y1: height - margin.bottom, y2: height - margin.bottom, stroke: 'var(--axis)' });
+    for (const scenario of members) {
+      el(svg, 'text', { class: 'strong', x: x(scenario.scenario), y: height - margin.bottom + 18, 'text-anchor': 'middle' }, sweep.format(scenario[sweep.field]));
+      if (scenario.sweep === 'reference') el(svg, 'text', { x: x(scenario.scenario), y: height - margin.bottom + 35, 'text-anchor': 'middle' }, 'reference');
+    }
+    axisTitle(svg, width - margin.right, height - 4, sweep.unit ? `${sweep.unit}; up is better, ${rateAxisTitle()}` : `up is better, ${rateAxisTitle()}`);
+    // Runs often share a limit, as every run climbs one ladder of rates, so each run's points sit a little apart to keep every one in sight.
+    const drawn = picked.filter((run) => members.some((scenario) => present((rowsOf(run.run).get(scenario.scenario) || {})[limit])));
+    const ends = [];
+    drawn.forEach((run, index) => {
+      const rows = rowsOf(run.run);
+      const has = (scenario) => rows.has(scenario.scenario) && present(rows.get(scenario.scenario)[limit]);
+      const atX = (scenario) => x(scenario.scenario) + (index - (drawn.length - 1) / 2) * 8;
+      const atY = (scenario) => y(rows.get(scenario.scenario)[limit]);
+      el(svg, 'path', { d: linePath(members, atX, atY, has), fill: 'none', stroke: run.color, 'stroke-width': 2.5, 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+        'data-key': run.run });
+      const mine = members.filter(has);
+      for (const scenario of mine) dot(svg, atX(scenario), atY(scenario), run.color, 5, run.run);
+      const last = mine[mine.length - 1];
+      ends.push({ run, x: atX(last), y: atY(last) });
+    });
+    // Each line is named at its end; names that would overlap are moved apart and led back to their line.
+    const labelX = width - margin.right + 20;
+    const labelYs = spreadApart(ends.map((end) => end.y), 22, margin.top + 10, height - margin.bottom - 10);
+    ends.forEach((end, index) => {
+      el(svg, 'line', { x1: end.x + 6, y1: end.y, x2: labelX - 8, y2: labelYs[index], stroke: end.run.color, 'stroke-width': 1, 'stroke-opacity': 0.7, 'data-key': end.run.run });
+      pillText(svg, labelX, labelYs[index], end.run.name);
+    });
+    const tip = tooltip(container);
+    const rule = el(svg, 'line', { class: 'rule', y1: margin.top, y2: height - margin.bottom, opacity: 0 });
+    const closest = (event) => nearest(members, pointer(event, svg, width, height)[0], (scenario) => x(scenario.scenario));
+    const hit = el(svg, 'rect', { class: 'hit pick', x: margin.left, y: margin.top, width: width - margin.left - margin.right, height: height - margin.top - margin.bottom });
+    hit.addEventListener('mousemove', (event) => {
+      const [, py] = pointer(event, svg, width, height);
+      const scenario = closest(event);
+      rule.setAttribute('x1', x(scenario.scenario));
+      rule.setAttribute('x2', x(scenario.scenario));
+      rule.setAttribute('opacity', 1);
+      showTip(container, tip, (x(scenario.scenario) * container.clientWidth) / width, py, scenario.name, picked.map((run) => {
+        const row = rowsOf(run.run).get(scenario.scenario);
+        return { name: `${run.name} ${limitsOf(row)}`, value: row && present(row[limit]) ? compact(row[limit]) : '—', color: run.color };
+      }));
+    });
+    hit.addEventListener('mouseleave', () => { tip.hidden = true; rule.setAttribute('opacity', 0); });
+    hit.addEventListener('click', (event) => setState({ scenario: closest(event).scenario, view: 'steps', series: 'runs', show: 'chart' }));
+  };
+
+  // A line chart over the steps' rates on the fixed rate axis; each series is [{x, y}], drawn point to point with a dot per step.
+  const lineChart = (container, { height, series, yMax, yFormat, references = [] }) => {
+    const { svg, width } = svgIn(container, height);
+    const yTicks = niceTicks(0, yMax, 6);
+    const left = Math.ceil(maxOf(yTicks, (tick) => textWidth(svg, yFormat(tick)))) + 12;
+    const margin = { top: 16, right: 20, bottom: 48, left };
+    const x = rateScale([margin.left, width - margin.right]);
+    const y = linearScale([0, yMax], [height - margin.bottom, margin.top]);
+    const xs = [...new Set(series.flatMap((each) => each.values.map((point) => point.x)))].sort((a, b) => a - b);
+    gridLines(svg, yTicks, (tick) => ({ x1: margin.left, x2: width - margin.right, y1: y(tick), y2: y(tick) }));
+    axisBottom(svg, x, x.range(), rateTicks(x, svg), compact, height - margin.bottom);
+    axisTitle(svg, width - margin.right, height - 4, rateAxisTitle());
+    axisLeft(svg, y, yTicks, yFormat, margin.left);
+    for (const reference of references) {
+      el(svg, 'line', { class: 'reference', x1: margin.left, x2: width - margin.right, y1: y(reference.y), y2: y(reference.y) });
+      el(svg, 'text', { x: margin.left + 4, y: y(reference.y) - 5 }, reference.label);
+    }
+    for (const each of series) {
+      const points = each.values.filter((point) => present(point.y));
+      const at = (point) => y(Math.min(point.y, yMax));
+      el(svg, 'path', { d: linePath(points, (point) => x(point.x), at), fill: 'none', stroke: each.color, 'stroke-width': 2.5, 'stroke-linecap': 'round',
+        'stroke-linejoin': 'round', 'data-key': each.key });
+      for (const point of points) dot(svg, x(point.x), at(point), each.color, 5, each.key);
+    }
+    const tip = tooltip(container);
+    const rule = el(svg, 'line', { class: 'rule', y1: margin.top, y2: height - margin.bottom, opacity: 0 });
+    const hit = el(svg, 'rect', { class: 'hit', x: margin.left, y: margin.top, width: width - margin.left - margin.right, height: height - margin.top - margin.bottom });
+    hit.addEventListener('mousemove', (event) => {
+      if (!xs.length) return;
+      const [px, py] = pointer(event, svg, width, height);
+      const offered = nearest(xs, px, x);
+      rule.setAttribute('x1', x(offered));
+      rule.setAttribute('x2', x(offered));
+      rule.setAttribute('opacity', 1);
+      const rows = series.map((each) => {
+        const point = each.values.find((candidate) => candidate.x === offered);
+        return point && present(point.y) ? { name: `${each.name}, ${verdict(point.raw.verdict).label.toLowerCase()}`, value: yFormat(point.y), color: each.color } : null;
+      }).filter(Boolean);
+      showTip(container, tip, (x(offered) * container.clientWidth) / width, py, `${count(offered)} spans/s offered`, rows);
+    });
+    hit.addEventListener('mouseleave', () => { tip.hidden = true; rule.setAttribute('opacity', 0); });
+  };
+
+  // One measure of every picked run's seconds on one time axis, every step after the other or one step zoomed in. The runs climb one ladder,
+  // but a step that kept up early may end early, so the same second can offer another rate in each run: the steps are marked as the longest
+  // run offered them, and a zoomed step counts each run's seconds from its own start of the step.
+  const drawSeconds = (container, { height, timelines, measure, scenario, step }) => {
+    const { svg, width } = svgIn(container, height);
+    const value = measure.value || ((row) => row[measure.key]);
+    const shown = step
+      ? timelines.map((each) => {
+        const rows = each.rows.filter((row) => row.rate === step);
+        const start = rows.length ? minOf(rows, (row) => row.t) : 0;
+        return { ...each, rows: rows.map((row) => ({ ...row, t: row.t - start + 1 })) };
+      }).filter((each) => each.rows.length)
+      : timelines;
+    const all = shown.flatMap((each) => each.rows);
+    let top = maxOf(all, value);
+    if (measure.also) top = Math.max(top, maxOf(all, (row) => row[measure.also.field]));
+    if (measure.capacity) top = Math.max(top, scenario.queueSpans);
+    const yMax = measure.max ?? (top > 0 ? top * 1.08 : 1);
+    const yTicks = niceTicks(0, yMax, 6);
+    const left = Math.ceil(maxOf(yTicks, (tick) => textWidth(svg, measure.format(tick)))) + 12;
+    const margin = { top: 26, right: 20, bottom: 48, left };
+    const [t0, t1] = [minOf(all, (row) => row.t), maxOf(all, (row) => row.t)];
+    const x = linearScale([t0, t1], [margin.left, width - margin.right]);
+    const y = linearScale([0, yMax], [height - margin.bottom, margin.top]);
+    const longest = shown.reduce((best, each) => (each.rows.length > best.rows.length ? each : best));
+    const stepsShown = groupsInOrder(longest.rows, (row) => row.rate).map(([offered, rows]) => ({ offered, start: minOf(rows, (row) => row.t) }));
+    let lastLabel = -Infinity;
+    for (const each of stepsShown) {
+      if (!step) el(svg, 'line', { class: 'gridline', x1: x(each.start), x2: x(each.start), y1: margin.top - 8, y2: height - margin.bottom });
+      if (x(each.start) - lastLabel > 36) {
+        const label = el(svg, 'text', { class: step ? '' : 'pick', x: x(each.start) + 3, y: margin.top - 9 }, step ? `offering ${count(each.offered)} spans/s` : compact(each.offered));
+        if (!step) label.addEventListener('click', () => setState({ step: each.offered }));
+        lastLabel = x(each.start);
+      }
+    }
+    gridLines(svg, yTicks, (tick) => ({ x1: margin.left, x2: width - margin.right, y1: y(tick), y2: y(tick) }));
+    axisLeft(svg, y, yTicks, measure.format, margin.left);
+    axisBottom(svg, x, x.range(), niceTicks(t0, t1, Math.max(2, Math.floor((width - left) / 80))), (t) => `${t} s`, height - margin.bottom);
+    axisTitle(svg, width - margin.right, height - 4, step ? 'seconds since the step began' : 'seconds since the history was filled; the rate offered is marked at each step');
+    if (measure.capacity) {
+      el(svg, 'line', { class: 'reference', x1: margin.left, x2: width - margin.right, y1: y(scenario.queueSpans), y2: y(scenario.queueSpans) });
+      el(svg, 'text', { x: width - margin.right, y: y(scenario.queueSpans) - 5, 'text-anchor': 'end' }, 'queue capacity');
+    }
+    const atT = (row) => x(row.t);
+    for (const { run, rows } of shown) {
+      if (shown.length === 1) {
+        el(svg, 'path', { d: areaPath(rows, atT, y(0), (row) => y(Math.min(yMax, value(row)))), fill: run.color, 'fill-opacity': 0.12, stroke: 'none', 'data-key': run.run });
+      }
+      if (measure.also) {
+        el(svg, 'path', { d: linePath(rows, atT, (row) => y(Math.min(yMax, row[measure.also.field]))), fill: 'none', stroke: run.color, 'stroke-width': 1.5,
+          'stroke-dasharray': '4 3', 'stroke-opacity': 0.8, 'data-key': run.run });
+      }
+      el(svg, 'path', { d: linePath(rows, atT, (row) => y(Math.min(yMax, value(row)))), fill: 'none', stroke: run.color, 'stroke-width': 2, 'stroke-linejoin': 'round',
+        'data-key': run.run });
+    }
+    const ts = [...new Set(all.map((row) => row.t))].sort((a, b) => a - b);
+    const tip = tooltip(container);
+    const rule = el(svg, 'line', { class: 'rule', y1: margin.top, y2: height - margin.bottom, opacity: 0 });
+    const hit = el(svg, 'rect', { class: step ? 'hit' : 'hit pick', x: margin.left, y: margin.top, width: width - margin.left - margin.right,
+      height: height - margin.top - margin.bottom });
+    const at = (event) => nearest(ts, pointer(event, svg, width, height)[0], x);
+    hit.addEventListener('mousemove', (event) => {
+      const [, py] = pointer(event, svg, width, height);
+      const t = at(event);
+      rule.setAttribute('x1', x(t));
+      rule.setAttribute('x2', x(t));
+      rule.setAttribute('opacity', 1);
+      const rows = shown.flatMap(({ run, rows: mine }) => {
+        const row = mine.find((candidate) => candidate.t === t);
+        if (!row) return [];
+        const name = step ? run.name : `${run.name} at ${count(row.rate)} spans/s`;
+        return [{ name: measure.also ? `${name}, ${count(row[measure.also.field])} offered` : name, value: measure.format(value(row)), color: run.color }];
+      });
+      showTip(container, tip, (x(t) * container.clientWidth) / width, py, step ? `Second ${t} of the step, offering ${count(step)} spans/s` : `Second ${t}`, rows);
+    });
+    hit.addEventListener('mouseleave', () => { tip.hidden = true; rule.setAttribute('opacity', 0); });
+    if (!step) {
+      hit.addEventListener('click', (event) => {
+        const row = all.find((candidate) => candidate.t === at(event));
+        if (row) setState({ step: row.rate });
+      });
+    }
+  };
+
+  // The ladder: one column per rate any series offered, one row per series, each cell its verdict there.
+  const drawLadder = (container, items) => {
+    container.replaceChildren();
+    const box = Object.assign(document.createElement('div'), { className: 'ladder-box' });
+    const ladder = Object.assign(document.createElement('div'), { className: 'ladder' });
+    const rates = [...new Set(items.flatMap((item) => item.steps.map((row) => row.rate)))].sort((a, b) => a - b);
+    const cell = (className, text) => Object.assign(document.createElement('div'), { className, textContent: text });
+    ladder.style.gridTemplateColumns = `auto repeat(${rates.length}, minmax(4.5rem, 1fr))`;
+    ladder.append(cell('ladder-head text', 'Spans/s offered'), ...rates.map((rate) => cell('ladder-head', compact(rate))), ...items.flatMap((item) => {
+      const byRate = new Map(item.steps.map((row) => [row.rate, row]));
+      const head = cell('ladder-run', item.name);
+      dotIn(head, null, item.color);
+      return [head, ...rates.map((rate) => {
+        const row = byRate.get(rate);
+        if (!row) return cell('ladder-cell empty', '');
+        const mark = cell(`ladder-cell tone-${verdict(row.verdict).tone}`, verdict(row.verdict).short);
+        mark.title = `${item.name} at ${count(rate)} spans/s: ${verdict(row.verdict).label}; ${count(row.processed)} processed/s, writer ${share(row.writerBusy)} busy, `
+          + `${share(row.busy)} refused, ${share(row.shedUnretained)} not retained`;
+        return mark;
+      })];
+    }));
+    box.append(ladder);
+    container.append(box);
+  };
+
+  // The series a scenario view draws: the picked runs on one scenario, or one run on the scenarios of a sweep.
+  const seriesItems = (picked, scenario) => {
+    if (state.series === 'scenarios') {
+      const run = picked.find((each) => each.order === state.run) || picked[picked.length - 1];
+      return { run, items: membersOf(state.sweep).map((member, index) => ({ key: member.scenario, name: member.name, color: `var(${SERIES[index % SERIES.length]})`,
+        steps: stepsOf(run.run, member.scenario), limits: rowsOf(run.run).get(member.scenario), scenario: member })) };
+    }
+    return { items: picked.map((run) => ({ key: run.run, name: run.name, detail: run.detail, color: run.color, steps: stepsOf(run.run, scenario.scenario),
+      limits: rowsOf(run.run).get(scenario.scenario), scenario })) };
+  };
+
+  const stage = {
+    title: document.getElementById('stage-title'),
+    how: document.getElementById('stage-how'),
+    strip: document.getElementById('strip'),
+    chart: document.getElementById('stage-chart'),
+    tableBox: document.getElementById('stage-table-box'),
+    table: document.getElementById('stage-table'),
+    about: document.getElementById('stage-about'),
+    legend: document.getElementById('stage-legend'),
+    note: document.getElementById('stage-note'),
+    show: document.getElementById('show-switch'),
+    keys: document.getElementById('keys'),
+  };
+  // The chart fills what the stage leaves it; below a laptop width the stage scrolls and the chart keeps its minimum.
+  const chartHeight = () => Math.max(380, stage.chart.clientHeight - 36);
+  const scenarioSelect = document.getElementById('scenario-select');
+  const sweepSelect = document.getElementById('sweep-select');
+  const runSelect = document.getElementById('run-select');
+  const measureSelect = document.getElementById('measure-select');
+  const secondsSelect = document.getElementById('seconds-select');
+  const optionGroups = (select, groups) => select.replaceChildren(...groups.map(([label, options]) => {
+    const group = document.createElement('optgroup');
+    group.label = label;
+    group.append(...options.map(([value, text]) => new Option(text, value)));
+    return group;
+  }));
+  optionGroups(scenarioSelect, groupsInOrder(scenarios, (row) => row.sweep).map(([sweep, rows]) => [SWEEP_LABELS[sweep] || sweep, rows.map((row) => [row.scenario, row.name])]));
+  sweepSelect.replaceChildren(...sweepIds.map((sweep) => new Option(SWEEP_LABELS[sweep] || sweep, sweep)));
+  optionGroups(measureSelect, groupsInOrder(Object.entries(MEASURES), ([, measure]) => measure.group).map(([group, entries]) => [group, entries.map(([key, measure]) => [key, measure.label])]));
+  secondsSelect.replaceChildren(...Object.entries(SECONDS).map(([key, measure]) => new Option(measure.label, key)));
+  scenarioSelect.addEventListener('change', () => setState({ scenario: scenarioSelect.value, step: null }));
+  sweepSelect.addEventListener('change', () => setState({ sweep: sweepSelect.value }));
+  runSelect.addEventListener('change', () => setState({ run: Number(runSelect.value) }));
+  measureSelect.addEventListener('change', () => setState({ measure: measureSelect.value }));
+  secondsSelect.addEventListener('change', () => setState({ seconds: secondsSelect.value }));
+  document.getElementById('all-steps').addEventListener('click', () => setState({ step: null }));
+  for (const button of document.querySelectorAll('[data-param]')) {
+    button.addEventListener('click', () => setState({ [button.dataset.param]: button.dataset.value }));
+  }
+  // The theme follows the system unless picked here; the pick is kept in this browser.
+  const applyTheme = (theme) => {
+    if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+    else delete document.documentElement.dataset.theme;
+    for (const button of document.querySelectorAll('[data-theme]')) button.setAttribute('aria-pressed', String(button.dataset.theme === (theme || 'auto')));
+  };
+  let storedTheme = null;
+  try {
+    storedTheme = localStorage.getItem('saturation-theme');
+  } catch {
+    // Without storage the theme follows the system until picked.
+  }
+  applyTheme(storedTheme);
+  for (const button of document.querySelectorAll('button[data-theme]')) {
+    button.addEventListener('click', () => {
+      applyTheme(button.dataset.theme);
+      try {
+        if (button.dataset.theme === 'auto') localStorage.removeItem('saturation-theme'); else localStorage.setItem('saturation-theme', button.dataset.theme);
+      } catch {
+        // Kept for this page only.
+      }
+    });
+  }
+  const moveScenario = (delta) => {
+    const index = scenarios.findIndex((scenario) => scenario.scenario === state.scenario);
+    const next = scenarios[(index + delta + scenarios.length) % scenarios.length];
+    setState({ scenario: next.scenario, step: null });
+  };
+  const moveView = (delta) => {
+    const index = VIEWS.findIndex((view) => view.id === state.view);
+    const next = VIEWS[Math.max(0, Math.min(VIEWS.length - 1, index + delta))];
+    if (next.id !== state.view) setState({ view: next.id });
+  };
+  document.getElementById('scenario-previous').addEventListener('click', () => moveScenario(-1));
+  document.getElementById('scenario-next').addEventListener('click', () => moveScenario(1));
+  addEventListener('keydown', (event) => {
+    if (event.altKey || event.ctrlKey || event.metaKey || ['SELECT', 'INPUT', 'TEXTAREA'].includes(event.target.tagName)) return;
+    const scenarioKeys = viewOf(state.view).controls.includes('scenario') && state.series === 'runs';
+    if (event.key === 'ArrowUp') moveView(-1);
+    else if (event.key === 'ArrowDown') moveView(1);
+    else if (event.key === 'ArrowLeft' && scenarioKeys) moveScenario(-1);
+    else if (event.key === 'ArrowRight' && scenarioKeys) moveScenario(1);
+    else return;
+    event.preventDefault();
+  });
+
+  const rail = document.getElementById('rail');
+  rail.replaceChildren(...groupsInOrder(VIEWS, (view) => view.group).map(([group, views]) => {
+    const box = Object.assign(document.createElement('div'), { className: 'rail-group' });
+    box.append(Object.assign(document.createElement('div'), { className: 'rail-title', textContent: group }), ...views.map((view) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = view.title;
+      button.dataset.view = view.id;
+      button.addEventListener('click', () => setState({ view: view.id }));
+      return button;
+    }));
+    return box;
+  }));
+
+  const renderAbout = () => {
+    const bold = (text) => Object.assign(document.createElement('b'), { textContent: text });
+    const latest = allRuns[allRuns.length - 1];
+    document.getElementById('runline').replaceChildren('Latest run: ', bold(latest.label), ` on ${latest.machine}. Every rate axis runs to the most a run offers, `,
+      bold(count(max)), ' spans per second.');
+    // The applications sweep's ends, from the latest run that ran both.
+    const swept = [...allRuns].reverse().find((run) => rowsOf(run.run).has('applications-5') && rowsOf(run.run).has('applications-500'));
+    const lede = document.getElementById('lede');
+    if (swept) {
+      const rows = rowsOf(swept.run);
+      const applications = (id) => (scenarioById.get(id) || {}).applications;
+      lede.append(`In ${swept.name}, a hub watching `, bold(count(applications('applications-5'))), ' applications keeps up with ',
+        bold(orNone(rows.get('applications-5').keepsUp, count) || 'none'), ' spans per second, and one watching ', bold(count(applications('applications-500'))),
+        ' applications with ', bold(orNone(rows.get('applications-500').keepsUp, count) || 'none'),
+        ', everything else being equal. Each sweep changes one thing of the reference shape, so the difference between two of its points has one cause.');
+    } else {
+      lede.append('Each sweep changes one thing of the reference shape, so the difference between two of its points has one cause.');
+    }
+    fillTable(document.getElementById('runs-table'), [
+      { label: 'Run', text: true, value: (run) => run.name, color: (run) => run.color },
+      { label: 'Started', text: true, value: (run) => run.when },
+      { label: 'Commit', text: true, value: (run) => run.short },
+      { label: 'Machine', text: true, value: (run) => run.machine },
+      { label: 'Scenarios run', value: (run) => count(rowsOf(run.run).size) },
+      { label: 'Seconds kept', text: true, value: (run) => (seconds.some((row) => row.run === run.run) ? 'yes' : 'no') },
+    ], allRuns);
+    const kinds = { receive: 'var(--series-1)', fit: 'var(--series-2)', tick: 'var(--reference)' };
+    document.getElementById('profile-list').replaceChildren(...profile.map((row) => {
+      const item = Object.assign(document.createElement('div'), { className: 'profile-row' });
+      const track = Object.assign(document.createElement('div'), { className: 'bar-track' });
+      const fill = Object.assign(document.createElement('div'), { className: 'bar-fill' });
+      fill.style.width = `${row.share * 100}%`;
+      fill.style.background = kinds[row.kind] || 'var(--reference)';
+      track.append(fill);
+      item.append(Object.assign(document.createElement('code'), { textContent: row.method }), track,
+        Object.assign(document.createElement('span'), { className: 'share', textContent: share(row.share) }),
+        Object.assign(document.createElement('span'), { className: 'what', textContent: row.what }));
+      return item;
+    }));
+    fillTable(document.getElementById('setup-table'), [{ label: 'Setting', text: true, value: (row) => row.label }, { label: 'Value', text: true, value: (row) => row.value }], setup);
+    fillTable(document.getElementById('scenarios-table'), [{ label: 'Scenario', text: true, value: (row) => row.name }, { label: 'Shape', text: true, value: (row) => row.description }],
+      scenarios);
+  };
+
+  const renderPicker = (picked, pickedIds) => {
+    const full = picked.length >= MAX_PICKED;
+    document.getElementById('run-picker').replaceChildren(...allRuns.map((run) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'btn run-chip';
+      chip.setAttribute('aria-pressed', String(pickedIds.has(run.run)));
+      chip.disabled = full && !pickedIds.has(run.run);
+      chip.title = `${run.name}: started ${run.when}, commit ${run.commit}${run.changed ? ' with uncommitted changes' : ''}, on ${run.machine}. `
+        + (pickedIds.has(run.run) ? 'Click to leave it out.' : full ? `At most ${MAX_PICKED} runs compare at once.` : 'Click to compare it.');
+      chip.style.setProperty('--run', run.color);
+      const mark = document.createElement('i');
+      mark.className = 'run-dot';
+      chip.append(mark, Object.assign(document.createElement('span'), { className: 'run-name', textContent: run.name }),
+        Object.assign(document.createElement('span'), { className: 'run-commit', textContent: run.short }));
+      chip.addEventListener('click', () => {
+        const next = pickedIds.has(run.run) ? picked.filter((each) => each !== run) : allRuns.filter((each) => pickedIds.has(each.run) || each === run);
+        if (next.length) setState({ runs: next.map((each) => each.order) });
+      });
+      return chip;
+    }));
+    const machines = [...new Set(picked.map((run) => run.machine))];
+    const note = document.getElementById('runs-note');
+    note.hidden = machines.length <= 1;
+    note.classList.toggle('warn', machines.length > 1);
+    note.textContent = machines.length > 1 ? `The picked runs ran on different machines (${machines.join('; ')}), so their rates differ for that reason too.` : '';
+  };
+
+  // Each picked run of a scenario against the earliest picked run that ran it.
+  const comparedRows = (picked, members = scenarios) => members.flatMap((scenario) => {
+    const ran = picked.filter((run) => rowsOf(run.run).has(scenario.scenario));
+    const against = ran.length ? rowsOf(ran[0].run).get(scenario.scenario) : null;
+    return ran.map((run) => {
+      const row = rowsOf(run.run).get(scenario.scenario);
+      return { ...row, name: scenario.name, first: run === ran[0], against: ran[0],
+        change: row.keepsUp && against.keepsUp ? row.keepsUp / against.keepsUp - 1 : null,
+        headroom: row.keepsUp && row.maxRate ? row.keepsUp / row.maxRate : null };
+    });
+  });
+  const limitColumns = [
+    { label: 'Scenario', text: true, value: (row) => row.name },
+    { label: 'Run', text: true, value: (row) => runById.get(row.run).name, color: (row) => runById.get(row.run).color },
+    { label: 'Keeps up with', value: (row) => orNone(row.keepsUp, count) },
+    { label: 'Change', value: (row) => (row.first ? 'baseline' : present(row.change) ? `${signed(row.change)} vs ${row.against.name}` : ''),
+      className: (row) => (row.first ? 'tone-muted' : row.change > 0 ? 'tone-ok' : row.change < 0 ? 'tone-bad' : '') },
+    { label: 'Headroom', value: (row) => orNone(row.headroom, share) },
+    { label: 'Sheds up to', value: (row) => orNone(row.holds, count) },
+    { label: 'Fails at', value: (row) => orNone(row.failsAt, count) },
+    { label: 'How it fails', text: true, value: (row) => (row.failsAs ? verdict(row.failsAs).label : 'Never, up to the most offered'), tone: (row) => (row.failsAs ? verdict(row.failsAs).tone : 'ok') },
+  ];
+  const stepColumns = [
+    { label: 'Series', text: true, value: (row) => row.item.name, color: (row) => row.item.color },
+    { label: 'Rate', value: (row) => count(row.rate) },
+    { label: 'Offered/s', value: (row) => count(row.offered) },
+    { label: 'Processed/s', value: (row) => count(row.processed) },
+    { label: 'Refused', value: (row) => share(row.busy) },
+    { label: 'Not retained', value: (row) => share(row.shedUnretained) },
+    { label: 'Not linked', value: (row) => share(row.shedUnjoined) },
+    { label: 'Writer busy', value: (row) => share(row.writerBusy) },
+    { label: 'Writer CPU', value: (row) => share(row.writerCpu) },
+    { label: 'Cores', value: (row) => cores(row.processCores) },
+    { label: 'Epoch lag ms', value: (row) => count(row.epochLagMs) },
+    { label: 'Frame ms', value: (row) => count(row.frameMs) },
+    { label: 'GC ms/s', value: (row) => count(row.gcMsPerS) },
+    { label: 'Heap MB', value: (row) => count(row.heapMb) },
+    { label: 'Retained', value: (row) => count(row.retained) },
+    { label: 'Horizon s', value: (row) => count(row.horizonS) },
+    { label: 'History s', value: (row) => count(row.historyS) },
+    { label: 'Verdict', text: true, value: (row) => verdict(row.verdict).label, tone: (row) => verdict(row.verdict).tone },
+  ];
+  const stepRows = (items) => items.flatMap((item) => item.steps.map((row) => ({ ...row, item })));
+
+  // How each picked run compares with the earliest picked run that ran the same scenarios, in words.
+  const changeFacts = (picked, limit) => picked.map((run) => {
+    const mine = rowsOf(run.run);
+    let faster = 0;
+    let slower = 0;
+    let same = 0;
+    let baselineOn = 0;
+    for (const scenario of scenarios) {
+      const row = mine.get(scenario.scenario);
+      if (!row || !present(row[limit])) continue;
+      const baseline = picked.find((each) => rowsOf(each.run).has(scenario.scenario));
+      if (baseline === run) {
+        baselineOn += 1;
+        continue;
+      }
+      const base = rowsOf(baseline.run).get(scenario.scenario)[limit];
+      if (!present(base)) continue;
+      if (row[limit] > base) faster += 1; else if (row[limit] < base) slower += 1; else same += 1;
+    }
+    const parts = [];
+    if (faster + slower + same) parts.push(`higher on ${faster}, lower on ${slower}, unchanged on ${same} ${faster + slower + same === 1 ? 'scenario' : 'scenarios'} vs the earliest run that ran them`);
+    if (baselineOn) parts.push(`the earliest run on ${baselineOn}, so the baseline there`);
+    return { key: run.run, name: run.name, title: run.detail, color: run.color, text: parts.length ? ` ${parts.join('; ')}` : ' ran none of the scenarios' };
+  });
+
+  const renderScenarioView = (view, picked, scenario) => {
+    const { run, items } = seriesItems(picked, scenario);
+    const bySweep = state.series === 'scenarios';
+    const where = bySweep ? `${SWEEP_LABELS[state.sweep].toLowerCase()} sweep in ${run.name}` : scenario.name;
+    const withSteps = items.filter((item) => item.steps.length);
+    facts(withSteps.map((item) => ({ key: item.key, name: item.name, title: item.detail, color: item.color, text: ` ${limitsOf(item.limits)}` })));
+    const shape = bySweep ? `One run, ${run.label}, over every scenario of the ${SWEEP_LABELS[state.sweep].toLowerCase()} sweep with the reference.`
+      : `${scenario.description}; ${count(scenario.exporters)} exporting instances.`;
+    if (view.id === 'ladder') {
+      stage.title.textContent = `Verdict ladder · ${where}`;
+      stage.how.textContent = `${shape} Read a row left to right: every rate of the ladder the run offered, and what the hub did at each. A run climbs until two rates in a row fail.`;
+      legend(stage.legend, VERDICT_KEY);
+      if (withSteps.length) drawLadder(stage.chart, withSteps); else emptyLine(stage.chart, 'No picked run ran this scenario.');
+    } else {
+      const measure = MEASURES[state.measure];
+      stage.title.textContent = `${measure.label} · ${where}`;
+      stage.how.textContent = `${measure.what} ${shape} Each dot is one rate of the ladder, measured once the step settled.`;
+      if (!withSteps.length) {
+        emptyLine(stage.chart, 'No picked run ran this scenario.');
+      } else {
+        const series = withSteps.map((item) => ({ key: item.key, name: item.name, color: item.color,
+          values: item.steps.map((row) => ({ x: row.rate, y: row[state.measure], raw: row })) }));
+        const configured = measure.configured ? [...new Set(withSteps.map((item) => measure.configured(item.scenario)))] : [];
+        const references = [...(measure.references || []), ...(configured.length === 1 ? [{ y: configured[0], label: `configured: ${measure.format(configured[0])}` }] : [])];
+        const top = Math.max(maxOf(series.flatMap((each) => each.values), (point) => point.y), ...references.map((reference) => reference.y));
+        lineChart(stage.chart, { height: chartHeight(), series, yMax: measure.max ?? (top > 0 ? top * 1.1 : 1), yFormat: measure.format, references });
+      }
+    }
+    fillTable(stage.table, stepColumns, stepRows(withSteps), (row) => row.item.key);
+  };
+
+  const renderSecondsView = (picked, scenario) => {
+    const measure = { key: state.seconds, ...SECONDS[state.seconds] };
+    const timelines = picked.map((run) => ({ run, rows: seconds.filter((row) => row.scenario === scenario.scenario && row.run === run.run).sort((a, b) => a.t - b.t) }))
+      .filter((each) => each.rows.length);
+    const missing = picked.filter((run) => !timelines.some((each) => each.run === run));
+    const zoomed = state.step && timelines.some((each) => each.rows.some((row) => row.rate === state.step));
+    stage.title.textContent = `${measure.label} · ${scenario.name}${zoomed ? ` · the step offering ${count(state.step)} spans/s` : ''}`;
+    stage.how.textContent = `${measure.what} ${scenario.description}; ${count(scenario.exporters)} exporting instances. `
+      + (zoomed ? 'One step of thirty seconds; the first five settle before the step is measured.' : 'Every second of the run, one step of the ladder after the other; click a step to zoom in on it.');
+    legend(stage.legend, measure.also ? [{ name: measure.also.label }] : []);
+    facts(timelines.map(({ run }) => ({ key: run.run, name: run.name, title: run.detail, color: run.color, text: ` ${limitsOf(rowsOf(run.run).get(scenario.scenario))}` })));
+    document.getElementById('all-steps').hidden = !zoomed;
+    stage.note.textContent = missing.length && timelines.length ? `Seconds are kept for the latest three runs only, so none for ${listOf(missing.map((run) => run.name))}.` : '';
+    if (timelines.length) {
+      drawSeconds(stage.chart, { height: chartHeight(), timelines, measure, scenario, step: zoomed ? state.step : null });
+    } else {
+      emptyLine(stage.chart, 'Seconds are kept for the latest three runs only; none of the picked runs has them for this scenario.');
+    }
+    const { items } = seriesItems(picked, scenario);
+    fillTable(stage.table, stepColumns, stepRows(items.filter((item) => item.steps.length)), (row) => row.item.key);
+  };
+
+  function render() {
+    for (const button of document.querySelectorAll('[data-param]')) {
+      button.setAttribute('aria-pressed', String(state[button.dataset.param] === button.dataset.value));
+    }
+    const wanted = allRuns.filter((run) => state.runs.includes(run.order)).slice(0, MAX_PICKED);
+    const picked = wanted.length ? wanted : allRuns.length <= DEFAULT_RUNS ? allRuns : [allRuns[0], ...allRuns.slice(1 - DEFAULT_RUNS)];
+    const pickedIds = new Set(picked.map((run) => run.run));
+    renderPicker(picked, pickedIds);
+    const view = viewOf(state.view);
+    for (const button of rail.querySelectorAll('button')) button.setAttribute('aria-current', String(button.dataset.view === view.id));
+    const scenario = scenarioById.get(state.scenario);
+    const bySweep = view.controls.includes('series') && state.series === 'scenarios';
+    const shown = (name) => view.controls.includes(name) && !(bySweep && name === 'scenario') && !(!bySweep && ['sweep', 'run'].includes(name));
+    for (const name of ['scenario', 'sweep', 'run', 'measure', 'series', 'seconds', 'limit', 'scale']) document.getElementById(`ctl-${name}`).hidden = !shown(name);
+    stage.strip.hidden = !view.controls.length;
+    stage.keys.hidden = !view.controls.includes('scenario');
+    scenarioSelect.value = state.scenario;
+    sweepSelect.value = state.sweep;
+    measureSelect.value = state.measure;
+    secondsSelect.value = state.seconds;
+    runSelect.replaceChildren(...picked.map((run) => Object.assign(new Option(`${run.name} · ${run.short}`, run.order), { title: run.detail })));
+    runSelect.value = String((picked.find((run) => run.order === state.run) || picked[picked.length - 1]).order);
+    const about = view.id === 'about';
+    const table = !about && state.show === 'table';
+    stage.about.hidden = !about;
+    stage.show.hidden = about;
+    stage.chart.hidden = about || table;
+    stage.tableBox.hidden = about || !table;
+    stage.note.textContent = '';
+    stage.legend.replaceChildren();
+    facts([]);
+    const limit = LIMITS[state.limit];
+    const reference = scenarios.find((each) => each.sweep === 'reference');
+    if (about) {
+      stage.title.textContent = 'How it was measured';
+      stage.how.textContent = 'What the runs are, what each scenario looks like, the machine and the load, and where the writer spends its time.';
+      return;
+    }
+    if (view.id === 'overview' || view.id === 'change') {
+      const change = view.id === 'change';
+      stage.title.textContent = change ? 'What changed between runs' : 'All scenarios at a glance';
+      stage.how.textContent = change
+        ? `Each bar is how far a run moved from the earliest picked run that ran the same scenario: ${limit.what}. Right is better, left is worse; a tick at zero marks the run `
+          + 'the others are measured against. Click a row to open that scenario rate by rate.'
+        : `One row per scenario, one dot per run at ${limit.what}. Further right is better. Dots that sit apart in a row are a change between runs; a line joins the lowest `
+          + 'and the highest. Click a row to open that scenario rate by rate.';
+      facts(changeFacts(picked, state.limit));
+      if (change && picked.length < 2) emptyLine(stage.chart, `Pick a second run in the top bar to see its change against ${picked[0].name}.`);
+      else drawDots(stage.chart, picked, state.limit, change ? 'change' : 'rates');
+      fillTable(stage.table, limitColumns, comparedRows(picked), (row) => row.scenario);
+    } else if (view.sweep) {
+      const sweep = SWEEPS[view.sweep];
+      const members = membersOf(view.sweep);
+      stage.title.textContent = `${view.title} · ${limit.label}`;
+      stage.how.textContent = `This sweep asks ${sweep.what}. Across: the one thing it changes of the reference${reference ? `, ${reference.description}` : ''}. `
+        + `Up: ${limit.what}. One line per run; where lines sit apart, the runs differ. Click a point to open that scenario rate by rate.`;
+      const ranOf = (run) => members.filter((member) => rowsOf(run.run).has(member.scenario) && present(rowsOf(run.run).get(member.scenario)[state.limit]));
+      facts(picked.map((run) => {
+        const rows = rowsOf(run.run);
+        const ran = ranOf(run);
+        if (!ran.length) return { key: run.run, name: run.name, title: run.detail, color: run.color, text: ' did not run this sweep' };
+        const first = ran[0];
+        const last = ran[ran.length - 1];
+        const at = (member) => `${compact(rows.get(member.scenario)[state.limit])} at ${sweep.format(member[sweep.field])}${sweep.unit ? ` ${sweep.unit}` : ''}`;
+        return { key: run.run, name: run.name, title: run.detail, color: run.color,
+          text: ran.length === 1 ? ` ${limit.short} ${at(first)} only` : ` ${limit.short} ${at(first)}, ${at(last)}` };
+      }));
+      const referenceOnly = picked.filter((run) => ranOf(run).length && ranOf(run).every((member) => member.sweep === 'reference'));
+      stage.note.textContent = referenceOnly.length
+        ? `${listOf(referenceOnly.map((run) => run.name))} ran only the reference of this sweep, so ${referenceOnly.length > 1 ? 'they show' : 'it shows'} one point.` : '';
+      drawSweep(stage.chart, view.sweep, picked, state.limit, chartHeight());
+      fillTable(stage.table, limitColumns, comparedRows(picked, members), (row) => row.scenario);
+    } else if (view.id === 'seconds') {
+      renderSecondsView(picked, scenario);
+    } else {
+      renderScenarioView(view, picked, scenario);
+    }
+  }
+
+  renderAbout();
+  render();
+  let resizing;
+  let lastSize = `${innerWidth}x${innerHeight}`;
+  addEventListener('resize', () => {
+    clearTimeout(resizing);
+    resizing = setTimeout(() => {
+      const size = `${innerWidth}x${innerHeight}`;
+      if (size !== lastSize) {
+        lastSize = size;
+        render();
+      }
+    }, 150);
+  });
+})();
+</script>
+</body>
+</html>

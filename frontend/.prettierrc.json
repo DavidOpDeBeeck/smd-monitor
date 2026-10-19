@@ -1,0 +1,10 @@
+{
+    "printWidth": 160,
+    "tabWidth": 4,
+    "singleQuote": true,
+    "arrowParens": "avoid",
+    "endOfLine": "auto",
+    "plugins": ["prettier-plugin-tailwindcss"],
+    "tailwindStylesheet": "./src/styles.css",
+    "tailwindFunctions": ["cx"]
+}
