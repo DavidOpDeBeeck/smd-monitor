@@ -13,11 +13,12 @@ import java.util.concurrent.locks.ReentrantLock;
 import static java.util.Objects.requireNonNull;
 
 // One bounded queue of admitted batches per application, which the writer drains round-robin, so one application can neither starve another's
-// ingest nor fill the others' room (TR9). The applications share the capacity equally; an empty queue still takes one batch, so an application
-// whose batch exceeds its share can report, and a queue within its share takes one more batch beyond it while all the queues keep within the
-// capacity, so the batches an application's instances export together are not refused while the hub has room. An application can thus take at
-// most one batch more than its share. How full a queue is behind the batch the writer takes sets that batch's shedding, so a batch alone in its
-// queue is never shed, whatever its size against the share. The memory budget sets the capacity (P1).
+// ingest nor fill the others' room (TR9). Each application has half an equal share of the capacity reserved; the rest is a pool any application
+// borrows from beyond its reserved room, up to half the pool, so the batches an application's instances export together, or that arrive at once
+// after a pause, are taken while the hub has room, and a flooding application still leaves the others half the pool. The queues thus hold at most
+// the capacity, but that an empty queue still takes one batch, so an application whose batch exceeds its reserved room can report. A batch is
+// shed only beyond the reserved room: by how full the pool is, or how much of its half the batch's application borrows, whichever is fuller. The
+// memory budget sets the capacity (P1).
 public final class IntakeQueues {
 
     private static final double INTERESTING_ONLY_FILL = 0.5;
@@ -32,6 +33,11 @@ public final class IntakeQueues {
     private final Map<ApplicationName, Long> full = new HashMap<>();
     private long queued;
     private long drained;
+    // Guarded by the lock, and set again whenever an application's queue is added or forgotten: the room reserved for each application, the pool
+    // beyond the reserved rooms, and what the queues hold of the pool.
+    private long reserved;
+    private long pool;
+    private long borrowed;
 
     public IntakeQueues(int capacity) {
         if (capacity < 1) {
@@ -40,15 +46,19 @@ public final class IntakeQueues {
         this.capacity = capacity;
     }
 
-    // False when the application's queue is full: it holds batches, this one would take it beyond the application's share, and either the queue
-    // is beyond its share already or the queues together would exceed the capacity.
+    // False when the application's queue is full: it holds batches, and this one would borrow beyond the pool or beyond half of it.
     public boolean offer(SpanBatch batch) {
         lock.lock();
         try {
-            var queue = queues.computeIfAbsent(batch.application(), ignored -> new Queue());
-            var beyondShare = queue.spans + batch.size() > share();
-            var mayExceedShare = queue.spans <= share() && queued + batch.size() <= capacity;
-            if (!queue.batches.isEmpty() && beyondShare && !mayExceedShare) {
+            var queue = queues.get(batch.application());
+            if (queue == null) {
+                queue = new Queue();
+                queues.put(batch.application(), queue);
+                share();
+            }
+            var borrowing = borrowedBy(queue.spans + batch.size()) - borrowedBy(queue.spans);
+            var beyondPool = borrowed + borrowing > pool || borrowedBy(queue.spans + batch.size()) > halfPool();
+            if (!queue.batches.isEmpty() && borrowing > 0 && beyondPool) {
                 full.merge(batch.application(), (long) batch.size(), Long::sum);
                 return false;
             }
@@ -58,6 +68,7 @@ public final class IntakeQueues {
             queue.batches.addLast(batch);
             queue.spans += batch.size();
             queued += batch.size();
+            borrowed += borrowing;
             offered.signal();
             return true;
         } finally {
@@ -78,6 +89,7 @@ public final class IntakeQueues {
             }
             var queue = ready.pollFirst();
             var batch = queue.batches.pollFirst();
+            borrowed -= borrowedBy(queue.spans) - borrowedBy(queue.spans - batch.size());
             queue.spans -= batch.size();
             queued -= batch.size();
             drained += batch.size();
@@ -98,6 +110,7 @@ public final class IntakeQueues {
             var queue = queues.computeIfPresent(application, (ignored, kept) -> kept.batches.isEmpty() ? null : kept);
             if (queue == null) {
                 full.remove(application);
+                share();
             }
         } finally {
             lock.unlock();
@@ -113,12 +126,27 @@ public final class IntakeQueues {
         }
     }
 
-    private int share() {
-        return capacity / queues.size();
+    // Splits the capacity again over the applications, which passes over every queue only when one is added or forgotten.
+    private void share() {
+        reserved = queues.isEmpty() ? 0 : capacity / (2L * queues.size());
+        pool = capacity - reserved * queues.size();
+        borrowed = queues.values().stream().mapToLong(queue -> borrowedBy(queue.spans)).sum();
+    }
+
+    private long borrowedBy(long spans) {
+        return Math.max(0, spans - reserved);
+    }
+
+    private long halfPool() {
+        return Math.max(1, pool / 2);
     }
 
     private Shedding shedding(Queue queue) {
-        var fill = (double) queue.spans / share();
+        var borrowing = borrowedBy(queue.spans);
+        if (borrowing == 0) {
+            return Shedding.NONE;
+        }
+        var fill = Math.max((double) borrowed / pool, (double) borrowing / halfPool());
         if (fill >= UNJOINED_FILL) {
             return Shedding.UNJOINED;
         }

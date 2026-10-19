@@ -24,6 +24,7 @@ class IntakeQueuesTest {
 
     private static final ApplicationName TICKETS = new ApplicationName("ticket-service");
     private static final ApplicationName BILLING = new ApplicationName("billing-service");
+    private static final ApplicationName SHIPPING = new ApplicationName("shipping-service");
     private static final MessageType OPENED = new MessageType(MessageKind.EVENT, "TicketOpened");
 
     private final AtomicLong ids = new AtomicLong();
@@ -42,30 +43,62 @@ class IntakeQueuesTest {
     }
 
     @Test
-    void offer_batchesBeyondTheApplicationsShare_takesOneAndRefusesTheNextForThatApplicationOnly() {
-        var queues = new IntakeQueues(10);
-        queues.offer(batch(TICKETS, 4));
+    void offer_burstBeyondTheReservedRoomWhileTheOthersAreQuiet_isTakenFromThePool() {
+        var queues = new IntakeQueues(40);
         queues.offer(batch(BILLING, 1));
+        queues.offer(batch(TICKETS, 10));
 
-        var beyondShare = queues.offer(batch(TICKETS, 2));
-        var full = queues.offer(batch(TICKETS, 1));
-        var other = queues.offer(batch(BILLING, 3));
+        var borrowing = queues.offer(batch(TICKETS, 5));
+        var halfThePool = queues.offer(batch(TICKETS, 5));
 
-        assertThat(beyondShare).isTrue();
-        assertThat(full).isFalse();
-        assertThat(other).isTrue();
+        assertThat(borrowing).isTrue();
+        assertThat(halfThePool).isTrue();
     }
 
     @Test
-    void offer_batchBeyondTheShareWhileTheQueuesAreFull_isRefused() {
-        var queues = new IntakeQueues(10);
-        queues.offer(batch(BILLING, 5));
-        queues.offer(batch(TICKETS, 4));
+    void offer_applicationBorrowingHalfThePool_isRefusedWhileTheOthersStillBorrow() {
+        var queues = new IntakeQueues(40);
+        queues.offer(batch(BILLING, 1));
+        queues.offer(batch(TICKETS, 10));
+        queues.offer(batch(TICKETS, 10));
 
-        var taken = queues.offer(batch(TICKETS, 2));
+        var beyondHalf = queues.offer(batch(TICKETS, 1));
+        var other = queues.offer(batch(BILLING, 19));
 
-        assertThat(taken).isFalse();
-        assertThat(queues.health().full()).containsEntry(TICKETS, 2L);
+        assertThat(beyondHalf).isFalse();
+        assertThat(other).isTrue();
+        assertThat(queues.health().full()).containsOnlyKeys(TICKETS);
+    }
+
+    @Test
+    void offer_poolSpent_refusesBorrowingButTakesBatchesWithinTheReservedRoom() {
+        var queues = new IntakeQueues(60);
+        queues.offer(batch(TICKETS, 10));
+        queues.offer(batch(BILLING, 10));
+        queues.offer(batch(SHIPPING, 1));
+        queues.offer(batch(TICKETS, 15));
+        queues.offer(batch(BILLING, 15));
+
+        var withinReservedRoom = queues.offer(batch(SHIPPING, 9));
+        var borrowing = queues.offer(batch(SHIPPING, 1));
+
+        assertThat(withinReservedRoom).isTrue();
+        assertThat(borrowing).isFalse();
+        assertThat(queues.health().full()).containsEntry(SHIPPING, 1L);
+    }
+
+    @Test
+    void offer_applicationsBorrowingUntilRefused_holdAtMostTheCapacity() {
+        var queues = new IntakeQueues(100);
+
+        for (var round = 0; round < 50; round++) {
+            for (var application : List.of(TICKETS, BILLING, SHIPPING)) {
+                queues.offer(batch(application, 3));
+            }
+        }
+
+        assertThat(queues.health().queued()).isLessThanOrEqualTo(100);
+        assertThat(queues.health().full()).containsOnlyKeys(TICKETS, BILLING, SHIPPING);
     }
 
     @Test
@@ -90,21 +123,50 @@ class IntakeQueuesTest {
     }
 
     @Test
-    void drain_queueFillingUp_shedsMoreAsItFills() throws InterruptedException {
-        var queues = new IntakeQueues(10);
-        IntStream.range(0, 10).forEach(ignored -> queues.offer(batch(TICKETS, 1)));
+    void drain_applicationBorrowingMore_shedsMoreAsItBorrows() throws InterruptedException {
+        var queues = new IntakeQueues(40);
+        IntStream.range(0, 30).forEach(ignored -> queues.offer(batch(TICKETS, 1)));
 
         var sheddings = new ArrayList<Shedding>();
         for (var drained = queues.drain(Duration.ZERO); drained.isPresent(); drained = queues.drain(Duration.ZERO)) {
             sheddings.add(drained.get().shedding());
         }
 
-        assertThat(sheddings).containsExactly(Shedding.UNJOINED, Shedding.UNJOINED, Shedding.INTERESTING_ONLY, Shedding.INTERESTING_ONLY,
-            Shedding.INTERESTING_ONLY, Shedding.NONE, Shedding.NONE, Shedding.NONE, Shedding.NONE, Shedding.NONE);
+        assertThat(sheddings.subList(0, 6)).containsExactly(Shedding.UNJOINED, Shedding.UNJOINED, Shedding.INTERESTING_ONLY, Shedding.INTERESTING_ONLY,
+            Shedding.INTERESTING_ONLY, Shedding.NONE);
+        assertThat(sheddings.subList(6, 30)).containsOnly(Shedding.NONE);
     }
 
     @Test
-    void drain_loneBatchAboveHalfTheShare_isNotShed() throws InterruptedException {
+    void drain_poolFillingUp_shedsTheBorrowingApplications() throws InterruptedException {
+        var queues = new IntakeQueues(120);
+        for (var application : List.of(TICKETS, BILLING, SHIPPING)) {
+            queues.offer(batch(application, 1));
+            queues.offer(batch(application, 20));
+            queues.offer(batch(application, 12));
+        }
+
+        var drained = queues.drain(Duration.ZERO);
+
+        assertThat(drained).hasValueSatisfying(batch -> assertThat(batch.shedding()).isEqualTo(Shedding.INTERESTING_ONLY));
+    }
+
+    @Test
+    void drain_fewBatchesBehindWhileThePoolIsMostlyFree_isNotShed() throws InterruptedException {
+        var queues = new IntakeQueues(200);
+        queues.offer(batch(BILLING, 1));
+        queues.offer(batch(TICKETS, 1));
+        queues.offer(batch(TICKETS, 30));
+        queues.offer(batch(TICKETS, 30));
+        queues.drain(Duration.ZERO);
+
+        var drained = queues.drain(Duration.ZERO);
+
+        assertThat(drained).hasValueSatisfying(batch -> assertThat(batch.shedding()).isEqualTo(Shedding.NONE));
+    }
+
+    @Test
+    void drain_loneBatchBeyondTheReservedRoom_isNotShed() throws InterruptedException {
         var queues = new IntakeQueues(10);
         queues.offer(batch(TICKETS, 8));
 
@@ -118,7 +180,6 @@ class IntakeQueuesTest {
         var queues = new IntakeQueues(20);
         queues.offer(batch(BILLING, 1));
         queues.offer(batch(TICKETS, 10));
-        queues.offer(batch(TICKETS, 1));
         assertThat(queues.offer(batch(TICKETS, 1))).isFalse();
         assertThat(queues.drain(Duration.ZERO)).hasValueSatisfying(drained -> assertThat(drained.batch().application()).isEqualTo(BILLING));
 

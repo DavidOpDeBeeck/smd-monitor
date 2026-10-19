@@ -314,8 +314,10 @@ The monitor shows no running invocations: a span ends when its handlers return, 
 in turn and owns everything the hub counts and retains; a flooding application fills only its own queue. Just after each second the writer publishes an immutable
 **epoch**. Frames and queries read the latest epoch and never hold up the writer. At the design target with a `2GB` budget, the writer needs about a tenth of a core.
 
-**Under load.** When an application's queue is half full, the writer retains only its failed spans and those slower than their type's p95; at 80% it only counts
-them, without linking. It counts every span either way. When the queue is full, the endpoint answers 503.
+**Under load.** Each application has room reserved in the intake queues, and borrows beyond it from room the applications share, up to half of it. Beyond its
+reserved room, when the shared room or the application's half of it is half full, the writer retains only its failed spans and those slower than their type's p95;
+at 80% it only counts them, without linking. It counts every span either way. When the application has borrowed half the shared room, or the shared room is spent,
+the endpoint answers 503 to it.
 
 **The OTLP endpoint** answers once it admitted a request, before the writer processes it:
 
