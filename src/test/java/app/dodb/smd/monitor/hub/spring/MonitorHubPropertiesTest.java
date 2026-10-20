@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,6 +38,7 @@ class MonitorHubPropertiesTest {
         assertThat(properties.maxEdges()).isEqualTo(defaults.maxEdges());
         assertThat(properties.silentAfter()).isEqualTo(defaults.silentAfter());
         assertThat(properties.retireAfter()).isEqualTo(defaults.retireAfter());
+        assertThat(properties.allowedOrigins()).isEmpty();
     }
 
     @Test
@@ -52,13 +54,14 @@ class MonitorHubPropertiesTest {
     }
 
     @Test
-    void bind_limitsSet_bindsEachLimit() {
+    void bind_everythingSet_bindsEachProperty() {
         var properties = bind(keysAndValues("smd.monitor.hub.memory", "1GB", "smd.monitor.hub.window", "30s", "smd.monitor.hub.history", "15m", "smd.monitor.hub.settle", "2s", "smd.monitor.hub.link-horizon", "2m",
             "smd.monitor.hub.max-applications", "10", "smd.monitor.hub.max-instances", "20", "smd.monitor.hub.max-types", "300", "smd.monitor.hub.max-groups", "40",
-            "smd.monitor.hub.max-edges", "900", "smd.monitor.hub.silent-after", "30s", "smd.monitor.hub.retire-after", "1h"));
+            "smd.monitor.hub.max-edges", "900", "smd.monitor.hub.silent-after", "30s", "smd.monitor.hub.retire-after", "1h",
+            "smd.monitor.hub.allowed-origins", "https://monitor.example"));
 
         assertThat(properties).isEqualTo(new MonitorHubProperties(DataSize.ofGigabytes(1), Duration.ofSeconds(30), Duration.ofMinutes(15), Duration.ofSeconds(2), Duration.ofMinutes(2), 10, 20, 300, 40, 900,
-            Duration.ofSeconds(30), Duration.ofHours(1)));
+            Duration.ofSeconds(30), Duration.ofHours(1), List.of("https://monitor.example")));
     }
 
     private static Map<String, String> keysAndValues(String... keysAndValues) {

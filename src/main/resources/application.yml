@@ -26,3 +26,4 @@ smd:
       max-edges: 5000
       silent-after: 10s
       retire-after: 10m
+      allowed-origins: []

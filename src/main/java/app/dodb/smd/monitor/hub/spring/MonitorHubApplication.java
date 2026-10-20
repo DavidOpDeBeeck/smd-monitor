@@ -63,8 +63,9 @@ public class MonitorHubApplication {
         return new MonitorFrameSocket(hub, frames);
     }
 
+    // The page's own origin is always allowed; others, such as the page's behind a proxy that forwards the upgrade as wss, only when listed.
     @Bean
-    WebSocketConfigurer monitorHubWebSocketConfigurer(MonitorFrameSocket socket) {
-        return registry -> registry.addHandler(socket, "/live");
+    WebSocketConfigurer monitorHubWebSocketConfigurer(MonitorFrameSocket socket, MonitorHubProperties properties) {
+        return registry -> registry.addHandler(socket, "/live").setAllowedOrigins(properties.allowedOrigins().toArray(String[]::new));
     }
 }

@@ -96,12 +96,13 @@ listens on two ports, on every address; read [Secure the hub](#secure-the-hub) b
 Each port answers 404 for the other's paths, so a proxy can publish the page without the endpoint. The endpoint has Tomcat threads of its own, so pages never
 take a thread from the exports.
 
-| Property                       | Default       | Meaning                                                                          |
-|--------------------------------|---------------|----------------------------------------------------------------------------------|
-| `server.port`                  | `8080`        | The page's port                                                                  |
-| `server.address`               | Every address | The address the page's port listens on                                           |
-| `smd.monitor.hub.otlp.port`    | `4318`        | The OTLP endpoint's port, the standard one of OTLP/HTTP; differs from the page's |
-| `smd.monitor.hub.otlp.address` | Every address | The address the OTLP port listens on                                             |
+| Property                          | Default       | Meaning                                                                                  |
+|-----------------------------------|---------------|------------------------------------------------------------------------------------------|
+| `server.port`                     | `8080`        | The page's port                                                                          |
+| `server.address`                  | Every address | The address the page's port listens on                                                   |
+| `smd.monitor.hub.otlp.port`       | `4318`        | The OTLP endpoint's port, the standard one of OTLP/HTTP; differs from the page's         |
+| `smd.monitor.hub.otlp.address`    | Every address | The address the OTLP port listens on                                                     |
+| `smd.monitor.hub.allowed-origins` | None          | Origins besides the page's own that may open `/live`, such as `https://monitor.example`  |
 
 Set `server.servlet.context-path` to serve the paths under a prefix, such as `/ops/monitor`, on both ports.
 
@@ -224,6 +225,8 @@ own audience, or set `server.address` and `smd.monitor.hub.otlp.address` to `127
   its assets, `/api`, and the WebSocket handshake at `/live`; all are read-only `GET`s. Forward WebSocket upgrades, keep the `Host` header, and send
   `X-Forwarded-Proto`: the WebSocket only accepts handshakes from the page's own origin. The hub reads forwarded headers from proxies on private addresses only
   (`server.forward-headers-strategy=native`); set `server.tomcat.remoteip.internal-proxies` for a proxy elsewhere. HTTPS pages use `wss:` automatically.
+  Traefik, Coolify's proxy, forwards the upgrade as `wss`, which hides that the page's origin is the hub's own: list it in `smd.monitor.hub.allowed-origins`,
+  such as `SMD_MONITOR_HUB_ALLOWED_ORIGINS=https://monitor.example.com`.
 - **The OTLP port.** Do not publish it. Exporters cannot log in, so let only the instances or a Collector reach it, on a private network or behind a firewall.
   Across networks, put a proxy in front of it that requires headers you configure on the exporter with `management.opentelemetry.tracing.export.otlp.headers`.
 

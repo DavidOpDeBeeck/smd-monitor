@@ -4,6 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.util.unit.DataSize;
 
 import java.time.Duration;
+import java.util.List;
 
 import static java.util.Objects.requireNonNull;
 
@@ -19,7 +20,8 @@ public record MonitorHubProperties(DataSize memory,
                                    int maxGroups,
                                    int maxEdges,
                                    Duration silentAfter,
-                                   Duration retireAfter) {
+                                   Duration retireAfter,
+                                   List<String> allowedOrigins) {
 
     public MonitorHubProperties {
         requireNonNull(memory);
@@ -29,5 +31,6 @@ public record MonitorHubProperties(DataSize memory,
         requireNonNull(linkHorizon);
         requireNonNull(silentAfter);
         requireNonNull(retireAfter);
+        requireNonNull(allowedOrigins);
     }
 }

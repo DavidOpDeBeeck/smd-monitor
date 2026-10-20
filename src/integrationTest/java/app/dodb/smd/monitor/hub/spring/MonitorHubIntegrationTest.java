@@ -251,6 +251,23 @@ class MonitorHubIntegrationTest {
         assertThatThrownBy(() -> handshake.get(5, TimeUnit.SECONDS)).hasCauseInstanceOf(WebSocketHandshakeException.class);
     }
 
+    // A page served over HTTPS behind Traefik, which forwards the upgrade as wss, so the hub cannot tell the page's origin is its own.
+    @Test
+    void connect_allowedOriginForwardedAsWss_acceptsTheHandshake() throws Exception {
+        var listener = new FrameListener();
+
+        var socket = client.newWebSocketBuilder()
+            .header("Origin", "https://monitor.example")
+            .header("X-Forwarded-Host", "monitor.example")
+            .header("X-Forwarded-Proto", "wss")
+            .buildAsync(URI.create(base("ws") + "/live"), listener)
+            .get(5, TimeUnit.SECONDS);
+
+        listener.awaitFrame(frame -> true);
+        assertThat(listener.messages.getFirst().get("type").asString()).isEqualTo("snapshot");
+        socket.abort();
+    }
+
     @Test
     void resources_get_servesThePageAndItsAssetsAtTheRoot() throws Exception {
         var page = query("/");
