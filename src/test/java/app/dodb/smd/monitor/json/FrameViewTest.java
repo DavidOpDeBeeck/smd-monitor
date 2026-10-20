@@ -19,12 +19,15 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.math.BigDecimal;
+import java.math.MathContext;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.Random;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -208,6 +211,34 @@ class FrameViewTest {
         assertThat(failure.get("processingGroup").asString()).isEqualTo("ticket-view");
         assertThat(failure.get("window").asLong()).isEqualTo(1);
         assertThat(failure.get("windowPerSecond").valueStream().mapToLong(JsonNode::asLong).sum()).isEqualTo(1);
+    }
+
+    @Test
+    void figure_latencies_haveThreeSignificantMillisecondDigitsRoundedHalfUp() {
+        assertThat(FrameView.figure(Optional.of(Duration.ofNanos(1_234_567)))).isEqualTo(1.23);
+        assertThat(FrameView.figure(Optional.of(Duration.ofNanos(1_236_000)))).isEqualTo(1.24);
+        assertThat(FrameView.figure(Optional.of(Duration.ofNanos(999_600)))).isEqualTo(1.0);
+        assertThat(FrameView.figure(Optional.of(Duration.ofNanos(987_654_321)))).isEqualTo(988.0);
+        assertThat(FrameView.figure(Optional.of(Duration.ofSeconds(12, 345_678_901)))).isEqualTo(12_300.0);
+        assertThat(FrameView.figure(Optional.of(Duration.ofNanos(45)))).isEqualTo(0.000045);
+        assertThat(FrameView.figure(Optional.of(Duration.ZERO))).isEqualTo(0.0);
+        assertThat(FrameView.figure(Optional.empty())).isNull();
+    }
+
+    @Test
+    void figure_anyLatency_isTheMillisecondsRoundedAsADecimalToThreeDigits() {
+        var random = new Random(42);
+        for (var draw = 0; draw < 100_000; draw++) {
+            var nanos = (long) Math.pow(10, random.nextDouble() * 12);
+            var halfway = (long) Math.pow(10, random.nextInt(10)) * (2 * random.nextInt(500, 5_000) + 1) / 2;
+            for (var latency : List.of(nanos, halfway)) {
+                var expected = new BigDecimal(latency / 1_000_000.0).round(new MathContext(3)).doubleValue();
+
+                var figure = FrameView.figure(Optional.of(Duration.ofNanos(latency)));
+
+                assertThat(figure).as("%d ns", latency).isEqualTo(expected);
+            }
+        }
     }
 
     @Test

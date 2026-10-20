@@ -106,6 +106,17 @@ class FrameDeltaTest {
         assertAppliesTo(previous, current, changes, 1);
     }
 
+    @Test
+    void between_recordsWhoseKeysReadAlikeAsText_changesEachByItsPosition() {
+        var previous = new Edges(List.of(new Edge("orders|tickets", "billing", 1), new Edge("orders", "tickets|billing", 2)));
+        var current = new Edges(List.of(new Edge("orders|tickets", "billing", 1), new Edge("orders", "tickets|billing", 3)));
+
+        var changes = FrameDelta.between(previous, current, 0, mapper);
+
+        assertThat(changes.toString()).isEqualTo("{\"links\":{\"$k\":{\"c\":{\"1\":{\"count\":3}}}}}");
+        assertThat(FrameDelta.apply(mapper.valueToTree(previous), changes, 0)).isEqualTo(mapper.valueToTree(current));
+    }
+
     private void assertAppliesTo(Snapshot previous, Snapshot current, JsonNode changes, long shift) {
         assertThat(FrameDelta.apply(mapper.valueToTree(previous), changes, shift)).isEqualTo(mapper.valueToTree(current));
     }
@@ -122,6 +133,12 @@ class FrameDeltaTest {
     }
 
     public record Item(String name, long count, List<Long> startedPerSecond, Figures figures, List<Long> codes) {
+    }
+
+    public record Edges(List<Edge> links) {
+    }
+
+    public record Edge(String parent, String child, long count) {
     }
 
     @JsonFormat(shape = JsonFormat.Shape.ARRAY)

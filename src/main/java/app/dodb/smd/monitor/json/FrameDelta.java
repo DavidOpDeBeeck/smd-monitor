@@ -10,6 +10,7 @@ import tools.jackson.databind.node.ObjectNode;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.RecordComponent;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -149,13 +150,13 @@ public final class FrameDelta {
         if (previousKeys == null || currentKeys == null) {
             return null;
         }
-        var positions = new HashMap<String, Integer>();
+        var positions = new HashMap<List<Object>, Integer>();
         for (var position = 0; position < previousKeys.size(); position++) {
             positions.put(previousKeys.get(position), position);
         }
         var kept = new HashSet<>(currentKeys);
         var removed = NODES.arrayNode();
-        var natural = new ArrayList<String>();
+        var natural = new ArrayList<List<Object>>();
         for (var position = 0; position < previousKeys.size(); position++) {
             if (kept.contains(previousKeys.get(position))) {
                 natural.add(previousKeys.get(position));
@@ -189,7 +190,7 @@ public final class FrameDelta {
             result.set("a", added);
         }
         if (!natural.equals(currentKeys)) {
-            var naturalPositions = new HashMap<String, Integer>();
+            var naturalPositions = new HashMap<List<Object>, Integer>();
             for (var position = 0; position < natural.size(); position++) {
                 naturalPositions.put(natural.get(position), position);
             }
@@ -200,19 +201,19 @@ public final class FrameDelta {
         return result;
     }
 
-    // Null when two records share a key.
-    private static List<String> keys(List<List<String>> keys, List<?> records) {
-        var result = new ArrayList<String>(records.size());
+    // Null when two records share a key: the values that name the record, compared as they are rather than written as text.
+    private static List<List<Object>> keys(List<List<String>> keys, List<?> records) {
+        var result = new ArrayList<List<Object>>(records.size());
         for (var record : records) {
-            var key = new StringBuilder();
-            for (var path : keys) {
+            var key = new Object[keys.size()];
+            for (var index = 0; index < key.length; index++) {
                 Object value = record;
-                for (var field : path) {
+                for (var field : keys.get(index)) {
                     value = value == null ? null : field((Record) value, field);
                 }
-                key.append(value).append('|');
+                key[index] = value;
             }
-            result.add(key.toString());
+            result.add(Arrays.asList(key));
         }
         return new HashSet<>(result).size() == result.size() ? result : null;
     }
