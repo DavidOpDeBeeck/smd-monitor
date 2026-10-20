@@ -229,23 +229,49 @@ curl -sS -X POST -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: applicatio
 
 When neither works, give the user the compare link `https://github.com/<owner>/<repo>/compare/main...perf/<slug>?expand=1` and the body file instead.
 
-Keep the pull request short. The title says what got faster, in a few words. The body, in plain language a reader outside the code follows:
+Keep the pull request short. The title says what got faster, in a few words. The body has two short paragraphs of prose, and puts every
+number in a table:
+
+- **Problem** and **Change** are two sentences each, at most about 50 words, in plain language a reader outside the code follows. Name the
+  mechanism, not the method: "the publisher wrote each record's key as text" rather than `FrameDelta.keys`. Leave numbers, percentages, and
+  asides out of them; the tables hold the numbers.
+- **The target scenario's table** has a row per limit, the capacity, and the measure that shows the mechanism, with each change in parentheses.
+- **The other scenarios' table** has a row per scenario whose limit moved or whose capacity changed beyond the ±5% runs of one commit differ by,
+  with before → after in each cell; one line under it covers every other scenario. When none moved, that line alone replaces the table.
+- **The benchmarks' table** has a row per JMH measure run before and after; leave it out when none ran.
+- One line each for the runs and, when it changed, the page.
 
 ```markdown
-**Problem.** <Two or three sentences: what limited the hub, where it showed, and why.>
+**Problem.** <What limited the hub, and where it showed.> <Why.>
 
-**Change.** <Two or three sentences: how the optimization works, and what it keeps intact: threads, the budget, what each figure counts.>
+**Change.** <What the code now does instead.> <What it keeps intact: threads, the budget, what each figure counts.>
 
-| <Target scenario> | <Before's name> | <After's name> |
+### <Target scenario>
+
+| | <Before's name> | <After's name> |
 |---|---|---|
 | Keeps up with | ... | ... |
 | Holds without refusing | ... | ... |
 | First fails at | ... | ... |
-| Writer capacity, spans/s per core | ... | ... |
+| Writer capacity, spans/s per core | ... | ... (+n%) |
 | <The measure that shows the mechanism, at a rate both ran> | ... | ... |
 
-<One row per check scenario whose limits changed, or one line saying none changed.> Full saturation runs on <machine>, kept in `docs/saturation`.
-<When the page changed: one line saying what it now shows.>
+### Other scenarios
+
+| Scenario | Keeps up with | Holds without refusing | First fails at | Writer capacity |
+|---|---|---|---|---|
+| <Scenario> | 150,000 → 200,000 | ... → ... | ... → ... | +n% |
+
+Every other scenario: the same limits, writer capacity within ±n%.
+
+### Benchmarks
+
+| Benchmark, at the design target | Before | After |
+|---|---|---|
+| <Benchmark.method>, p50 | ... | ... (−n%) |
+
+**Runs.** Full saturation runs on <machine>, kept in `docs/saturation` as runs <before> and <after>.
+**Page.** <When the page changed: what it now shows.>
 
 ![What changed between runs](https://github.com/<owner>/<repo>/blob/<commit>/docs/saturation/proof/<slug>/change.png?raw=true)
 ![<Measure> at <target> rate by rate](https://github.com/<owner>/<repo>/blob/<commit>/docs/saturation/proof/<slug>/target.png?raw=true)
