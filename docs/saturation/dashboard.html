@@ -163,6 +163,18 @@
   .swatch { width: 14px; height: 3px; border-radius: 2px; display: inline-block; flex: none; }
   .swatch.block { height: 11px; width: 11px; border-radius: 3px; }
   .swatch.dashed { background: none; border-top: 2px dashed var(--reference); height: 0; }
+  /* Small multiples: one panel per run, sharing their scales. */
+  .multiples { display: grid; gap: 14px; }
+  .multiple { display: grid; gap: 2px; min-width: 0; }
+  .multiple + .multiple { border-top: 1px solid var(--line); padding-top: 12px; }
+  .multiple-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 16px; font-size: 12.5px; color: var(--muted); min-height: 20px; }
+  .multiple-head .name { display: inline-flex; align-items: center; gap: 8px; color: var(--fg); font-weight: 600; margin-right: 4px; }
+  .multiple-head .subtitle { color: var(--fg); margin-right: 8px; }
+  .multiple-head .stats { display: inline-flex; flex-wrap: wrap; gap: 2px 16px; }
+  .multiple-head .stat b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .chart svg text.halo { paint-order: stroke; stroke: var(--panel); stroke-width: 4px; stroke-linejoin: round; }
+  .chart svg text.band-label { font-size: 11.5px; fill: var(--fg); opacity: 0.75; }
+  .chart svg text.band-label.on-accent { fill: var(--panel); opacity: 1; }
   .tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow);
     padding: 8px 12px; font-size: 12.5px; white-space: nowrap; z-index: 6; display: grid; gap: 3px; }
   .tip-head { color: var(--muted); font-weight: 600; margin-bottom: 2px; }
@@ -311,6 +323,12 @@
         <label class="control" id="ctl-measure">Measure <select class="select" id="measure-select"></select></label>
         <span class="control" id="ctl-seconds"><label for="seconds-select">Measure</label> <select class="select" id="seconds-select"></select>
           <button type="button" class="btn" id="all-steps">‹ Every step</button>
+        </span>
+        <span class="control" id="ctl-clients">Lag of the
+          <span class="segmented" role="group" aria-label="Whose lag the parts stack to">
+            <button type="button" data-param="clients" data-value="fast">Full speed</button>
+            <button type="button" data-param="clients" data-value="slow">Slow</button>
+          </span>
         </span>
         <span class="control" id="ctl-limit">Limit
           <span class="segmented" role="group" aria-label="The limit the chart draws">
@@ -501,7 +519,26 @@
     writerCpuMs: { label: 'Writer on a core', format: share, max: 1, value: (row) => row.writerCpuMs / 1000, what: 'Share of each second the writer thread ran on a core.' },
     horizonS: { label: 'Link horizon', format: secondsOf, what: 'The link horizon the budget allowed at the end of each second.' },
     historyS: { label: 'Counted history', format: secondsOf, what: 'The history the counts covered at the end of each second.' },
+    delivery: { label: 'Frame delivery', delivery: true, what: 'How long after each second its frame reached the clients, in the parts it took.' },
   };
+  // The parts of a frame's lag in the order they happen; they add up to the lag of the client in the middle of the fast or the slow clients. One
+  // hue, light to dark, as the lag accumulates: the send, the part the hub's WebSocket adds, is the strongest.
+  const DELIVERY_PARTS = [
+    { key: 'tickMs', label: 'Tick', what: 'end of the second to the writer\'s tick', color: 'color-mix(in srgb, var(--accent) 16%, var(--panel))' },
+    { key: 'buildMs', label: 'Epoch build', what: 'tick to the epoch published', color: 'color-mix(in srgb, var(--accent) 30%, var(--panel))' },
+    { key: 'waitMs', label: 'Publisher wait', what: 'epoch published to the publisher starting its frame', color: 'color-mix(in srgb, var(--accent) 45%, var(--panel))' },
+    { key: 'frameMs', label: 'Frame write', what: 'building and writing the delta', color: 'color-mix(in srgb, var(--accent) 62%, var(--panel))' },
+    { key: 'send', label: 'Send and read', what: 'message written to its last byte read', color: 'var(--accent)' },
+  ];
+  // The figures of the clients the toggle shows. Full-speed clients read every frame as it arrives; slow ones read at most a set rate of JSON, as a
+  // page behind a slow link does.
+  const CLIENTS = {
+    fast: { label: 'full-speed clients', send: 'sendMs', lag: 'lagMs', lagMax: 'lagMaxMs', snapshots: 'snapshots', unread: 'unread' },
+    slow: { label: 'slow clients', send: 'slowSendMs', lag: 'slowLagMs', lagMax: 'slowLagMaxMs', snapshots: 'slowSnapshots', unread: 'slowUnread' },
+  };
+  // Within a second of the end of its second, a frame is read before the next one is due.
+  const FRAME_DUE_MS = 1000;
+  const lagFormat = (value) => (value >= 10_000 ? `${(value / 1000).toFixed(0)} s` : value >= 2000 ? `${(value / 1000).toFixed(1)} s` : millis(value));
   // Collections.
   const maxOf = (rows, value) => rows.reduce((max, row) => Math.max(max, value(row)), -Infinity);
   const minOf = (rows, value) => rows.reduce((min, row) => Math.min(min, value(row)), Infinity);
@@ -584,6 +621,7 @@
     sweep: { allowed: sweepIds, fallback: sweepIds[0] || 'applications' },
     measure: { allowed: Object.keys(MEASURES), fallback: 'writerBusy' },
     seconds: { allowed: Object.keys(SECONDS), fallback: 'processed' },
+    clients: { allowed: Object.keys(CLIENTS), fallback: 'fast' },
     scenario: { allowed: scenarios.map((scenario) => scenario.scenario), fallback: 'reference' },
   };
   const query = new URLSearchParams(location.search);
@@ -759,7 +797,8 @@
     element.replaceChildren(...(title && marks.length ? [Object.assign(document.createElement('span'), { textContent: `${title}:` })] : []), ...marks.map((each) => {
       const item = document.createElement('span');
       const swatch = document.createElement('i');
-      swatch.className = each.block ? `swatch block ${each.block}` : 'swatch dashed';
+      swatch.className = each.block || each.color ? `swatch block ${each.block || ''}` : 'swatch dashed';
+      if (each.color) swatch.style.background = each.color;
       item.append(swatch, document.createTextNode(each.name));
       return item;
     }));
@@ -1043,7 +1082,7 @@
   // One measure of every picked run's seconds on one time axis, every step after the other or one step zoomed in. The runs climb one ladder,
   // but a step that kept up early may end early, so the same second can offer another rate in each run: the steps are marked as the longest
   // run offered them, and a zoomed step counts each run's seconds from its own start of the step.
-  const drawSeconds = (container, { height, timelines, measure, scenario, step }) => {
+  const drawSeconds = (container, { height, timelines, measure, scenario, step, yTop, tRange }) => {
     const { svg, width } = svgIn(container, height);
     const value = measure.value || ((row) => row[measure.key]);
     const shown = step
@@ -1057,12 +1096,12 @@
     let top = maxOf(all, value);
     if (measure.also) top = Math.max(top, maxOf(all, (row) => row.rate));
     if (measure.capacity) top = Math.max(top, scenario.queueSpans);
-    const yMax = axisTop(measure, top, 1.08);
+    const yMax = yTop ?? axisTop(measure, top, 1.08);
     const yTicks = niceTicks(0, yMax, 6);
     const yTick = tickFormat(measure.format);
     const left = Math.ceil(maxOf(yTicks, (tick) => textWidth(svg, yTick(tick)))) + 12;
     const margin = { top: 26, right: 20, bottom: 48, left };
-    const [t0, t1] = [minOf(all, (row) => row.t), maxOf(all, (row) => row.t)];
+    const [t0, t1] = tRange ?? [minOf(all, (row) => row.t), maxOf(all, (row) => row.t)];
     const x = linearScale([t0, t1], [margin.left, width - margin.right]);
     const y = linearScale([0, yMax], [height - margin.bottom, margin.top]);
     const longest = shown.reduce((best, each) => (each.rows.length > best.rows.length ? each : best));
@@ -1123,6 +1162,171 @@
         const row = all.find((candidate) => candidate.t === at(event));
         if (row) setState({ step: row.rate });
       });
+    }
+  };
+
+  // The frame of every second of one run as the toggled clients read it: the parts of the lag of the client in the middle, stacked in the order they
+  // happen, so the stack's top is that client's lag; and under the plot the seconds whose frame one of the clients read as a snapshot, or never
+  // read, skipped by the hub or unread when the run ended.
+  const bandPath = (points, x, lower, upper) => (points.length
+    ? `M${points.map((point) => `${x(point).toFixed(1)},${upper(point).toFixed(1)}`).join('L')}`
+      + `L${[...points].reverse().map((point) => `${x(point).toFixed(1)},${lower(point).toFixed(1)}`).join('L')}Z`
+    : '');
+  const partOf = (row, part, kind) => row[part.key === 'send' ? CLIENTS[kind].send : part.key];
+  const stackedOf = (row, kind) => DELIVERY_PARTS.every((part) => partOf(row, part, kind) >= 0);
+  const belowOf = (row, index, kind) => DELIVERY_PARTS.slice(0, index).reduce((sum, part) => sum + partOf(row, part, kind), 0);
+  // A step's seconds counted from its start, so every run's step begins at second 1.
+  const stepRowsOf = (rows, step) => {
+    if (!step) return rows;
+    const stepped = rows.filter((row) => row.rate === step);
+    const start = minOf(stepped, (row) => row.t) - 1;
+    return stepped.map((row) => ({ ...row, t: row.t - start }));
+  };
+  // The axis every run's panel shares: the second a frame is due and the toggled clients' lag.
+  const deliveryTop = (runs, kind) => {
+    const clients = CLIENTS[kind];
+    const rows = runs.flatMap((each) => each.rows);
+    return Math.max(FRAME_DUE_MS, maxOf(rows.filter((row) => stackedOf(row, kind)), (row) => Math.max(belowOf(row, DELIVERY_PARTS.length, kind), row[clients.lagMax]))) * 1.1;
+  };
+  // An axis in milliseconds up to two seconds, and in seconds above.
+  const lagTicks = (yMax) => (yMax >= 2000 ? (value) => `${+(value / 1000).toFixed(1)} s` : millis);
+  const drawDelivery = (container, { height, rows, kind, step, yMax, tRange, key }) => {
+    const { svg, width } = svgIn(container, height);
+    const clients = CLIENTS[kind];
+    const stacked = (row) => stackedOf(row, kind);
+    const below = (row, index) => belowOf(row, index, kind);
+    const yTicks = niceTicks(0, yMax, 5);
+    const rugLabels = ['snapshot', 'not read'];
+    const yTick = lagTicks(yMax);
+    const left = Math.ceil(Math.max(...yTicks.map((tick) => textWidth(svg, yTick(tick))), ...rugLabels.map((label) => textWidth(svg, label)))) + 14;
+    const rug = 44;
+    const margin = { top: 24, right: 20, bottom: 44 + rug, left };
+    const plotBottom = height - margin.bottom;
+    const x = linearScale(tRange, [margin.left, width - margin.right]);
+    const y = linearScale([0, yMax], [plotBottom, margin.top]);
+    const atT = (row) => x(row.t);
+    let lastLabel = -Infinity;
+    for (const [offered, stepped] of groupsInOrder(rows, (row) => row.rate)) {
+      const first = minOf(stepped, (row) => row.t);
+      if (!step) el(svg, 'line', { class: 'gridline', x1: x(first), x2: x(first), y1: margin.top - 8, y2: plotBottom + rug - 8 });
+      if (x(first) - lastLabel > 36) {
+        const label = el(svg, 'text', { class: step ? '' : 'pick', x: x(first) + 4, y: margin.top - 10 }, step ? `offering ${count(offered)} spans/s` : `${compact(offered)} spans/s`);
+        if (!step) label.addEventListener('click', () => setState({ step: offered }));
+        lastLabel = x(first);
+      }
+    }
+    gridLines(svg, yTicks.filter((tick) => tick > 0), (tick) => ({ x1: margin.left, x2: width - margin.right, y1: y(tick), y2: y(tick) }));
+    axisLeft(svg, y, yTicks, yTick, margin.left - 4);
+    const marks = el(svg, 'g', { 'data-key': key });
+    // Seconds without a whole stack, such as one whose frame these clients never read, break the bands.
+    const spans = [];
+    for (const row of rows) {
+      const last = spans.at(-1);
+      if (!stacked(row)) spans.push([]);
+      else if (!last || !last.length || last.at(-1).t !== row.t - 1) spans.push([row]);
+      else last.push(row);
+    }
+    const shown = spans.filter((span) => span.length);
+    DELIVERY_PARTS.forEach((part, index) => {
+      for (const span of shown) {
+        el(marks, 'path', { d: bandPath(span, atT, (row) => y(below(row, index)), (row) => y(below(row, index + 1))), style: `fill: ${part.color}`,
+          stroke: 'var(--panel)', 'stroke-width': 1, 'stroke-linejoin': 'round' });
+      }
+    });
+    // The stack's top, the lag itself, as one line, so it reads at a glance over the parts.
+    for (const span of shown) {
+      el(marks, 'path', { d: linePath(span, atT, (row) => y(below(row, DELIVERY_PARTS.length))), fill: 'none', stroke: 'var(--accent)', 'stroke-width': 2,
+        'stroke-linejoin': 'round', 'stroke-linecap': 'round' });
+    }
+    // Each part named at the right end of the bands, where it is tall enough to hold its name.
+    const lastRow = shown.length ? shown.at(-1).at(-1) : null;
+    if (lastRow && x(lastRow.t) > width - margin.right - 4) {
+      DELIVERY_PARTS.forEach((part, index) => {
+        const [low, high] = [y(below(lastRow, index)), y(below(lastRow, index + 1))];
+        if (low - high >= 15) {
+          el(svg, 'text', { class: index === DELIVERY_PARTS.length - 1 ? 'band-label strong on-accent' : 'band-label', x: width - margin.right - 6, y: (low + high) / 2,
+            dy: '0.32em', 'text-anchor': 'end' }, part.label);
+        }
+      });
+    }
+    el(svg, 'line', { class: 'reference', x1: margin.left, x2: width - margin.right, y1: y(FRAME_DUE_MS), y2: y(FRAME_DUE_MS) });
+    el(svg, 'text', { x: width - margin.right, y: y(FRAME_DUE_MS) - 6, 'text-anchor': 'end' }, 'next frame due');
+    const rugAt = (index) => plotBottom + 18 + index * 14;
+    rugLabels.forEach((label, index) => el(svg, 'text', { class: 'title', x: margin.left - 8, y: rugAt(index), dy: '0.32em', 'text-anchor': 'end' }, label));
+    const tickWidth = Math.max(2, Math.min(6, (x(tRange[0] + 1) - x(tRange[0])) * 0.6));
+    for (const row of rows) {
+      if (row[clients.snapshots] > 0) el(marks, 'rect', { x: x(row.t) - tickWidth / 2, y: rugAt(0) - 5, width: tickWidth, height: 10, rx: 1.5, fill: 'var(--fg)' });
+      if (row[clients.unread] > 0) el(marks, 'rect', { x: x(row.t) - tickWidth / 2, y: rugAt(1) - 5, width: tickWidth, height: 10, rx: 1.5, fill: 'var(--axis)' });
+    }
+    axisBottom(svg, x, x.range(), niceTicks(tRange[0], tRange[1], Math.max(2, Math.floor((width - left) / 80))), (t) => `${t} s`, height - 44);
+    axisTitle(svg, width - margin.right, height - 4, step ? 'seconds since the step began' : 'seconds since the history was filled');
+    const tip = tooltip(container);
+    const rule = el(svg, 'line', { class: 'rule', y1: margin.top, y2: plotBottom + rug - 8, opacity: 0 });
+    const knots = DELIVERY_PARTS.map((part) => el(svg, 'circle', { r: 3.5, fill: part.color, stroke: 'var(--panel)', 'stroke-width': 2, opacity: 0 }));
+    const hit = el(svg, 'rect', { class: step ? 'hit' : 'hit pick', x: margin.left, y: margin.top, width: width - margin.left - margin.right,
+      height: plotBottom + rug - margin.top });
+    const ts = rows.map((row) => row.t);
+    const rowAt = (event) => {
+      const t = nearest(ts, pointer(event, svg, width, height)[0], x);
+      return rows.find((candidate) => candidate.t === t);
+    };
+    hit.addEventListener('mousemove', (event) => {
+      const [, py] = pointer(event, svg, width, height);
+      const row = rowAt(event);
+      rule.setAttribute('x1', x(row.t));
+      rule.setAttribute('x2', x(row.t));
+      rule.setAttribute('opacity', 1);
+      knots.forEach((knot, index) => {
+        knot.setAttribute('cx', x(row.t));
+        knot.setAttribute('cy', y(below(row, index + 1)));
+        knot.setAttribute('opacity', stacked(row) ? 1 : 0);
+      });
+      const ms = (value) => (value >= 0 ? lagFormat(value) : '–');
+      const times = (value) => (value === 1 ? 'one client' : `${value} clients`);
+      const lines = [
+        { name: `lag of the ${clients.label.replace(/s$/, '')} in the middle`, value: ms(row[clients.lag]) },
+        ...[...DELIVERY_PARTS].reverse().map((part) => ({ name: `${part.label.toLowerCase()}: ${part.what}`, value: ms(partOf(row, part, kind)), color: part.color })),
+        { name: `most lag of the ${clients.label}`, value: ms(row[clients.lagMax]) },
+        ...(row[clients.snapshots] > 0 ? [{ name: `read as a snapshot by ${times(row[clients.snapshots])}`, value: '▮' }] : []),
+        ...(row[clients.unread] > 0 ? [{ name: `never read by ${times(row[clients.unread])}`, value: '▯' }] : []),
+      ];
+      showTip(container, tip, (x(row.t) * container.clientWidth) / width, py, `${step ? `Second ${row.t} of the step` : `Second ${row.t}`}, offering ${count(row.rate)} spans/s`, lines);
+    });
+    hit.addEventListener('mouseleave', () => {
+      tip.hidden = true;
+      rule.setAttribute('opacity', 0);
+      knots.forEach((knot) => knot.setAttribute('opacity', 0));
+    });
+    if (!step) hit.addEventListener('click', (event) => setState({ step: rowAt(event).rate }));
+  };
+
+  // One panel per run, stacked, each with its own head; the charts in them share their scales, so the runs compare panel to panel.
+  const multiples = (container, items, height, draw) => {
+    container.replaceChildren();
+    const box = Object.assign(document.createElement('div'), { className: 'multiples' });
+    container.append(box);
+    // What separates two panels: the gap, the rule, and the padding under it.
+    const between = 27;
+    const share = Math.floor((height - (items.length - 1) * between) / items.length);
+    for (const item of items) {
+      const panel = Object.assign(document.createElement('section'), { className: 'multiple' });
+      const title = Object.assign(document.createElement('div'), { className: 'multiple-head' });
+      const name = Object.assign(document.createElement('span'), { className: 'name' });
+      const dot = Object.assign(document.createElement('i'), { className: 'dot' });
+      dot.style.background = item.run.color;
+      name.append(dot, item.run.name);
+      const stats = Object.assign(document.createElement('span'), { className: 'stats' });
+      stats.append(...(item.stats || []).map(([value, label]) => {
+        const stat = Object.assign(document.createElement('span'), { className: 'stat' });
+        stat.append(Object.assign(document.createElement('b'), { textContent: value }), ` ${label}`);
+        return stat;
+      }));
+      title.append(name, ...(item.subtitle ? [Object.assign(document.createElement('span'), { className: 'subtitle', textContent: item.subtitle })] : []), stats);
+      const chart = Object.assign(document.createElement('div'), { className: 'chart multiple-chart' });
+      panel.append(title, chart);
+      box.append(panel);
+      // The head wraps to its width, so the chart takes what the panel's share leaves once the head is laid out.
+      draw(chart, item, Math.max(items.length > 1 ? 260 : 340, share - title.offsetHeight - 2));
     }
   };
 
@@ -1453,7 +1657,57 @@
     fillTable(stage.table, stepColumns, stepRows(withSteps), (row) => row.item.key);
   };
 
+  // Every picked run that measured delivery, one panel each, on one scale; the toggle picks whose lag the parts stack to.
+  const renderDeliveryView = (picked, scenario) => {
+    const kind = state.clients;
+    const clients = CLIENTS[kind];
+    const measured = picked.map((run) => ({ run, all: seconds.filter((row) => row.scenario === scenario.scenario && row.run === run.run && present(row.lagMs))
+      .sort((a, b) => a.t - b.t) })).filter((each) => each.all.some((row) => row.lagMs >= 0 || row.slowLagMs >= 0));
+    const zoomed = Boolean(state.step && measured.some((each) => each.all.some((row) => row.rate === state.step)));
+    const step = zoomed ? state.step : null;
+    const runs = measured.map((each) => ({ ...each, rows: stepRowsOf(each.all, step) })).filter((each) => each.rows.length);
+    const withClients = runs.filter((each) => each.rows.some((row) => row[clients.unread] >= 0));
+    stage.title.textContent = `Frame delivery to the ${clients.label} · ${scenario.name}${zoomed ? ` · the step offering ${count(state.step)} spans/s` : ''}`;
+    stage.how.textContent = 'Each run serves its frames to clients that read every frame as it arrives, at full speed, and to slow ones that read at most a set '
+      + `rate of JSON, as a page behind a slow link. The bands are the parts of the lag of the ${clients.label}, which add `
+      + `up to it. ${zoomed ? 'One step; its first 5 s settle before it is measured.' : 'Every step in turn; click one to zoom in.'}`;
+    legend(stage.legend, withClients.length ? [...DELIVERY_PARTS.map((part) => ({ name: part.label, color: part.color })), { name: 'Next frame due' }] : []);
+    facts(runs.map(({ run }) => ({ key: run.run, name: run.name, title: run.detail, color: run.color, text: ` ${limitsOf(rowsOf(run.run).get(scenario.scenario))}` })));
+    document.getElementById('all-steps').hidden = !zoomed;
+    const without = runs.filter((each) => !withClients.includes(each));
+    stage.note.textContent = without.length && withClients.length ? `${listOf(without.map((each) => each.run.name))} had no ${clients.label}.` : '';
+    if (!withClients.length) {
+      emptyLine(stage.chart, runs.length ? `None of the picked runs had ${clients.label} in this scenario.`
+        : 'None of the picked runs measured frame delivery for this scenario; a saturation run with -PsaturationClients measures it.');
+    } else {
+      const yMax = deliveryTop(withClients, kind);
+      const tRange = [minOf(withClients.flatMap((each) => each.rows), (row) => row.t), maxOf(withClients.flatMap((each) => each.rows), (row) => row.t)];
+      const items = withClients.map((each) => {
+        const read = each.rows.filter((row) => row[clients.lag] >= 0).map((row) => row[clients.lag]).sort((a, b) => a - b);
+        const quantile = (q) => read[Math.min(read.length - 1, Math.ceil(q * read.length) - 1)];
+        const frames = each.rows.filter((row) => row[clients.unread] >= 0);
+        const unread = frames.reduce((sum, row) => sum + row[clients.unread], 0);
+        const snapshots = frames.reduce((sum, row) => sum + row[clients.snapshots], 0);
+        const setup = rowsOf(each.run.run).get(scenario.scenario)?.delivery;
+        const rate = setup ? `${+(setup.slowCharsPerSecond / 1e6).toPrecision(3)} MB/s` : '';
+        const group = !setup ? clients.label : kind === 'fast' ? `${setup.clients} full-speed ${setup.clients === 1 ? 'client' : 'clients'}`
+          : `${setup.slowClients} slow ${setup.slowClients === 1 ? 'client' : 'clients'} reading ${rate}`;
+        const others = !setup ? '' : kind === 'fast' ? `, and ${setup.slowClients} slow reading ${rate}` : `, and ${setup.clients} at full speed`;
+        return { ...each, subtitle: `lag of the ${group}${others}`, stats: [
+          ...(read.length ? [[lagFormat(quantile(0.5)), 'median lag'], [lagFormat(quantile(0.99)), 'p99'], [lagFormat(read.at(-1)), 'most']] : []),
+          [`${count(frames.length)}`, frames.length === 1 ? 'frame' : 'frames'], [`${count(unread)}`, 'never read'], [`${count(snapshots)}`, snapshots === 1 ? 'snapshot' : 'snapshots']] };
+      });
+      multiples(stage.chart, items, chartHeight(), (chart, item, height) => drawDelivery(chart, { height, rows: item.rows, kind, step, yMax, tRange, key: item.run.run }));
+    }
+    const { items } = seriesItems(picked, scenario);
+    fillTable(stage.table, stepColumns, stepRows(items.filter((item) => item.steps.length)), (row) => row.item.key);
+  };
+
   const renderSecondsView = (picked, scenario) => {
+    if (SECONDS[state.seconds].delivery) {
+      renderDeliveryView(picked, scenario);
+      return;
+    }
     const measure = { key: state.seconds, ...SECONDS[state.seconds] };
     const timelines = picked.map((run) => ({ run, rows: seconds.filter((row) => row.scenario === scenario.scenario && row.run === run.run).sort((a, b) => a.t - b.t) }))
       .filter((each) => each.rows.length);
@@ -1466,7 +1720,15 @@
     document.getElementById('all-steps').hidden = !zoomed;
     stage.note.textContent = missing.length && timelines.length ? `Seconds are kept for the latest three runs only, so none for ${listOf(missing.map((run) => run.name))}.` : '';
     if (timelines.length) {
-      drawSeconds(stage.chart, { height: chartHeight(), timelines, measure, scenario, step: zoomed ? state.step : null });
+      const step = zoomed ? state.step : null;
+      const rebased = timelines.map((each) => ({ ...each, rows: stepRowsOf(each.rows, step) })).filter((each) => each.rows.length);
+      const all = rebased.flatMap((each) => each.rows);
+      const value = measure.value || ((row) => row[measure.key]);
+      const top = Math.max(maxOf(all, value), measure.also ? maxOf(all, (row) => row.rate) : 0, measure.capacity ? scenario.queueSpans : 0);
+      const yTop = axisTop(measure, top, 1.08);
+      const tRange = [minOf(all, (row) => row.t), maxOf(all, (row) => row.t)];
+      multiples(stage.chart, timelines.filter((each) => rebased.some((other) => other.run === each.run)), chartHeight(),
+        (chart, item, height) => drawSeconds(chart, { height, timelines: [item], measure, scenario, step, yTop, tRange }));
     } else {
       emptyLine(stage.chart, 'Seconds are kept for the latest three runs only; none of the picked runs has them for this scenario.');
     }
@@ -1488,6 +1750,7 @@
     const bySweep = view.controls.includes('series') && state.series === 'scenarios';
     const shown = (name) => view.controls.includes(name) && !(bySweep && name === 'scenario') && !(!bySweep && ['sweep', 'run'].includes(name));
     for (const name of ['scenario', 'sweep', 'run', 'measure', 'series', 'seconds', 'limit', 'scale']) document.getElementById(`ctl-${name}`).hidden = !shown(name);
+    document.getElementById('ctl-clients').hidden = !(shown('seconds') && SECONDS[state.seconds].delivery);
     stage.strip.hidden = !view.controls.length;
     stage.keys.hidden = !view.controls.includes('scenario');
     scenarioSelect.value = state.scenario;

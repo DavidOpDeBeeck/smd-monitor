@@ -47,6 +47,11 @@ STEP_FIELDS = {
 SCENARIO_FIELDS = ['scenario', 'name', 'sweep', 'description', 'applications', 'instances', 'exporters', 'typesPerApplication', 'groupsPerApplication',
                    'memoryMb', 'historyS', 'queueSpans']
 SECOND_FIELDS = ['offered', 'processed', 'busy', 'queued', 'shed', 'writerCpuMs', 'horizonS', 'historyS']
+# The frame of each second as clients read it, for runs with clients (-PsaturationClients): the parts of its lag up to the frame, then for the fast
+# clients and the slow ones its send, which adds up to the lag of the client in the middle, that lag and the most of a client, and how many read it
+# as a snapshot or never read it; -1 where a second has none.
+DELIVERY_FIELDS = ['tickMs', 'buildMs', 'waitMs', 'frameMs', 'sendMs', 'lagMs', 'lagMaxMs', 'snapshots', 'unread',
+                   'slowSendMs', 'slowLagMs', 'slowLagMaxMs', 'slowSnapshots', 'slowUnread']
 
 
 def read_json(path):
@@ -75,9 +80,10 @@ def compact_seconds(rows):
             else:
                 rates.append([row['rate'], 1])
         ts = [row['t'] for row in group]
+        fields = SECOND_FIELDS + [field for field in DELIVERY_FIELDS if field in group[0]]
         compacted.append({'run': run, 'scenario': scenario, 'rates': rates,
                           **({} if ts == list(range(1, len(ts) + 1)) else {'t': ts}),
-                          **{field: [row[field] for row in group] for field in SECOND_FIELDS}})
+                          **{field: [row[field] for row in group] for field in fields}})
     return compacted
 
 
@@ -86,9 +92,10 @@ def expand_seconds(groups):
     for group in groups:
         rates = [rate for rate, count in group['rates'] for _ in range(count)]
         ts = group.get('t', range(1, len(rates) + 1))
+        fields = SECOND_FIELDS + [field for field in DELIVERY_FIELDS if field in group]
         for index, (t, rate) in enumerate(zip(ts, rates)):
             rows.append({'run': group['run'], 'scenario': group['scenario'], 't': t, 'rate': rate,
-                         **{field: group[field][index] for field in SECOND_FIELDS}})
+                         **{field: group[field][index] for field in fields}})
     return rows
 
 
@@ -115,6 +122,7 @@ def rate_at(result, second, step_seconds):
 def seconds_of(result, csv_path, step_seconds):
     with open(csv_path, encoding='utf-8') as file:
         rows = [{key: int(value) for key, value in row.items()} for row in csv.DictReader(file)]
+    delivered = any(row.get('lagMs', -1) >= 0 for row in rows)
     seconds = []
     for before, after in zip(rows, rows[1:]):
         rate = rate_at(result, after['second'], step_seconds)
@@ -134,6 +142,7 @@ def seconds_of(result, csv_path, step_seconds):
             'writerCpuMs': delta('writerCpuMs'),
             'horizonS': after['horizonS'],
             'historyS': after['historyS'],
+            **({field: after[field] for field in DELIVERY_FIELDS} if delivered else {}),
         })
     return seconds
 
@@ -176,6 +185,8 @@ def add_run(data, results_dir, only, name, keep_seconds, step_seconds):
             'failsAs': result['failsAs'],
             'maxOffered': max(rates),
             'maxRate': result['maxRate'],
+            # The clients a run with -PsaturationClients served its frames to.
+            **({'delivery': {field: result['delivery'][field] for field in ['clients', 'slowClients', 'slowCharsPerSecond']}} if 'delivery' in result else {}),
         })
         for step in result['steps']:
             steps.append({'run': run_id, 'scenario': result['scenario'], 'rate': step['rate'],
