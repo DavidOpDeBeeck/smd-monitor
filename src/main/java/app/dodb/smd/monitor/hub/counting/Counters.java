@@ -105,7 +105,10 @@ public final class Counters {
         if (invocation.dispatched().isPresent() && second >= horizon() - sparkLength + 1 && second <= horizon()) {
             var slot = Math.floorMod(second, sparkLength);
             sparkline(invocation.stage(), true)[slot]++;
-            sparkline(invocation.stage(), false)[slot] += failure ? 1 : 0;
+            // A stage's failed row exists once one of its dispatches failed; until then its series are zeros.
+            if (failure) {
+                sparkline(invocation.stage(), false)[slot]++;
+            }
         }
     }
 
@@ -167,7 +170,7 @@ public final class Counters {
         }
         var sparklines = 0L;
         for (var stage = 0; stage < sparkStarted.length; stage++) {
-            sparklines += (sparkStarted[stage] == null ? 0 : 2) * Footprint.ints(sparkLength);
+            sparklines += ((sparkStarted[stage] == null ? 0 : 1) + (sparkFailed[stage] == null ? 0 : 1)) * Footprint.ints(sparkLength);
         }
         var activity = (startedByKind.length + 2) * Footprint.ints(activityLength);
         return blocks + windowTotals.bytes() + historyTotals.bytes() + sparklines + activity;
@@ -500,17 +503,24 @@ public final class Counters {
             return zeros(size);
         }
         // The seconds run from the first one's slot to the end of the ring, and wrap to its start.
-        var values = new int[size];
         var first = Math.floorMod(from, length);
         var head = Math.min(size, length - first);
+        if (zero(slots, first, first + head) && zero(slots, 0, size - head)) {
+            return zeros(size);
+        }
+        var values = new int[size];
         System.arraycopy(slots, first, values, 0, head);
         System.arraycopy(slots, 0, values, head, size - head);
-        for (var value : values) {
-            if (value != 0) {
-                return new IntList(values);
+        return new IntList(values);
+    }
+
+    private static boolean zero(int[] slots, int from, int to) {
+        for (var slot = from; slot < to; slot++) {
+            if (slots[slot] != 0) {
+                return false;
             }
         }
-        return zeros(size);
+        return true;
     }
 
     private IntList zeros(int size) {

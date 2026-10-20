@@ -65,6 +65,17 @@ class CatalogTest {
     }
 
     @Test
+    void entered_dispatchStage_isAnEntryPointAndOthersAreNot() {
+        var open = catalog.stage(new Stage.Dispatch(OPEN));
+        var assign = catalog.stage(new Stage.Dispatch(ASSIGN));
+
+        catalog.entered(open);
+
+        assertThat(catalog.entryPoint(open)).isTrue();
+        assertThat(catalog.entryPoint(assign)).isFalse();
+    }
+
+    @Test
     void delivered_groupBeyondMaxGroups_keepsNoDelivery() {
         catalog.stage(new Stage.Handling(OPENED, "projection"));
 

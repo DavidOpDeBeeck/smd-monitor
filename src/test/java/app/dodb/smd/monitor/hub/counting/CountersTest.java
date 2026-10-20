@@ -211,6 +211,102 @@ class CountersTest {
         assertThat(counters.end()).isEqualTo(BASE + 3_595);
     }
 
+    @Test
+    void window_keyUnchangedSinceTheLastRead_isTheCountsReadThen() {
+        var counters = countersAt(BASE + 10);
+        counters.countInvocation(dispatch(BASE + 2, Duration.ofMillis(1), false));
+        var read = counters.window(Table.STAGE, STAGE);
+
+        counters.advance(Instant.ofEpochSecond(BASE + 11));
+
+        assertThat(counters.window(Table.STAGE, STAGE)).isSameAs(read);
+        assertThat(read.started()).isEqualTo(1);
+    }
+
+    @Test
+    void window_keyCountedSinceTheLastRead_countsTheNewInvocation() {
+        var counters = countersAt(BASE + 10);
+        counters.countInvocation(dispatch(BASE + 2, Duration.ofMillis(1), false));
+        counters.window(Table.STAGE, STAGE);
+
+        counters.countInvocation(dispatch(BASE + 3, Duration.ofMillis(4), true));
+
+        var window = counters.window(Table.STAGE, STAGE);
+        assertThat(window).extracting(counts -> counts.started(), counts -> counts.failed()).containsExactly(2L, 1L);
+        assertThat(window.latency().max()).isEqualTo(Duration.ofMillis(4));
+    }
+
+    @Test
+    void window_secondLeftTheWindowSinceTheLastRead_leavesItsCounts() {
+        var counters = countersAt(BASE + 10);
+        counters.countInvocation(dispatch(BASE, Duration.ofMillis(1), false));
+        counters.window(Table.STAGE, STAGE);
+
+        counters.advance(Instant.ofEpochSecond(BASE + 16));
+
+        assertThat(counters.window(Table.STAGE, STAGE).started()).isZero();
+    }
+
+    @Test
+    void window_slowestSecondLeftTheWindowSinceTheLastRead_reportsTheSlowestThatRemains() {
+        var counters = countersAt(BASE + 10);
+        counters.countInvocation(dispatch(BASE, Duration.ofMillis(9), false));
+        counters.countInvocation(dispatch(BASE + 1, Duration.ofMillis(2), false));
+        counters.window(Table.STAGE, STAGE);
+
+        counters.advance(Instant.ofEpochSecond(BASE + 16));
+
+        assertThat(counters.window(Table.STAGE, STAGE).latency().max()).isEqualTo(Duration.ofMillis(2));
+    }
+
+    @Test
+    void history_secondSettledSinceTheLastRead_countsIt() {
+        var counters = countersAt(BASE + 3);
+        counters.countInvocation(dispatch(BASE, Duration.ofMillis(1), false));
+        var unsettled = counters.history(Table.STAGE, STAGE);
+
+        counters.advance(Instant.ofEpochSecond(BASE + 6));
+
+        assertThat(unsettled.started()).isZero();
+        assertThat(counters.history(Table.STAGE, STAGE).started()).isEqualTo(1);
+    }
+
+    @Test
+    void windowLatency_delayCountedSinceTheLastRead_countsIt() {
+        var counters = countersAt(BASE + 10);
+        counters.countDelay(STAGE, Instant.ofEpochSecond(BASE + 2), Duration.ofMillis(5));
+        counters.windowLatency(Table.DELAY, STAGE);
+
+        counters.countDelay(STAGE, Instant.ofEpochSecond(BASE + 3), Duration.ofMillis(7));
+
+        var latency = counters.windowLatency(Table.DELAY, STAGE);
+        assertThat(latency.count()).isEqualTo(2);
+        assertThat(latency.max()).isEqualTo(Duration.ofMillis(7));
+    }
+
+    @Test
+    void failedPerSecond_dispatchesThatAllCompleted_isEverySecondZero() {
+        var counters = countersAt(BASE + 10);
+        counters.countInvocation(dispatch(BASE + 2, Duration.ofMillis(1), false));
+
+        var failed = counters.failedPerSecond(STAGE);
+
+        assertThat(failed).hasSize(10).containsOnly(0L);
+        assertThat(counters.startedPerSecond(STAGE)).hasSize(10).containsExactly(0L, 0L, 0L, 0L, 0L, 0L, 0L, 1L, 0L, 0L);
+    }
+
+    @Test
+    void failedPerSecond_failureAfterCompletedDispatches_countsOnlyTheFailure() {
+        var counters = countersAt(BASE + 10);
+        counters.countInvocation(dispatch(BASE + 1, Duration.ofMillis(1), false));
+        counters.countInvocation(dispatch(BASE + 2, Duration.ofMillis(1), false));
+
+        counters.countInvocation(dispatch(BASE + 3, Duration.ofMillis(1), true));
+
+        assertThat(counters.failedPerSecond(STAGE)).containsExactly(0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 1L, 0L);
+        assertThat(counters.startedPerSecond(STAGE)).containsExactly(0L, 0L, 0L, 0L, 0L, 0L, 1L, 1L, 1L, 0L);
+    }
+
     private static Counters countersAt(long second) {
         return new Counters(CONFIG, Instant.ofEpochSecond(second));
     }

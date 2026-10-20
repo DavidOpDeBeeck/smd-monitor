@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.function.Consumer;
+import java.util.function.ToIntFunction;
 
 import static java.util.Objects.requireNonNull;
 
@@ -271,10 +272,10 @@ public final class Specimens {
             reservoirs.slowestK(application), reservoirs.failuresK(application));
     }
 
-    // The specimens the application retains of the stage.
-    public int retained(ApplicationName application, Stage stage) {
+    // The specimens the application retains of each stage.
+    public ToIntFunction<Stage> retained(ApplicationName application) {
         var retaining = applications.get(application);
-        return retaining == null ? 0 : retaining.byStage.getOrDefault(stage, 0);
+        return retaining == null ? stage -> 0 : stage -> retaining.byStage.getOrDefault(stage, 0);
     }
 
     // The oldest specimen each application retains, found in one pass from the oldest chunk.

@@ -63,7 +63,7 @@ final class ApplicationCounting {
     void invoked(InstanceName instanceName, MessageSpan span) {
         var stage = catalog.stage(span.stage());
         if (span.entryPoint()) {
-            catalog.entered(span.stage().type());
+            catalog.entered(stage);
         }
         if (span.stage() instanceof Stage.Handling handling) {
             catalog.delivered(handling.processingGroup(), span.delivery().orElseThrow());
@@ -159,7 +159,7 @@ final class ApplicationCounting {
             switch (catalog.stageOf(id)) {
                 case Stage.Dispatch dispatch -> {
                     dispatchesByKind.get(dispatch.type().kind()).add(id);
-                    types.add(new TypeStatistics(dispatch.type(), catalog.entryPoint(dispatch.type()), counters.window(Table.STAGE, id),
+                    types.add(new TypeStatistics(dispatch.type(), catalog.entryPoint(id), counters.window(Table.STAGE, id),
                         counters.history(Table.STAGE, id), retained.applyAsInt(dispatch), counters.startedPerSecond(id), counters.failedPerSecond(id)));
                 }
                 case Stage.Handling handling -> {

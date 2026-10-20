@@ -99,6 +99,40 @@ class CellTest {
         assertThat(total.completed()).isEqualTo(1);
     }
 
+    @Test
+    void add_promotedCellToAnInlineOne_sumsEveryBucket() {
+        var promoted = new Cell();
+        promoted.countDuration(FAST);
+        promoted.countDuration(TEN_MILLIS);
+        promoted.countDuration(HUNDRED_MILLIS);
+        var total = new Cell();
+        total.countDuration(TEN_MILLIS);
+
+        var promotedTotal = total.add(promoted);
+
+        assertThat(promotedTotal).isTrue();
+        assertThat(total.histogram().counts()).isEqualTo(counts(0, 1, 6, 2, 9, 1));
+        assertThat(total.completed()).isEqualTo(4);
+    }
+
+    @Test
+    void subtract_promotedCellAddedEarlier_leavesTheCountsOfTheOther() {
+        var leaving = new Cell();
+        leaving.countDuration(FAST);
+        leaving.countDuration(ONE_MILLI);
+        leaving.countDuration(HUNDRED_MILLIS);
+        var staying = new Cell();
+        staying.countDuration(TEN_MILLIS);
+        var total = new Cell();
+        total.add(staying);
+        total.add(leaving);
+
+        total.subtract(leaving);
+
+        assertThat(total.histogram().counts()).isEqualTo(staying.histogram().counts());
+        assertThat(total.completed()).isEqualTo(1);
+    }
+
     // The counts per bucket, as alternating bucket indexes and counts.
     private static List<Long> counts(int... bucketsAndCounts) {
         var counts = new Long[LatencyHistogram.BOUNDS.size() + 1];
