@@ -1,5 +1,5 @@
 import { causalOrder, lensGraph } from './flow-lens';
-import { isTypeKey } from './format';
+import { isTypeKey, keyedApplication } from './format';
 import { activity } from './api';
 import type { ApplicationState } from './state';
 import type { Activity, TypeKey } from './types';
@@ -36,7 +36,7 @@ export function laneRows(groups: readonly LaneGroup[], headed: boolean, keeps: (
         const lanes = group.lanes.filter(keeps).map((key): LaneRow => ({ id: key, type: 'lane', key }));
         if (!headed || !lanes.length) return lanes;
         // A type key goes on after its application's "::", so a header's ID is no lane's.
-        return [{ id: `${group.application}::`, type: 'application', application: group.application } satisfies LaneRow, ...lanes];
+        return [{ id: `${keyedApplication(group.application)}::`, type: 'application', application: group.application } satisfies LaneRow, ...lanes];
     });
 }
 

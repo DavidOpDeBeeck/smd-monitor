@@ -77,11 +77,12 @@ final class SpanReader {
         return new SpanBatch(application, instance, session, spans, sends);
     }
 
+    // Names the attribute, not its value, which may be as long as the export.
     private static <T> T valid(AttributeKey<String> attribute, String value, Function<String, T> parse) {
         try {
             return parse.apply(value);
         } catch (IllegalArgumentException invalid) {
-            throw new IllegalArgumentException("SMD spans require a valid resource attribute " + attribute + "; got '" + value + "': " + invalid.getMessage(), invalid);
+            throw new IllegalArgumentException("SMD spans require a valid resource attribute " + attribute + ": " + invalid.getMessage(), invalid);
         }
     }
 

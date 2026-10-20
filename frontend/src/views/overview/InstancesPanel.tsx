@@ -6,7 +6,7 @@ import { InstanceFlags } from '../../components/InstanceFlags';
 import { reportingTone } from '../../components/tones';
 import { Tweened, TweenedDuration } from '../../components/tween';
 import { cx } from '../../lib/cx';
-import { lastPeriod, lastSpanAgo, perSecond, share } from '../../lib/format';
+import { keyedApplication, lastPeriod, lastSpanAgo, perSecond, share } from '../../lib/format';
 import { instanceRows } from '../../lib/instances';
 import { Panel } from '../../components/Panel';
 import { HeaderCell, NameCell, NUMBER_CELL, Row, Table } from './table';
@@ -41,7 +41,7 @@ export function InstancesPanel() {
                         </>
                     }
                 >
-                    <Key each={rows()} by={row => `${row.application}/${row.name}`}>
+                    <Key each={rows()} by={row => `${keyedApplication(row.application)}/${row.name}`}>
                         {row => {
                             const filter = () => app.filterTape(row().name);
                             return (

@@ -54,12 +54,13 @@ management:
 
 Each setting matters:
 
-- **`spring.application.name`** sets `service.name`, which groups instances into an application.
+- **`spring.application.name`** sets `service.name`, which groups instances into an application. Any name of 1 to 255 characters will do; the hub rejects the spans
+  of a longer one.
 - **Sampling.** The hub counts the spans it receives, so a sampled-out span is an invocation it never counts. Spring Boot samples 10% by default and SMD does not change
   that. Either sample everything, which also samples the application's other spans, or define a `Sampler` that keeps every SMD span. Spans the exporter drops, because
   its queue is full or the hub is unreachable, are missing from the counts too.
-- **`host.name`** names the instance, such as its pod name. Without it the hub falls back to `service.instance.id`, and without either, to `unnamed`. Copies of one
-  application on one host need different host names.
+- **`host.name`** names the instance, such as its pod name, in 1 to 200 characters. Without it the hub falls back to `service.instance.id`, and without either, to
+  `unnamed`. Copies of one application on one host need different host names.
 - **`service.instance.id`** tells each run of an instance apart, so a restart is recognized. Spring Boot sets neither attribute.
 - **`schedule-delay`** is optional. Spring Boot exports every 5 seconds, so a second's spans reach the hub up to 5 seconds late. Exporting every second completes the
   newest seconds sooner; then set the hub's `settle` to `2s`.

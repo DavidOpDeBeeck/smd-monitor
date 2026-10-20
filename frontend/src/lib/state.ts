@@ -1,4 +1,4 @@
-import { failureKey, groupKey, handlingKey, perKind, typeKey } from './format';
+import { failureKey, groupKey, handlingKey, keyedApplication, perKind, typeKey } from './format';
 import type {
     Brief,
     FailureCount,
@@ -202,7 +202,7 @@ function applicationState(application: WireApplication, health: WireApplicationH
         lastSecond: link.lastSecond,
     });
     const groups = application.groups.map(group => ({
-        key: `${name}@${group.processingGroup}`,
+        key: `${keyedApplication(name)}@${group.processingGroup}`,
         application: name,
         processingGroup: group.processingGroup,
         delivery: group.delivery,

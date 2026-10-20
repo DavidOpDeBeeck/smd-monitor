@@ -39,6 +39,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.ObjectMapper;
 
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -265,15 +266,25 @@ class MonitorHubQueries {
         return constant(TraceOrder.class, order.toUpperCase(Locale.ROOT), "trace order");
     }
 
-    // application::KIND:class, as the page names a type.
+    // application::KIND:class, as the page names a type, with the application percent-encoded so that it holds no ':', '|', or '@'.
     private static ApplicationType applicationType(String type) {
         var application = type.indexOf("::");
         var kind = type.indexOf(':', application + 2);
         if (application < 1 || kind < 0) {
             throw new IllegalArgumentException("A type is named as application::KIND:class, such as tickets::COMMAND:app.OpenTicket; got '" + type + "'");
         }
-        return new ApplicationType(new ApplicationName(type.substring(0, application)),
+        return new ApplicationType(new ApplicationName(decoded(type.substring(0, application), type)),
             new MessageType(constant(MessageKind.class, type.substring(application + 2, kind), "kind"), type.substring(kind + 1)));
+    }
+
+    // As encodeURIComponent encodes, which writes a '+' as %2B, so a '+' is itself rather than a space.
+    private static String decoded(String application, String type) {
+        try {
+            return URLDecoder.decode(application.replace("+", "%2B"), StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException invalid) {
+            throw new IllegalArgumentException("A type names its application percent-encoded, such as Order%20Service::COMMAND:app.PlaceOrder; got '" + type
+                + "'", invalid);
+        }
     }
 
     // application::KIND:class|failure type|dispatch, or application::EVENT:class|failure type|handling:processing group, as the page names a

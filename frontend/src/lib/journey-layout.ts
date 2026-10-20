@@ -1,5 +1,5 @@
 import { lensApplication, type Lens, type LensKey, type LensStation } from './flow-lens';
-import { isGroupKey } from './format';
+import { isGroupKey, keyedApplication } from './format';
 import { roundedPath, type Point } from './paths';
 
 export const CARD_WIDTH = 248;
@@ -74,7 +74,7 @@ export interface Journey {
 
 const cardWidth = (key: LensKey) => (isGroupKey(key) ? GROUP_WIDTH : CARD_WIDTH);
 const cardHeight = (key: LensKey) => (isGroupKey(key) ? GROUP_HEIGHT : MESSAGE_HEIGHT);
-const appLane = (application: string) => `application:${application}`;
+const appLane = (application: string) => `application:${keyedApplication(application)}`;
 const mediumLane = (medium: string) => `medium:${medium}`;
 
 // The lens on a board of lanes: one for each application it touches, in the order its flow reaches them, and one for each medium an event of

@@ -8,21 +8,24 @@ export const STATUS_LABEL: Record<DispatchStatus, string> = { COMPLETED: 'Comple
 
 export const shortName = (name: string) => name.split(/[.$]/).pop() ?? name;
 
-// An application's name as a title: its words, capitalised, instead of dashes, underscores, and dots.
+// An application's name as a title: its words, capitalised, instead of dashes, underscores, and dots; or the name, when it has no words.
 export const applicationTitle = (name: string) =>
     name
         .split(/[-_.\s]+/)
         .filter(word => word.length)
         .map(word => word[0].toUpperCase() + word.slice(1))
-        .join(' ');
+        .join(' ') || name;
 
 export const activityName = (message: Activity) => message.processingGroup ?? shortName(message.messageType);
-export const typeKey = (application: string, kind: MessageKind, messageType: string): TypeKey => `${application}::${kind}:${messageType}`;
+// An application may be named anything, so a key holds it percent-encoded, without ':', '|', '@', or '/' to mistake for a separator. A name of
+// letters, digits, '.', '_', and '-' is itself.
+export const keyedApplication = (application: string) => encodeURIComponent(application);
+export const typeKey = (application: string, kind: MessageKind, messageType: string): TypeKey => `${keyedApplication(application)}::${kind}:${messageType}`;
 export const handlingKey = (type: TypeKey, processingGroup: string): HandlingKey => `${type}@${processingGroup}`;
 // A failure cause as the hub names it: the type, the exception type, and the stage, a dispatch or the handling of its processing group.
 export const failureKey = (type: TypeKey, handling: boolean, processingGroup: string | null, failureType: string) =>
     `${type}|${failureType}|${handling ? `handling:${processingGroup}` : 'dispatch'}`;
-export const groupKey = (application: string, processingGroup: string): GroupKey => `${application}::GROUP:${processingGroup}`;
+export const groupKey = (application: string, processingGroup: string): GroupKey => `${keyedApplication(application)}::GROUP:${processingGroup}`;
 export const threadLabel = (name: string | null) => name || 'virtual thread';
 
 // The deliveries SMD names; an application's own source names its own or is custom. Only the event bus delivers within the publication.
@@ -45,7 +48,7 @@ export const isInProcessDelivery = (delivery: string) => DELIVERY[delivery]?.inP
 export type MediumShape = 'store' | 'pipe';
 export const mediumShape = (delivery: string): MediumShape => (delivery === 'event-store' ? 'store' : 'pipe');
 
-// The application ends at the first "::" followed by a kind. A message type is a class name and holds no '@', so a handling's processing group
+// The application, encoded, ends at the first "::". A message type is a class name and holds no '@', so a handling's processing group
 // follows the first '@' after it.
 const KEY_PREFIX = /^(.+?)::(COMMAND|QUERY|EVENT):/;
 
@@ -60,12 +63,12 @@ export const isGroupKey = (value: string): value is GroupKey => GROUP_KEY.test(v
 
 export function parseGroupKey(key: GroupKey): { application: string; processingGroup: string } {
     const application = GROUP_KEY.exec(key)![1];
-    return { application, processingGroup: key.slice(`${application}::GROUP:`.length) };
+    return { application: decodeURIComponent(application), processingGroup: key.slice(`${application}::GROUP:`.length) };
 }
 
 export function parseTypeKey(key: TypeKey): { application: string; kind: MessageKind; messageType: string } {
     const prefix = KEY_PREFIX.exec(key)!;
-    return { application: prefix[1], kind: prefix[2] as MessageKind, messageType: key.slice(prefix[0].length) };
+    return { application: decodeURIComponent(prefix[1]), kind: prefix[2] as MessageKind, messageType: key.slice(prefix[0].length) };
 }
 
 export function parseHandlingKey(key: HandlingKey): { typeKey: TypeKey; processingGroup: string } {

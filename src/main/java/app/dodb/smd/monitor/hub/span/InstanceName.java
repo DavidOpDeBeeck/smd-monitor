@@ -1,18 +1,14 @@
 package app.dodb.smd.monitor.hub.span;
 
-import java.util.regex.Pattern;
-
 import static java.util.Objects.requireNonNull;
 
+// Any host name or service instance ID OpenTelemetry allows; only its length is bounded, as the hub keeps it outside the memory budget.
 public record InstanceName(String value) {
-
-    private static final Pattern NAME = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,199}");
 
     public InstanceName {
         requireNonNull(value);
-        if (!NAME.matcher(value).matches()) {
-            throw new IllegalArgumentException("InstanceName requires 1 to 200 letters, digits, '.', '_', ':', or '-', starting with a letter or digit; got '"
-                + value + "'");
+        if (value.isEmpty() || value.length() > 200) {
+            throw new IllegalArgumentException("InstanceName requires 1 to 200 characters; got " + value.length() + " characters");
         }
     }
 

@@ -1,4 +1,4 @@
-import { hashHue, isTypeKey, KINDS } from './format';
+import { hashHue, isTypeKey, KINDS, parseTypeKey } from './format';
 import { matchScore } from './search';
 import type { ApplicationState } from './state';
 import { ratePerSecond, sumSeries } from './throughput';
@@ -96,8 +96,14 @@ export function scopeSearch(scope: string | null): string {
     return scope === null ? '' : `?scope=${encodeURIComponent(scope)}`;
 }
 
-// ?type= holds a type key.
+// ?type= holds a type key, unless someone mistyped its encoded application.
 export function typeFromSearch(search: string): TypeKey | null {
     const key = new URLSearchParams(search).get('type');
-    return key && isTypeKey(key) ? key : null;
+    if (!key || !isTypeKey(key)) return null;
+    try {
+        parseTypeKey(key);
+        return key;
+    } catch {
+        return null;
+    }
 }

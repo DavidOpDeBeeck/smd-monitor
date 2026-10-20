@@ -306,14 +306,29 @@ class OtlpTracesTest {
     }
 
     @Test
-    void export_hostNameThatIsNoInstanceName_rejectsItsSpansNamingTheResourceAttribute() {
-        recording(Resource.create(Attributes.of(SpanReader.SERVICE_NAME, TICKETS.value(), SpanReader.HOST_NAME, "my host")))
+    void export_namesOpenTelemetryAndSpringAllow_reportAsTheApplicationAndInstanceTheyName() {
+        var application = new ApplicationName("Order Service:v2 | ébène@eu/1");
+        recording(Resource.create(Attributes.of(SpanReader.SERVICE_NAME, application.value(), SpanReader.HOST_NAME, "my host")))
+            .intercept(open(), CommandBusInterceptorChain.create(ignored -> null, List.of()));
+
+        var response = export(encoded());
+
+        assertThat(response).isEmpty();
+        assertThat(hub.statistics().application(application).orElseThrow().instances()).extracting(Instance::name)
+            .containsExactly(new InstanceName("my host"));
+    }
+
+    @Test
+    void export_serviceNameLongerThanTheHubKeeps_rejectsItsSpansWithoutRepeatingTheName() {
+        var name = "s".repeat(256);
+        recording(Resource.create(Attributes.of(SpanReader.SERVICE_NAME, name)))
             .intercept(open(), CommandBusInterceptorChain.create(ignored -> null, List.of()));
 
         var partialSuccess = ProtobufMessage.parse(export(encoded())).message(1).orElseThrow();
 
         assertThat(partialSuccess.number(1)).isEqualTo(1);
-        assertThat(partialSuccess.string(2)).hasValueSatisfying(reason -> assertThat(reason).contains("host.name", "'my host'"));
+        assertThat(partialSuccess.string(2)).hasValueSatisfying(reason -> assertThat(reason).contains("service.name", "1 to 255 characters; got 256")
+            .doesNotContain(name));
         assertThat(hub.statistics().applications()).isEmpty();
     }
 

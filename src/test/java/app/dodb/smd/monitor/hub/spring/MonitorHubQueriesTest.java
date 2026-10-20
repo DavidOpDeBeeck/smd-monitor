@@ -130,8 +130,32 @@ class MonitorHubQueriesTest {
             .hasMessageContaining("application::KIND:class|failure type|dispatch", "'tickets::COMMAND:OpenTicket|java.lang.IllegalStateException'");
     }
 
+    @Test
+    void failures_causeOfAnApplicationWithSeparatorsInItsName_answersItsRetainedOccurrencesByTheEncodedName() {
+        receive(new ApplicationName("Order Service:v2 | eu@1+"), new MessageSpan(SpanRef.of(TRACE, "0000000000000001"), Optional.empty(), MessageId.generate(),
+            new Stage.Dispatch(new MessageType(MessageKind.COMMAND, "OpenTicket")), Optional.empty(), Instant.now(), "main",
+            new Outcome.Failed(Duration.ofMillis(1), "java.lang.IllegalStateException")));
+
+        var response = queries.failures(List.of("Order%20Service%3Av2%20%7C%20eu%401%2B::COMMAND:OpenTicket|java.lang.IllegalStateException|dispatch"));
+
+        assertThat(response.getBody()).contains("\"retained\":1", "\"application\":\"Order Service:v2 | eu@1+\"");
+    }
+
+    @Test
+    void failures_causeWithAMalformedEncodedApplication_rejectsWithTheExpectedForm() {
+        hub.epoch();
+
+        assertThatThrownBy(() -> queries.failures(List.of("Order%2::COMMAND:OpenTicket|java.lang.IllegalStateException|dispatch")))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("percent-encoded", "'Order%2::COMMAND:OpenTicket'");
+    }
+
     private void receive(MessageSpan span) {
-        hub.receive(new SpanBatch(TICKETS, new InstanceName("tickets-1"), new SessionId("session"), List.of(span), List.of()));
+        receive(TICKETS, span);
+    }
+
+    private void receive(ApplicationName application, MessageSpan span) {
+        hub.receive(new SpanBatch(application, new InstanceName("tickets-1"), new SessionId("session"), List.of(span), List.of()));
         hub.epoch();
     }
 
