@@ -49,18 +49,29 @@ public record FrameView(String hubSession,
         return duration.map(value -> value.toNanos() / 1_000_000.0).orElse(null);
     }
 
-    private static Optional<Double> millisOf(Optional<Duration> duration) {
-        return Optional.ofNullable(millis(duration));
-    }
-
     static Double p95Millis(LatencyHistogram latency) {
         return figure(latency.percentile(0.95));
     }
 
     // A latency figure of the frame in milliseconds, to the three significant digits the page shows, so a change it would not show does not
-    // change the frame.
+    // change the frame. The nanoseconds round half up as integers, as an exact decimal of every figure took most of a frame at many
+    // applications; one exactly halfway rounds its milliseconds as a decimal, as their double may lie on either side of it.
     static Double figure(Optional<Duration> duration) {
-        return millisOf(duration).map(value -> value == 0 ? 0.0 : new BigDecimal(value).round(FIGURE).doubleValue()).orElse(null);
+        return duration.map(FrameView::figure).orElse(null);
+    }
+
+    private static double figure(Duration duration) {
+        var nanos = duration.toNanos();
+        var scale = 1L;
+        while (nanos / scale >= 1_000) {
+            scale *= 10;
+        }
+        var remainder = nanos % scale;
+        if (2 * remainder == scale) {
+            return new BigDecimal(nanos / 1_000_000.0).round(FIGURE).doubleValue();
+        }
+        var rounded = (nanos / scale + (2 * remainder > scale ? 1 : 0)) * scale;
+        return rounded / 1_000_000.0;
     }
 
     // The export lag is the p99 of how long its recent spans took to reach the hub after they ended, null while none arrived recently.
