@@ -99,7 +99,8 @@
   .brand b { color: var(--fg); font-weight: 800; }
   .brand svg { width: 24px; height: auto; }
   .brand .product { color: var(--fg); font-weight: 600; padding-left: 10px; margin-left: 2px; border-left: 1px solid var(--line); }
-  .runs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 1 1 auto; }
+  .runs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 0 1 auto; }
+  .rail .theme { justify-self: start; margin: 0 12px; }
   .runs-label { font-size: 12px; color: var(--muted); margin-right: 4px; }
   .run-chip { --run: var(--muted); border-radius: 999px; padding: 0 11px 0 9px; color: var(--muted); }
   .run-chip[aria-pressed="true"] { color: var(--fg); border-color: color-mix(in srgb, var(--run) 55%, var(--line)); background: color-mix(in srgb, var(--run) 16%, var(--panel)); }
@@ -133,6 +134,7 @@
   .fact[data-key]:hover { background: var(--panel); color: var(--fg); }
   .fact b { color: var(--fg); font-weight: 600; white-space: nowrap; }
   .fact .dot { width: 9px; height: 9px; }
+  .stage-chart.fit { flex: 0 1 auto; }
   .stage-chart { flex: 1 1 auto; min-height: 0; overflow: auto; position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
   .stage-table { flex: 1 1 auto; min-height: 0; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
   .stage-about { flex: 1 1 auto; min-height: 0; overflow: auto; display: grid; gap: 14px; align-content: start; padding-right: 4px; }
@@ -142,7 +144,6 @@
   .chart svg text { fill: var(--muted); font-size: 12.5px; font-family: var(--font-sans); font-variant-numeric: tabular-nums; }
   .chart svg text.strong { fill: var(--fg); }
   .chart svg text.title { font-size: 11.5px; letter-spacing: 0.02em; }
-  .chart svg text.group { fill: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
   .chart svg text.pick { cursor: pointer; }
   .chart svg text.pick:hover { fill: var(--fg); }
   .chart svg .gridline { stroke: var(--grid); }
@@ -151,10 +152,9 @@
   .chart svg .reference { stroke: var(--reference); stroke-dasharray: 4 4; }
   .chart svg .hit { fill: transparent; }
   .chart svg .hit.pick { cursor: pointer; }
-  .chart svg .row-band { fill: var(--sunken); }
+  .chart svg .noise { fill: var(--grid); opacity: 0.7; }
   .chart svg .row-glow { fill: var(--accent); opacity: 0; }
   .chart svg .row-glow.on { opacity: 0.08; }
-  .chart svg .pill { fill: var(--panel); stroke: var(--line); }
   .chart svg [data-key] { transition: opacity 0.15s ease; }
   .chart.dimmed svg [data-key] { opacity: 0.12; }
   .chart.dimmed svg [data-key].lit { opacity: 1; }
@@ -194,17 +194,7 @@
   button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .segmented button:focus-visible { outline-offset: 0; }
 
-  .ladder-box { overflow: auto; }
-  .ladder { display: grid; gap: 4px; font-size: 13px; min-width: 100%; }
-  .ladder-head { color: var(--muted); text-align: center; padding: 2px 4px 6px; font-variant-numeric: tabular-nums; }
-  .ladder-head.text { text-align: left; }
-  .ladder-run { display: flex; align-items: center; gap: 6px; font-weight: 600; padding: 0 6px; white-space: nowrap; }
-  .ladder-cell { text-align: center; padding: 11px 6px; border-radius: 8px; background: var(--sunken); color: var(--muted); white-space: nowrap; font-weight: 500; }
-  .ladder-cell.empty { background: transparent; }
-  .ladder-cell.tone-ok { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--fg); box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--ok) 60%, transparent); }
-  .ladder-cell.tone-warn { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--fg); box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--warn) 70%, transparent); }
-  .ladder-cell.tone-bad { background: color-mix(in srgb, var(--bad) 20%, transparent); color: var(--fg); box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--bad) 65%, transparent); }
-  .ladder-cell.tone-muted { background: color-mix(in srgb, var(--reference) 25%, transparent); color: var(--fg); box-shadow: inset 0 -2px 0 var(--reference); }
+  .more-runs { border-style: dashed; color: var(--muted); }
   .key-ok { background: color-mix(in srgb, var(--ok) 35%, transparent); }
   .key-warn { background: color-mix(in srgb, var(--warn) 40%, transparent); }
   .key-bad { background: color-mix(in srgb, var(--bad) 38%, transparent); }
@@ -258,6 +248,15 @@
     .profile-row { grid-template-columns: minmax(0, 1fr) 3.5rem; }
     .profile-row .bar-track { grid-column: 1 / -1; grid-row: 2; }
   }
+
+  /* A figure, for a screenshot a pull request shows: the title, the series, the chart and its key, nothing to operate, and larger text. */
+  .figure .topbar, .figure .rail, .figure #strip, .figure #show-switch, .figure .keys { display: none !important; }
+  .figure .body { grid-template-columns: minmax(0, 1fr); }
+  .figure .stage { padding: 18px 22px; gap: 8px; }
+  .figure h2 { font-size: 22px; }
+  .figure .fact, .figure .legend, .figure .how { font-size: 14px; }
+  .figure .chart svg text { font-size: 14px; }
+  .figure .chart svg text.title { font-size: 12.5px; }
 </style>
 </head>
 <body>
@@ -343,7 +342,7 @@
         </div>
         <div class="card">
           <h3>The scenarios</h3>
-          <p class="note">The reference shape, four sweeps that each change one thing of it, and the two deployment profiles the documentation sizes the hub for.</p>
+          <p class="note">The reference shape, four sweeps that each change one thing of it, and the deployment profile the documentation sizes the hub for.</p>
           <table class="setup" id="scenarios-table"><thead></thead><tbody></tbody></table>
         </div>
         <div class="card">
@@ -389,7 +388,8 @@
   }
 
   const LOG_FLOOR = 1000;
-  const DEFAULT_RUNS = 4;
+  // A page opened without runs picked compares the latest two: a change's before and after.
+  const DEFAULT_RUNS = 2;
   // Each run keeps one of these colors; past eight, the picker refuses more runs at once rather than reuse a color.
   const SERIES = ['--series-1', '--series-2', '--series-3', '--series-4', '--series-5', '--series-6', '--series-7', '--series-8'];
   const MAX_PICKED = SERIES.length;
@@ -402,23 +402,30 @@
     GENERATOR_BOUND: { label: 'Load generator bound', short: 'Generator', tone: 'muted' },
   };
   const LIMITS = {
-    keepsUp: { label: 'keeps up with, nothing shed', short: 'keeps up with', what: 'the highest rate it kept up with, nothing shed' },
-    holds: { label: 'holds without refusing', short: 'holds without refusing', what: 'the highest rate it held without refusing spans, shedding what it had to' },
-    failsAt: { label: 'first fails at', short: 'first fails at', what: 'the first rate it failed at, falling behind or refusing' },
+    keepsUp: { label: 'keeps up with, nothing shed', short: 'keeps up with', what: 'the highest rate a run kept up with, nothing shed' },
+    holds: { label: 'holds without refusing', short: 'holds without refusing', what: 'the highest rate a run held without refusing spans, shedding what it had to' },
+    failsAt: { label: 'first fails at', short: 'first fails at', what: 'the first rate a run failed at, falling behind or refusing' },
   };
   const SWEEP_LABELS = { reference: 'Reference', applications: 'Applications', instances: 'Instances per application', types: 'Message types per application',
     budget: 'Memory budget', profile: 'Deployment profiles' };
   const SWEEPS = {
-    applications: { field: 'applications', format: (value) => count(value), unit: 'applications', what: 'how the limit falls as services are added' },
-    instances: { field: 'instances', format: (value) => count(value), unit: 'instances each', what: 'whether more replicas of the same services cost anything' },
-    types: { field: 'typesPerApplication', format: (value) => count(value), unit: 'types each', what: 'whether key cardinality matters; a quarter as many processing groups as types' },
-    budget: { field: 'memoryMb', format: (value) => (value >= 1024 ? `${value / 1024} GB` : `${value} MB`), unit: '', what: 'what memory buys' },
+    applications: { title: 'Applications', field: 'applications', format: (value) => count(value), unit: 'applications', what: 'how the limit falls as services are added' },
+    instances: { title: 'Instances per application', field: 'instances', format: (value) => count(value), unit: 'instances each',
+      what: 'whether more replicas of the same services cost anything' },
+    types: { title: 'Message types', field: 'typesPerApplication', format: (value) => count(value), unit: 'types each',
+      what: 'whether key cardinality matters; a quarter as many processing groups as types' },
+    budget: { title: 'Memory budget', field: 'memoryMb', format: (value) => (value >= 1024 ? `${value / 1024} GB` : `${value} MB`), unit: '', what: 'what memory buys' },
   };
 
   // Formats.
   const count = (value) => Math.round(value).toLocaleString('en-US');
   const share = (value) => `${(value * 100).toFixed(1)}%`;
-  const signed = (value) => `${value > 0 ? '+' : value < 0 ? '−' : ''}${Math.abs(Math.round(value * 100))}%`;
+  // An axis tick needs no decimals a value does.
+  const tickFormat = (format) => (format === share ? (value) => `${Math.round(value * 100)}%` : format === count ? compact : format);
+  const signed = (value) => {
+    const percent = Math.abs(value * 100).toFixed(Math.abs(value) < 0.1 ? 1 : 0);
+    return `${Number(percent) === 0 ? '' : value > 0 ? '+' : '−'}${percent}%`;
+  };
   const compact = (value) => (value >= 1e6 ? `${+(value / 1e6).toPrecision(3)}M` : value >= 1000 ? `${+(value / 1000).toPrecision(3)}k` : String(value));
   const millis = (value) => `${count(value)} ms`;
   const megabytes = (value) => `${count(value)} MB`;
@@ -447,7 +454,11 @@
     return { when, commit: commit || '', changed, short: `${commit || ''}${changed ? '*' : ''}`, detail: [when, [commit, ...rest].filter(Boolean).join(' ')].filter(Boolean).join(' · ') };
   };
 
-  // Every measure of a step, as the steps file names it, with its unit; a few have a line worth drawing beside the data.
+  // The writer's capacity at a step: the spans processed per second of the writer thread on a core, the rate a writer always on a core would
+  // process. A limit moves in steps of the ladder, and two runs of one commit can land a step apart; the capacity moves smoothly and by a few
+  // percent between such runs, so it shows what a change saves.
+  const capacityOf = (row) => (row.writerCpu > 0 && row.processed > 0 ? row.processed / row.writerCpu : null);
+  // Every measure of a step, as the steps file names it or derived from it, with its unit; a few have a line worth drawing beside the data.
   const MEASURES = {
     processed: { group: 'Throughput', label: 'Processed per second', format: count, what: 'Spans the hub processed each second of the step, once it settled.' },
     offered: { group: 'Throughput', label: 'Offered per second', format: count, what: 'Spans the generators offered each second of the step.' },
@@ -457,10 +468,12 @@
     queueMax: { group: 'Given up', label: 'Queue, most waiting', format: count, what: 'The most spans waiting in the intake queues at once during the step.' },
     queueEnd: { group: 'Given up', label: 'Queue at the end', format: count, what: 'Spans waiting in the intake queues when the step ended.' },
     writerBusy: { group: 'Writer', label: 'Writer busy', format: share, max: 1, references: [{ y: 0.9, label: 'falls behind above 90%' }],
-      what: 'Share of each second the single writer thread was busy, not waiting for a batch. Close to fully busy, it falls behind.' },
+      what: 'Share of each second the single writer thread was busy, not waiting for a batch.' },
     writerBusyMax: { group: 'Writer', label: 'Writer busy, worst second', format: share, max: 1, what: 'The busiest second of the step for the writer thread.' },
     writerCpu: { group: 'Writer', label: 'Writer on a core', format: share, max: 1,
       what: 'Share of each second the writer thread ran on a core. Its gap to Writer busy is collection pauses and waiting for a core.' },
+    capacity: { group: 'Writer', label: 'Writer capacity', format: compact, value: capacityOf,
+      what: 'Spans processed per second of the writer thread on a core: the rate a writer always on a core would process. Higher is better.' },
     processCores: { group: 'Writer', label: 'Process cores', format: cores, what: 'Cores the whole hub process used on average, the writer and the submitting threads.' },
     gcMsPerS: { group: 'Memory', label: 'Collection time per second', format: millis, what: 'Milliseconds of each second spent in garbage collection.' },
     heapMb: { group: 'Memory', label: 'Heap, most used', format: megabytes, what: 'The most heap in use during the step.' },
@@ -481,7 +494,7 @@
   // Every measure of a second, as the seconds file names it.
   const SECONDS = {
     processed: { label: 'Processed per second', format: count, also: { field: 'offered', label: 'Offered per second' },
-      what: 'Spans processed each second, with the spans offered dashed.' },
+      what: 'Spans processed each second, against the rate each step offered.' },
     queued: { label: 'Queued spans', format: count, capacity: true, what: 'Spans waiting in the intake queues at the end of each second, with their capacity.' },
     busy: { label: 'Refused per second', format: count, what: 'Spans refused each second with a full queue.' },
     shed: { label: 'Shed per second', format: count, what: 'Spans counted but not retained or not linked each second.' },
@@ -489,20 +502,6 @@
     horizonS: { label: 'Link horizon', format: secondsOf, what: 'The link horizon the budget allowed at the end of each second.' },
     historyS: { label: 'Counted history', format: secondsOf, what: 'The history the counts covered at the end of each second.' },
   };
-  const VIEWS = [
-    { id: 'overview', group: 'Overview', title: 'All scenarios at a glance', controls: ['limit', 'scale'] },
-    { id: 'change', group: 'Overview', title: 'What changed between runs', controls: ['limit'] },
-    { id: 'sweep-applications', group: 'What limits throughput', title: 'Applications', sweep: 'applications', controls: ['limit', 'scale'] },
-    { id: 'sweep-instances', group: 'What limits throughput', title: 'Instances per application', sweep: 'instances', controls: ['limit', 'scale'] },
-    { id: 'sweep-types', group: 'What limits throughput', title: 'Message types', sweep: 'types', controls: ['limit', 'scale'] },
-    { id: 'sweep-budget', group: 'What limits throughput', title: 'Memory budget', sweep: 'budget', controls: ['limit', 'scale'] },
-    { id: 'ladder', group: 'One scenario in depth', title: 'Verdict ladder', controls: ['scenario', 'series', 'sweep', 'run'] },
-    { id: 'steps', group: 'One scenario in depth', title: 'Any measure, rate by rate', controls: ['scenario', 'measure', 'series', 'sweep', 'run', 'scale'] },
-    { id: 'seconds', group: 'One scenario in depth', title: 'Second by second', controls: ['scenario', 'seconds'] },
-    { id: 'about', group: 'About', title: 'How it was measured', controls: [] },
-  ];
-  const viewOf = (id) => VIEWS.find((view) => view.id === id);
-
   // Collections.
   const maxOf = (rows, value) => rows.reduce((max, row) => Math.max(max, value(row)), -Infinity);
   const minOf = (rows, value) => rows.reduce((min, row) => Math.min(min, value(row)), Infinity);
@@ -514,23 +513,6 @@
       groups.get(key(row)).push(row);
     }
     return [...groups];
-  };
-  // Moves positions apart until none are closer than gap, inside [lo, hi]; the order of the positions is kept.
-  const spreadApart = (positions, gap, lo, hi) => {
-    const order = positions.map((value, index) => ({ value, index })).sort((a, b) => a.value - b.value);
-    let floor = lo;
-    for (const each of order) {
-      each.value = Math.max(each.value, floor);
-      floor = each.value + gap;
-    }
-    let ceiling = hi;
-    for (let at = order.length - 1; at >= 0; at -= 1) {
-      order[at].value = Math.min(order[at].value, ceiling);
-      ceiling = order[at].value - gap;
-    }
-    const spread = [];
-    for (const each of order) spread[each.index] = each.value;
-    return spread;
   };
 
   // Every run in order. A run keeps its color on every chart whichever runs are picked.
@@ -552,6 +534,20 @@
   const max = maxOf(runs, (run) => run.maxRate);
   const scenarioById = new Map(scenarios.map((scenario) => [scenario.scenario, scenario]));
   const stepsOf = (runId, scenarioId) => steps.filter((row) => row.run === runId && row.scenario === scenarioId).sort((a, b) => a.rate - b.rate);
+  // A run's writer capacity on a scenario against a baseline run's, over the rates both offered with the load generator keeping up: each run's
+  // geometric mean over those rates, and the change between the two.
+  const capacityAgainst = (run, baseline, scenarioId) => {
+    const capacities = (id) => new Map(stepsOf(id, scenarioId).filter((row) => row.verdict !== 'GENERATOR_BOUND' && present(capacityOf(row)))
+      .map((row) => [row.rate, capacityOf(row)]));
+    const mine = capacities(run.run);
+    const theirs = capacities(baseline.run);
+    const rates = [...mine.keys()].filter((rate) => theirs.has(rate));
+    if (!rates.length) return null;
+    const geometric = (values) => Math.exp(values.reduce((sum, value) => sum + Math.log(value), 0) / values.length);
+    const capacity = geometric(rates.map((rate) => mine.get(rate)));
+    const base = geometric(rates.map((rate) => theirs.get(rate)));
+    return { capacity, base, change: capacity / base - 1, rates };
+  };
   const sweepIds = [...new Set(scenarios.map((scenario) => scenario.sweep))].filter((sweep) => sweep !== 'reference');
   // A sweep's scenarios with the reference, in the order of the swept value; the profiles have none, so they follow the reference.
   const membersOf = (sweep) => {
@@ -560,9 +556,21 @@
       .sort((a, b) => (field ? a[field] - b[field] : (a.sweep === 'reference' ? -1 : 0) - (b.sweep === 'reference' ? -1 : 0)));
   };
 
+  // A sweep earns a view of its own when it has several points besides the reference; the overview shows the others.
+  const VIEWS = [
+    { id: 'change', group: 'Compare runs', title: 'What changed', controls: [] },
+    { id: 'overview', group: 'Compare runs', title: 'Limits per scenario', controls: ['limit', 'scale'] },
+    ...Object.entries(SWEEPS).filter(([sweep]) => scenarios.filter((scenario) => scenario.sweep === sweep).length > 1)
+      .map(([sweep, { title }]) => ({ id: `sweep-${sweep}`, group: 'Compare runs', title: `${title} sweep`, sweep, controls: ['limit', 'scale'] })),
+    { id: 'steps', group: 'One scenario', title: 'Rate by rate', controls: ['scenario', 'measure', 'series', 'sweep', 'run', 'scale'] },
+    { id: 'seconds', group: 'One scenario', title: 'Second by second', controls: ['scenario', 'seconds'] },
+    { id: 'about', group: 'About', title: 'How it was measured', controls: [] },
+  ];
+  const viewOf = (id) => VIEWS.find((view) => view.id === id);
+
   // The page's state lives in the query string, so a view can be linked; runs are named there by their number.
   const PARAMS = {
-    view: { allowed: VIEWS.map((view) => view.id), fallback: 'overview' },
+    view: { allowed: VIEWS.map((view) => view.id), fallback: 'change' },
     show: { allowed: ['chart', 'table'], fallback: 'chart' },
     scale: { allowed: ['log', 'linear'], fallback: 'log' },
     limit: { allowed: Object.keys(LIMITS), fallback: 'keepsUp' },
@@ -573,10 +581,15 @@
     scenario: { allowed: scenarios.map((scenario) => scenario.scenario), fallback: 'reference' },
   };
   const query = new URLSearchParams(location.search);
+  // The verdict ladder became the strips under the rate-by-rate chart; a link to it opens that chart.
+  if (query.get('view') === 'ladder') query.set('view', 'steps');
   const state = Object.fromEntries(Object.entries(PARAMS).map(([name, { allowed, fallback }]) => [name, allowed.includes(query.get(name)) ? query.get(name) : fallback]));
   state.runs = (query.get('runs') || '').split(',').map(Number).filter((order) => order > 0);
   state.run = Number(query.get('run')) || null;
   state.step = Number(query.get('step')) || null;
+  const figure = query.get('figure') === '1';
+  document.documentElement.classList.toggle('figure', figure);
+  let allRunsShown = false;
   const setState = (patch) => {
     Object.assign(state, patch);
     const next = new URLSearchParams();
@@ -584,6 +597,7 @@
     if (state.runs.length) next.set('runs', state.runs.join(','));
     if (state.run) next.set('run', state.run);
     if (state.step) next.set('step', state.step);
+    if (figure) next.set('figure', '1');
     try {
       history.replaceState(null, '', `${location.pathname}${next.size ? `?${next}` : ''}`);
     } catch {
@@ -597,12 +611,14 @@
   const linearScale = ([d0, d1], [r0, r1]) => {
     const scale = (value) => r0 + ((value - d0) / (d1 - d0 || 1)) * (r1 - r0);
     scale.range = () => [r0, r1];
+    scale.domain = () => [d0, d1];
     scale.ticks = (wanted) => niceTicks(d0, d1, wanted);
     return scale;
   };
   const logScale = ([d0, d1], [r0, r1]) => {
     const scale = (value) => r0 + ((Math.log(Math.min(d1, Math.max(d0, value))) - Math.log(d0)) / (Math.log(d1) - Math.log(d0))) * (r1 - r0);
     scale.range = () => [r0, r1];
+    scale.domain = () => [d0, d1];
     return scale;
   };
   const pointScale = (keys, [r0, r1]) => {
@@ -619,16 +635,23 @@
     for (let value = Math.ceil(lo / step) * step; value <= hi + step * 1e-9; value += step) ticks.push(+value.toPrecision(12));
     return ticks;
   };
-  // A rate axis fixed to the maximum a run offers, whatever the data: logarithmic from a thousand, or linear from zero.
-  const rateScale = (range) => (linear() ? linearScale([0, max], range) : logScale([LOG_FLOOR, max], range));
-  const rateTicks = (scale, svg, spacing = 10) => {
-    const candidates = linear() ? scale.ticks(8) : [1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, max].filter((tick) => tick <= max);
+  // A rate axis fitted to the rates it draws: logarithmic from a little below the lowest to a little above the highest, or linear from zero.
+  const rateScale = (range, values) => {
+    const drawn = values.filter((value) => present(value) && value > 0);
+    const [lo, hi] = drawn.length ? [Math.max(LOG_FLOOR, minOf(drawn, (value) => value)), maxOf(drawn, (value) => value)] : [LOG_FLOOR, max];
+    return linear() ? linearScale([0, hi * 1.08], range) : logScale([lo / 1.25, hi * 1.25], range);
+  };
+  // A limit is always a rate of the ladder, so the ladder's rates make the ticks of a limit axis.
+  const LADDER_RATES = [...new Set(steps.map((row) => row.rate))].sort((a, b) => a - b);
+  // The ticks of a rate axis, the given rates or round ones, dropping any whose label would touch the one before.
+  const rateTicks = (scale, svg, candidates, spacing = 12) => {
+    const [lo, hi] = scale.domain();
+    const wanted = candidates || (linear() ? scale.ticks(8) : LADDER_RATES);
     const ticks = [];
     let lastEnd = -Infinity;
-    for (const tick of [...new Set(candidates)].sort((a, b) => a - b)) {
+    for (const tick of [...new Set(wanted)].filter((each) => each >= lo && each <= hi).sort((a, b) => a - b)) {
       const half = textWidth(svg, compact(tick)) / 2;
-      if (scale(tick) - half > lastEnd + spacing || tick === max) {
-        if (tick === max && ticks.length && scale(tick) - half <= lastEnd + spacing) ticks.pop();
+      if (scale(tick) - half > lastEnd + spacing) {
         ticks.push(tick);
         lastEnd = scale(tick) + half;
       }
@@ -694,20 +717,6 @@
   };
   const dot = (svg, cx, cy, color, r = 4, key) => el(svg, 'circle', { cx, cy, r, fill: color, stroke: 'var(--panel)', 'stroke-width': 2, 'data-key': key });
   const axisTitle = (svg, x, y, text) => el(svg, 'text', { class: 'title', x, y, 'text-anchor': 'end' }, text);
-  // A name in a small pill, its box measured first so the pill fits.
-  // A name cut to the room it has, ending in an ellipsis; the legend above the chart holds it whole.
-  const fitText = (svg, text, room) => {
-    if (textWidth(svg, text, 'strong') <= room) return text;
-    let cut = text;
-    while (cut.length > 1 && textWidth(svg, `${cut}…`, 'strong') > room) cut = cut.slice(0, -1);
-    return `${cut.trimEnd()}…`;
-  };
-  const pillText = (svg, x, y, text) => {
-    const width = textWidth(svg, text, 'strong') + 12;
-    el(svg, 'rect', { class: 'pill', x: x - 6, y: y - 10, width, height: 20, rx: 10 });
-    el(svg, 'text', { class: 'strong', x, y, dy: '0.35em' }, text);
-    return width;
-  };
 
   // Tooltips, legends, facts, and tables.
   const tooltip = (container) => {
@@ -740,8 +749,8 @@
     tip.style.top = `${Math.max(0, y - 10 + container.scrollTop)}px`;
   };
   // The marks that are not a series: a dashed line or the verdicts' colors.
-  const legend = (element, marks) => {
-    element.replaceChildren(...marks.map((each) => {
+  const legend = (element, marks, title) => {
+    element.replaceChildren(...(title && marks.length ? [Object.assign(document.createElement('span'), { textContent: `${title}:` })] : []), ...marks.map((each) => {
       const item = document.createElement('span');
       const swatch = document.createElement('i');
       swatch.className = each.block ? `swatch block ${each.block}` : 'swatch dashed';
@@ -749,8 +758,8 @@
       return item;
     }));
   };
-  const VERDICT_KEY = [{ name: 'Keeps up, nothing shed', block: 'key-ok' }, { name: 'Sheds, counts stay exact', block: 'key-warn' },
-    { name: 'Fails: falls behind or refuses', block: 'key-bad' }, { name: 'Load generator bound', block: 'key-muted' }];
+  const VERDICT_KEY = [{ name: 'Keeps up', tone: 'ok', block: 'key-ok' }, { name: 'Sheds, counts stay exact', tone: 'warn', block: 'key-warn' },
+    { name: 'Falls behind or refuses', tone: 'bad', block: 'key-bad' }, { name: 'Load generator bound', tone: 'muted', block: 'key-muted' }];
   // One fact per series: its name and what it did, in words. Resting on a fact lights its series on the chart and dims the others; every mark of a
   // series carries its key.
   const facts = (items) => {
@@ -810,141 +819,131 @@
     }));
   };
 
-  // Every scenario in rows grouped by sweep; in each row one dot per picked run at its limit, or one bar per run with its change against the
-  // earliest picked run that ran the scenario. The runs sit on their own thin lanes within the row, so equal limits still show as a column of dots.
+  // A bar from x0 to x1, rounded at its data end only, so it reads as growing from the zero line.
+  const barPath = (x0, x1, y, height, radius = 4) => {
+    const r = Math.min(radius, Math.abs(x1 - x0) / 2, height / 2);
+    const s = x1 >= x0 ? 1 : -1;
+    return `M${x0},${y}H${x1 - s * r}Q${x1},${y} ${x1},${y + r}V${y + height - r}Q${x1},${y + height} ${x1 - s * r},${y + height}H${x0}Z`;
+  };
+
+  // One row per scenario. Limits: one dot per picked run at its limit, a line joining the lowest and the highest. Change: one bar per run
+  // against the earliest picked run that ran the scenario, the change in its writer capacity labelled at the tip. The band around zero is
+  // the spread between runs of one commit; a bar within it is drawn faint, as it shows no change.
   const drawDots = (container, picked, limit, mode) => {
-    const laneGap = 7;
-    const rowHeight = 18 + picked.length * laneGap;
-    const headHeight = 32;
-    const rows = groupsInOrder(scenarios, (scenario) => scenario.sweep)
-      .flatMap(([sweep, members]) => [{ head: SWEEP_LABELS[sweep] || sweep }, ...members.map((scenario) => ({ scenario }))]);
-    const plotHeight = rows.reduce((total, row) => total + (row.head ? headHeight : rowHeight), 0);
-    const { svg, width, height } = svgIn(container, plotHeight + 44);
-    const left = Math.ceil(maxOf(scenarios, (scenario) => textWidth(svg, scenario.name, 'strong'))) + 16;
-    const margin = { top: 4, right: 20, bottom: 44, left };
-    const limitOf = (run, scenario) => (rowsOf(run.run).get(scenario.scenario) || {})[limit];
+    const change = mode === 'change';
     const baselineOf = (scenario) => picked.find((run) => rowsOf(run.run).has(scenario.scenario));
-    const changeOf = (run, scenario) => {
+    const comparedOf = (run, scenario) => {
       const baseline = baselineOf(scenario);
-      if (!baseline) return null;
-      const mine = limitOf(run, scenario);
-      const base = limitOf(baseline, scenario);
-      return present(mine) && present(base) && base > 0 ? mine / base - 1 : null;
+      return baseline && run !== baseline ? capacityAgainst(run, baseline, scenario.scenario) : null;
     };
+    const limitOf = (run, scenario) => (rowsOf(run.run).get(scenario.scenario) || {})[limit];
+    // The earliest run is the zero line a change is drawn from, so it needs no lane of its own.
+    const lanes = change ? picked.slice(1) : picked;
+    const laneGap = change ? 18 : 8;
+    const rowHeight = Math.max(32, 16 + lanes.length * laneGap);
+    const margin = { top: change ? 26 : 4, right: 16, bottom: 48 };
+    const { svg, width, height } = svgIn(container, margin.top + scenarios.length * rowHeight + margin.bottom);
+    margin.left = Math.ceil(maxOf(scenarios, (scenario) => textWidth(svg, scenario.name, 'strong'))) + 20;
+    const range = [margin.left, width - margin.right];
     let x;
     let ticks;
-    if (mode === 'change') {
-      const widest = maxOf(scenarios.flatMap((scenario) => picked.map((run) => Math.abs(changeOf(run, scenario) ?? 0))), (value) => value);
-      const reach = Math.max(0.25, Math.ceil(widest / 0.25) * 0.25);
-      x = linearScale([-reach, reach], [margin.left, width - margin.right]);
-      ticks = niceTicks(-reach, reach, 8);
+    if (change) {
+      const values = scenarios.flatMap((scenario) => lanes.map((run) => comparedOf(run, scenario)?.change)).filter(present);
+      const lo = Math.min(-2 * CAPACITY_NOISE, Math.floor(minOf(values, (value) => value) / 0.05) * 0.05);
+      const hi = Math.max(2 * CAPACITY_NOISE, Math.ceil(maxOf(values, (value) => value) / 0.05) * 0.05);
+      // Room past the ends for the labels at the bars' tips.
+      const pad = (hi - lo) * 0.1;
+      x = linearScale([lo - pad, hi + pad], range);
+      ticks = niceTicks(lo, hi, 6);
     } else {
-      x = rateScale([margin.left, width - margin.right]);
+      x = rateScale(range, scenarios.flatMap((scenario) => picked.map((run) => limitOf(run, scenario))));
       ticks = rateTicks(x, svg);
     }
-    gridLines(svg, ticks, (tick) => ({ x1: x(tick), x2: x(tick), y1: margin.top, y2: height - margin.bottom }));
-    if (mode === 'change') el(svg, 'line', { class: 'rule', x1: x(0), x2: x(0), y1: margin.top, y2: height - margin.bottom });
-    axisBottom(svg, x, x.range(), ticks, mode === 'change' ? signed : compact, height - margin.bottom);
-    axisTitle(svg, width - margin.right, height - 4, mode === 'change' ? `change in the rate each run ${LIMITS[limit].short}, further right is better`
-      : `${rateAxisTitle()}: the rate each run ${LIMITS[limit].short}, further right is better`);
+    const plotBottom = height - margin.bottom;
+    gridLines(svg, ticks, (tick) => ({ x1: x(tick), x2: x(tick), y1: margin.top, y2: plotBottom }));
+    if (change) {
+      el(svg, 'rect', { class: 'noise', x: x(-CAPACITY_NOISE), y: margin.top, width: x(CAPACITY_NOISE) - x(-CAPACITY_NOISE), height: plotBottom - margin.top });
+      el(svg, 'text', { x: x(0), y: margin.top - 9, 'text-anchor': 'middle' }, `±${CAPACITY_NOISE * 100}%: runs of one commit differ this much`);
+      el(svg, 'line', { class: 'rule', x1: x(0), x2: x(0), y1: margin.top, y2: plotBottom });
+    }
+    axisBottom(svg, x, range, ticks, change ? (tick) => signed(Math.round(tick * 100) / 100).replace('.0', '') : compact, plotBottom);
+    axisTitle(svg, width - margin.right, height - 4, change ? 'writer capacity against the earliest run · right is better'
+      : `${LIMITS[limit].short} · spans/s offered, ${linear() ? 'linear' : 'log scale'} · right is better`);
     const tip = tooltip(container);
-    let y = margin.top;
-    let band = false;
-    for (const row of rows) {
-      if (row.head) {
-        el(svg, 'text', { class: 'group', x: 0, y: y + headHeight - 9 }, row.head);
-        el(svg, 'line', { class: 'gridline', x1: 0, x2: width, y1: y + headHeight - 1, y2: y + headHeight - 1 });
-        y += headHeight;
-        band = false;
-        continue;
-      }
-      const { scenario } = row;
+    scenarios.forEach((scenario, row) => {
+      const y = margin.top + row * rowHeight;
       const middle = y + rowHeight / 2;
-      const laneY = (index) => middle + (index - (picked.length - 1) / 2) * laneGap;
-      if (band) el(svg, 'rect', { class: 'row-band', x: 0, y, width, height: rowHeight, rx: 6 });
-      band = !band;
+      const laneY = (index) => middle + (index - (lanes.length - 1) / 2) * laneGap;
       const glow = el(svg, 'rect', { class: 'row-glow', x: 0, y, width, height: rowHeight, rx: 6 });
-      el(svg, 'text', { class: 'strong', x: margin.left - 10, y: middle, dy: '0.35em', 'text-anchor': 'end' }, scenario.name);
-      const baseline = baselineOf(scenario);
-      if (mode === 'change') {
-        picked.forEach((run, index) => {
-          if (run === baseline) {
-            el(svg, 'rect', { x: x(0) - 1.5, width: 3, y: laneY(index) - 3, height: 6, rx: 1.5, fill: run.color, 'data-key': run.run });
-            return;
-          }
-          const change = changeOf(run, scenario);
-          if (!present(change)) return;
-          const [from, to] = [x(0), x(change)].sort((a, b) => a - b);
-          el(svg, 'rect', { x: from, width: Math.max(2, to - from), y: laneY(index) - 2.5, height: 5, rx: 2.5, fill: run.color, 'data-key': run.run });
+      el(svg, 'text', { class: 'strong', x: margin.left - 12, y: middle, dy: '0.35em', 'text-anchor': 'end' }, scenario.name);
+      if (change) {
+        lanes.forEach((run, index) => {
+          const compared = comparedOf(run, scenario);
+          if (!compared) return;
+          const quiet = Math.abs(compared.change) <= CAPACITY_NOISE;
+          const tipX = x(compared.change);
+          el(svg, 'path', { d: barPath(x(0), tipX, laneY(index) - 5, 10), fill: run.color, 'fill-opacity': quiet ? 0.3 : 1, 'data-key': run.run });
+          const right = compared.change >= 0;
+          el(svg, 'text', { class: quiet ? '' : 'strong', x: right ? tipX + 6 : tipX - 6, y: laneY(index), dy: '0.35em', 'text-anchor': right ? 'start' : 'end',
+            'data-key': run.run }, signed(compared.change));
         });
       } else {
         const values = picked.map((run, index) => ({ run, index, value: limitOf(run, scenario) })).filter((each) => present(each.value));
-        if (values.length > 1) {
-          el(svg, 'line', { class: 'rule', x1: x(minOf(values, (each) => each.value)), x2: x(maxOf(values, (each) => each.value)), y1: middle, y2: middle });
-        }
         for (const each of values) dot(svg, x(each.value), laneY(each.index), each.run.color, 5, each.run.run);
       }
+      const baseline = baselineOf(scenario);
       const hit = el(svg, 'rect', { class: 'hit pick', x: 0, y, width, height: rowHeight });
       hit.addEventListener('mousemove', (event) => {
         const [px, py] = pointer(event, svg, width, height);
         glow.classList.add('on');
         showTip(container, tip, (px * container.clientWidth) / width, py, scenario.name, picked.map((run) => {
           const mine = rowsOf(run.run).get(scenario.scenario);
-          const change = changeOf(run, scenario);
-          const value = mode === 'change' ? (run === baseline ? 'baseline' : present(change) ? `${signed(change)} vs ${baseline.name}` : '—')
-            : present(limitOf(run, scenario)) ? compact(limitOf(run, scenario)) : '—';
-          return { name: `${run.name} ${limitsOf(mine)}`, value, color: run.color };
+          if (change) {
+            const compared = comparedOf(run, scenario);
+            return { name: compared ? `${run.name}: ${compact(compared.capacity)} against ${compact(compared.base)} spans/s per writer core, over ${compared.rates.length} rates`
+              : `${run.name} ${limitsOf(mine)}`, value: run === baseline ? 'baseline' : compared ? signed(compared.change) : '—', color: run.color };
+          }
+          return { name: `${run.name} ${limitsOf(mine)}`, value: present(limitOf(run, scenario)) ? compact(limitOf(run, scenario)) : '—', color: run.color };
         }));
       });
       hit.addEventListener('mouseleave', () => { tip.hidden = true; glow.classList.remove('on'); });
-      hit.addEventListener('click', () => setState({ scenario: scenario.scenario, view: 'steps', series: 'runs', show: 'chart' }));
-      y += rowHeight;
-    }
+      hit.addEventListener('click', () => setState({ scenario: scenario.scenario, view: 'steps', series: 'runs', show: 'chart', ...(change ? { measure: 'capacity' } : {}) }));
+    });
   };
 
-  // One sweep: the swept value across, the chosen limit on the fixed rate axis, one line per picked run, named at its end.
+  // One sweep: the swept value across, the chosen limit up on a rate axis fitted to the limits, one line per picked run; the runs' key above
+  // the chart names them.
   const drawSweep = (container, key, picked, limit, height) => {
     const sweep = SWEEPS[key];
     const members = membersOf(key);
     const { svg, width } = svgIn(container, height);
-    const yTicks = (scale) => (linear() ? scale.ticks(6) : [1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, max].filter((tick) => tick <= max));
-    const left = Math.ceil(maxOf(yTicks(rateScale([0, 1])), (tick) => textWidth(svg, compact(tick)))) + 12;
-    // Room for the longest name picked at the lines' ends, up to a quarter of the chart.
-    const right = Math.ceil(Math.min(width / 4, maxOf(picked, (run) => textWidth(svg, run.name, 'strong')))) + 36;
-    const margin = { top: 16, right, bottom: 48, left };
-    const x = pointScale(members.map((scenario) => scenario.scenario), [margin.left + 18, width - margin.right - 18]);
-    const y = rateScale([height - margin.bottom, margin.top]);
-    gridLines(svg, yTicks(y), (tick) => ({ x1: margin.left, x2: width - margin.right, y1: y(tick), y2: y(tick) }));
-    axisLeft(svg, y, yTicks(y), compact, margin.left);
-    el(svg, 'line', { class: 'rule', x1: margin.left, x2: width - margin.right, y1: y(max), y2: y(max) });
-    el(svg, 'text', { x: margin.left + 4, y: y(max) - 5 }, 'the most a run offers');
+    const values = members.flatMap((scenario) => picked.map((run) => (rowsOf(run.run).get(scenario.scenario) || {})[limit]));
+    const margin = { top: 16, right: 24, bottom: 60 };
+    const fitted = rateScale([height - margin.bottom, margin.top], values);
+    // Ticks of the ladder, none closer than a label's height to the one below.
+    const yTicks = (linear() ? fitted.ticks(6) : LADDER_RATES.filter((tick) => tick >= fitted.domain()[0] && tick <= fitted.domain()[1]))
+      .reduce((kept, tick) => (kept.length && fitted(kept[kept.length - 1]) - fitted(tick) < 24 ? kept : [...kept, tick]), []);
+    margin.left = Math.ceil(maxOf(yTicks, (tick) => textWidth(svg, compact(tick)))) + 12;
+    const x = pointScale(members.map((scenario) => scenario.scenario), [margin.left + 24, width - margin.right - 24]);
+    const y = fitted;
+    gridLines(svg, yTicks, (tick) => ({ x1: margin.left, x2: width - margin.right, y1: y(tick), y2: y(tick) }));
+    axisLeft(svg, y, yTicks, compact, margin.left);
     el(svg, 'line', { x1: margin.left, x2: width - margin.right, y1: height - margin.bottom, y2: height - margin.bottom, stroke: 'var(--axis)' });
     for (const scenario of members) {
       el(svg, 'text', { class: 'strong', x: x(scenario.scenario), y: height - margin.bottom + 18, 'text-anchor': 'middle' }, sweep.format(scenario[sweep.field]));
       if (scenario.sweep === 'reference') el(svg, 'text', { x: x(scenario.scenario), y: height - margin.bottom + 35, 'text-anchor': 'middle' }, 'reference');
     }
-    axisTitle(svg, width - margin.right, height - 4, sweep.unit ? `${sweep.unit}; up is better, ${rateAxisTitle()}` : `up is better, ${rateAxisTitle()}`);
+    axisTitle(svg, width - margin.right, height - 4, `${sweep.unit ? `${sweep.unit} · ` : ''}${LIMITS[limit].short}, spans/s, ${linear() ? 'linear' : 'log scale'} · up is better`);
     // Runs often share a limit, as every run climbs one ladder of rates, so each run's points sit a little apart to keep every one in sight.
     const drawn = picked.filter((run) => members.some((scenario) => present((rowsOf(run.run).get(scenario.scenario) || {})[limit])));
-    const ends = [];
     drawn.forEach((run, index) => {
       const rows = rowsOf(run.run);
       const has = (scenario) => rows.has(scenario.scenario) && present(rows.get(scenario.scenario)[limit]);
       const atX = (scenario) => x(scenario.scenario) + (index - (drawn.length - 1) / 2) * 8;
       const atY = (scenario) => y(rows.get(scenario.scenario)[limit]);
-      el(svg, 'path', { d: linePath(members, atX, atY, has), fill: 'none', stroke: run.color, 'stroke-width': 2.5, 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+      el(svg, 'path', { d: linePath(members, atX, atY, has), fill: 'none', stroke: run.color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
         'data-key': run.run });
-      const mine = members.filter(has);
-      for (const scenario of mine) dot(svg, atX(scenario), atY(scenario), run.color, 5, run.run);
-      const last = mine[mine.length - 1];
-      ends.push({ run, x: atX(last), y: atY(last) });
-    });
-    // Each line is named at its end; names that would overlap are moved apart and led back to their line.
-    const labelX = width - margin.right + 20;
-    const labelYs = spreadApart(ends.map((end) => end.y), 22, margin.top + 10, height - margin.bottom - 10);
-    ends.forEach((end, index) => {
-      el(svg, 'line', { x1: end.x + 6, y1: end.y, x2: labelX - 8, y2: labelYs[index], stroke: end.run.color, 'stroke-width': 1, 'stroke-opacity': 0.7, 'data-key': end.run.run });
-      pillText(svg, labelX, labelYs[index], fitText(svg, end.run.name, right - 36));
+      for (const scenario of members.filter(has)) dot(svg, atX(scenario), atY(scenario), run.color, 5, run.run);
     });
     const tip = tooltip(container);
     const rule = el(svg, 'line', { class: 'rule', y1: margin.top, y2: height - margin.bottom, opacity: 0 });
@@ -965,19 +964,46 @@
     hit.addEventListener('click', (event) => setState({ scenario: closest(event).scenario, view: 'steps', series: 'runs', show: 'chart' }));
   };
 
-  // A line chart over the steps' rates on the fixed rate axis; each series is [{x, y}], drawn point to point with a dot per step.
+  // A line chart over the steps' rates on the fixed rate axis; each series is [{x, y, raw}], drawn point to point with a dot per step. Under the
+  // plot, one strip per series holds the verdict of each of its steps, where the ladder of verdicts lines up with the chart's rates.
   const lineChart = (container, { height, series, yMax, yFormat, references = [] }) => {
     const { svg, width } = svgIn(container, height);
     const yTicks = niceTicks(0, yMax, 6);
-    const left = Math.ceil(maxOf(yTicks, (tick) => textWidth(svg, yFormat(tick)))) + 12;
-    const margin = { top: 16, right: 20, bottom: 48, left };
-    const x = rateScale([margin.left, width - margin.right]);
-    const y = linearScale([0, yMax], [height - margin.bottom, margin.top]);
+    const yTick = tickFormat(yFormat);
+    const left = Math.ceil(maxOf(yTicks, (tick) => textWidth(svg, yTick(tick)))) + 12;
+    const stripHeight = 10;
+    const stripGap = 4;
+    const strips = series.length * (stripHeight + stripGap) + 6;
+    const margin = { top: 16, right: 20, bottom: 48 + strips, left };
+    const axisY = height - 48;
     const xs = [...new Set(series.flatMap((each) => each.values.map((point) => point.x)))].sort((a, b) => a - b);
+    const x = rateScale([margin.left, width - margin.right], xs);
+    const y = linearScale([0, yMax], [height - margin.bottom, margin.top]);
     gridLines(svg, yTicks, (tick) => ({ x1: margin.left, x2: width - margin.right, y1: y(tick), y2: y(tick) }));
-    axisBottom(svg, x, x.range(), rateTicks(x, svg), compact, height - margin.bottom);
+    el(svg, 'line', { class: 'rule', x1: margin.left, x2: width - margin.right, y1: height - margin.bottom, y2: height - margin.bottom });
+    // The rates offered are the ticks, so each lines up with its step's dots and its verdicts below.
+    axisBottom(svg, x, x.range(), rateTicks(x, svg, xs), compact, axisY);
+    // Each step's cell reaches halfway to the rates beside it.
+    const edges = xs.map((rate, index) => {
+      const at = x(rate);
+      const before = index > 0 ? (x(xs[index - 1]) + at) / 2 : null;
+      const after = index < xs.length - 1 ? (at + x(xs[index + 1])) / 2 : null;
+      const half = Math.min(...[before && at - before, after && after - at].filter(Boolean), 16);
+      return [Math.max(margin.left, before ?? at - half), Math.min(width - margin.right, after ?? at + half)];
+    });
+    // Keeping up is the expected case, so it stays quiet and the eye goes to where a run starts to shed and fail.
+    const TONES = { ok: ['var(--ok)', 0.3], warn: ['var(--warn)', 0.85], bad: ['var(--bad)', 0.85], muted: ['var(--reference)', 0.5] };
+    series.forEach((each, index) => {
+      const top = height - margin.bottom + 6 + index * (stripHeight + stripGap);
+      el(svg, 'circle', { cx: margin.left - 9, cy: top + stripHeight / 2, r: 4, fill: each.color, 'data-key': each.key });
+      for (const point of each.values) {
+        const [from, to] = edges[xs.indexOf(point.x)];
+        const [fill, opacity] = TONES[verdict(point.raw.verdict).tone];
+        el(svg, 'rect', { x: from + 1, y: top, width: Math.max(2, to - from - 2), height: stripHeight, rx: 3, fill, 'fill-opacity': opacity, 'data-key': each.key });
+      }
+    });
     axisTitle(svg, width - margin.right, height - 4, rateAxisTitle());
-    axisLeft(svg, y, yTicks, yFormat, margin.left);
+    axisLeft(svg, y, yTicks, yTick, margin.left);
     for (const reference of references) {
       el(svg, 'line', { class: 'reference', x1: margin.left, x2: width - margin.right, y1: y(reference.y), y2: y(reference.y) });
       el(svg, 'text', { x: margin.left + 4, y: y(reference.y) - 5 }, reference.label);
@@ -985,13 +1011,13 @@
     for (const each of series) {
       const points = each.values.filter((point) => present(point.y));
       const at = (point) => y(Math.min(point.y, yMax));
-      el(svg, 'path', { d: linePath(points, (point) => x(point.x), at), fill: 'none', stroke: each.color, 'stroke-width': 2.5, 'stroke-linecap': 'round',
+      el(svg, 'path', { d: linePath(points, (point) => x(point.x), at), fill: 'none', stroke: each.color, 'stroke-width': 2, 'stroke-linecap': 'round',
         'stroke-linejoin': 'round', 'data-key': each.key });
       for (const point of points) dot(svg, x(point.x), at(point), each.color, 5, each.key);
     }
     const tip = tooltip(container);
     const rule = el(svg, 'line', { class: 'rule', y1: margin.top, y2: height - margin.bottom, opacity: 0 });
-    const hit = el(svg, 'rect', { class: 'hit', x: margin.left, y: margin.top, width: width - margin.left - margin.right, height: height - margin.top - margin.bottom });
+    const hit = el(svg, 'rect', { class: 'hit', x: margin.left, y: margin.top, width: width - margin.left - margin.right, height: axisY - margin.top });
     hit.addEventListener('mousemove', (event) => {
       if (!xs.length) return;
       const [px, py] = pointer(event, svg, width, height);
@@ -1001,7 +1027,7 @@
       rule.setAttribute('opacity', 1);
       const rows = series.map((each) => {
         const point = each.values.find((candidate) => candidate.x === offered);
-        return point && present(point.y) ? { name: `${each.name}, ${verdict(point.raw.verdict).label.toLowerCase()}`, value: yFormat(point.y), color: each.color } : null;
+        return point ? { name: `${each.name}, ${verdict(point.raw.verdict).label.toLowerCase()}`, value: present(point.y) ? yFormat(point.y) : '—', color: each.color } : null;
       }).filter(Boolean);
       showTip(container, tip, (x(offered) * container.clientWidth) / width, py, `${count(offered)} spans/s offered`, rows);
     });
@@ -1023,11 +1049,12 @@
       : timelines;
     const all = shown.flatMap((each) => each.rows);
     let top = maxOf(all, value);
-    if (measure.also) top = Math.max(top, maxOf(all, (row) => row[measure.also.field]));
+    if (measure.also) top = Math.max(top, maxOf(all, (row) => row.rate));
     if (measure.capacity) top = Math.max(top, scenario.queueSpans);
     const yMax = measure.max ?? (top > 0 ? top * 1.08 : 1);
     const yTicks = niceTicks(0, yMax, 6);
-    const left = Math.ceil(maxOf(yTicks, (tick) => textWidth(svg, measure.format(tick)))) + 12;
+    const yTick = tickFormat(measure.format);
+    const left = Math.ceil(maxOf(yTicks, (tick) => textWidth(svg, yTick(tick)))) + 12;
     const margin = { top: 26, right: 20, bottom: 48, left };
     const [t0, t1] = [minOf(all, (row) => row.t), maxOf(all, (row) => row.t)];
     const x = linearScale([t0, t1], [margin.left, width - margin.right]);
@@ -1044,21 +1071,22 @@
       }
     }
     gridLines(svg, yTicks, (tick) => ({ x1: margin.left, x2: width - margin.right, y1: y(tick), y2: y(tick) }));
-    axisLeft(svg, y, yTicks, measure.format, margin.left);
+    axisLeft(svg, y, yTicks, yTick, margin.left);
     axisBottom(svg, x, x.range(), niceTicks(t0, t1, Math.max(2, Math.floor((width - left) / 80))), (t) => `${t} s`, height - margin.bottom);
-    axisTitle(svg, width - margin.right, height - 4, step ? 'seconds since the step began' : 'seconds since the history was filled; the rate offered is marked at each step');
+    axisTitle(svg, width - margin.right, height - 4, step ? 'seconds since the step began' : 'seconds since the history was filled');
     if (measure.capacity) {
       el(svg, 'line', { class: 'reference', x1: margin.left, x2: width - margin.right, y1: y(scenario.queueSpans), y2: y(scenario.queueSpans) });
       el(svg, 'text', { x: width - margin.right, y: y(scenario.queueSpans) - 5, 'text-anchor': 'end' }, 'queue capacity');
     }
     const atT = (row) => x(row.t);
+    // The rate each step offered, once, as the line processed should follow; the seconds offered jitter with the exports' batches.
+    if (measure.also) {
+      const offered = longest.rows.flatMap((row, index) => (index && longest.rows[index - 1].rate !== row.rate ? [{ t: row.t - 0.5, rate: longest.rows[index - 1].rate }, { t: row.t - 0.5, rate: row.rate }] : [row]));
+      el(svg, 'path', { d: linePath(offered, atT, (row) => y(Math.min(yMax, row.rate))), fill: 'none', stroke: 'var(--reference)', 'stroke-width': 1.5 });
+    }
     for (const { run, rows } of shown) {
       if (shown.length === 1) {
         el(svg, 'path', { d: areaPath(rows, atT, y(0), (row) => y(Math.min(yMax, value(row)))), fill: run.color, 'fill-opacity': 0.12, stroke: 'none', 'data-key': run.run });
-      }
-      if (measure.also) {
-        el(svg, 'path', { d: linePath(rows, atT, (row) => y(Math.min(yMax, row[measure.also.field]))), fill: 'none', stroke: run.color, 'stroke-width': 1.5,
-          'stroke-dasharray': '4 3', 'stroke-opacity': 0.8, 'data-key': run.run });
       }
       el(svg, 'path', { d: linePath(rows, atT, (row) => y(Math.min(yMax, value(row)))), fill: 'none', stroke: run.color, 'stroke-width': 2, 'stroke-linejoin': 'round',
         'data-key': run.run });
@@ -1090,31 +1118,6 @@
         if (row) setState({ step: row.rate });
       });
     }
-  };
-
-  // The ladder: one column per rate any series offered, one row per series, each cell its verdict there.
-  const drawLadder = (container, items) => {
-    container.replaceChildren();
-    const box = Object.assign(document.createElement('div'), { className: 'ladder-box' });
-    const ladder = Object.assign(document.createElement('div'), { className: 'ladder' });
-    const rates = [...new Set(items.flatMap((item) => item.steps.map((row) => row.rate)))].sort((a, b) => a - b);
-    const cell = (className, text) => Object.assign(document.createElement('div'), { className, textContent: text });
-    ladder.style.gridTemplateColumns = `auto repeat(${rates.length}, minmax(4.5rem, 1fr))`;
-    ladder.append(cell('ladder-head text', 'Spans/s offered'), ...rates.map((rate) => cell('ladder-head', compact(rate))), ...items.flatMap((item) => {
-      const byRate = new Map(item.steps.map((row) => [row.rate, row]));
-      const head = cell('ladder-run', item.name);
-      dotIn(head, null, item.color);
-      return [head, ...rates.map((rate) => {
-        const row = byRate.get(rate);
-        if (!row) return cell('ladder-cell empty', '');
-        const mark = cell(`ladder-cell tone-${verdict(row.verdict).tone}`, verdict(row.verdict).short);
-        mark.title = `${item.name} at ${count(rate)} spans/s: ${verdict(row.verdict).label}; ${count(row.processed)} processed/s, writer ${share(row.writerBusy)} busy, `
-          + `${share(row.busy)} refused, ${share(row.shedUnretained)} not retained`;
-        return mark;
-      })];
-    }));
-    box.append(ladder);
-    container.append(box);
   };
 
   // The series a scenario view draws: the picked runs on one scenario, or one run on the scenarios of a sweep.
@@ -1225,7 +1228,7 @@
       return button;
     }));
     return box;
-  }));
+  }), document.querySelector('.theme'));
 
   const renderAbout = () => {
     const bold = (text) => Object.assign(document.createElement('b'), { textContent: text });
@@ -1272,9 +1275,18 @@
       scenarios);
   };
 
+  // The picked runs, and the others behind a button, so a comparison of two runs is not lost among every run kept.
   const renderPicker = (picked, pickedIds) => {
     const full = picked.length >= MAX_PICKED;
-    document.getElementById('run-picker').replaceChildren(...allRuns.map((run) => {
+    const others = allRuns.length - picked.length;
+    const more = Object.assign(document.createElement('button'), { type: 'button', className: 'btn more-runs',
+      textContent: allRunsShown ? 'Fewer runs' : `+${others} more ${others === 1 ? 'run' : 'runs'}` });
+    more.hidden = !others;
+    more.addEventListener('click', () => {
+      allRunsShown = !allRunsShown;
+      render();
+    });
+    document.getElementById('run-picker').replaceChildren(...allRuns.filter((run) => allRunsShown || pickedIds.has(run.run)).map((run) => {
       const chip = document.createElement('button');
       chip.type = 'button';
       chip.className = 'btn run-chip';
@@ -1292,7 +1304,7 @@
         if (next.length) setState({ runs: next.map((each) => each.order) });
       });
       return chip;
-    }));
+    }), more);
     const machines = [...new Set(picked.map((run) => run.machine))];
     const note = document.getElementById('runs-note');
     note.hidden = machines.length <= 1;
@@ -1332,6 +1344,7 @@
     { label: 'Not linked', value: (row) => share(row.shedUnjoined) },
     { label: 'Writer busy', value: (row) => share(row.writerBusy) },
     { label: 'Writer CPU', value: (row) => share(row.writerCpu) },
+    { label: 'Capacity/s', value: (row) => orNone(capacityOf(row), count) },
     { label: 'Cores', value: (row) => cores(row.processCores) },
     { label: 'Epoch lag ms', value: (row) => count(row.epochLagMs) },
     { label: 'Frame ms', value: (row) => count(row.frameMs) },
@@ -1343,6 +1356,43 @@
     { label: 'Verdict', text: true, value: (row) => verdict(row.verdict).label, tone: (row) => verdict(row.verdict).tone },
   ];
   const stepRows = (items) => items.flatMap((item) => item.steps.map((row) => ({ ...row, item })));
+
+  // Each picked run's writer capacity on a scenario against the earliest picked run that ran it.
+  const CAPACITY_NOISE = 0.05;
+  const capacityRows = (picked) => scenarios.flatMap((scenario) => {
+    const ran = picked.filter((run) => rowsOf(run.run).has(scenario.scenario));
+    return ran.map((run) => ({ ...rowsOf(run.run).get(scenario.scenario), name: scenario.name, first: run === ran[0], against: ran[0],
+      compared: run === ran[0] ? null : capacityAgainst(run, ran[0], scenario.scenario) }));
+  });
+  const capacityColumns = [
+    { label: 'Scenario', text: true, value: (row) => row.name },
+    { label: 'Run', text: true, value: (row) => runById.get(row.run).name, color: (row) => runById.get(row.run).color },
+    { label: 'Capacity change', value: (row) => (row.first ? 'baseline' : row.compared ? signed(row.compared.change) : ''),
+      className: (row) => (row.first ? 'tone-muted' : !row.compared ? '' : row.compared.change > CAPACITY_NOISE ? 'tone-ok' : row.compared.change < -CAPACITY_NOISE ? 'tone-bad' : '') },
+    { label: 'Capacity/s', value: (row) => (row.compared ? count(row.compared.capacity) : '') },
+    { label: 'Baseline capacity/s', value: (row) => (row.compared ? count(row.compared.base) : '') },
+    { label: 'Rates compared', value: (row) => (row.compared ? count(row.compared.rates.length) : '') },
+    { label: 'Keeps up with', value: (row) => orNone(row.keepsUp, count) },
+    { label: 'Sheds up to', value: (row) => orNone(row.holds, count) },
+    { label: 'Fails at', value: (row) => orNone(row.failsAt, count) },
+  ];
+  // How each picked run's writer capacity compares with the earliest picked run's, in words; within the noise of runs of one commit counts as unchanged.
+  const capacityFacts = (picked) => picked.map((run) => {
+    const compared = capacityRows(picked).filter((row) => row.run === run.run);
+    const changes = compared.filter((row) => row.compared).map((row) => row.compared.change);
+    const baselineOn = compared.filter((row) => row.first).length;
+    const parts = [];
+    if (changes.length) {
+      const higher = changes.filter((change) => change > CAPACITY_NOISE);
+      const lower = changes.filter((change) => change < -CAPACITY_NOISE);
+      const of = `of ${changes.length}`;
+      if (higher.length) parts.push(`higher on ${higher.length} ${of}, up to ${signed(Math.max(...higher))}`);
+      if (lower.length) parts.push(`lower on ${lower.length} ${of}, down to ${signed(Math.min(...lower))}`);
+      if (!higher.length && !lower.length) parts.push(`within ±${CAPACITY_NOISE * 100}% on all ${changes.length}`);
+    }
+    if (baselineOn) parts.push(changes.length ? `the baseline on ${baselineOn}` : 'the baseline');
+    return { key: run.run, name: run.name, title: run.detail, color: run.color, text: parts.length ? ` ${parts.join('; ')}` : ' ran none of the scenarios' };
+  });
 
   // How each picked run compares with the earliest picked run that ran the same scenarios, in words.
   const changeFacts = (picked, limit) => picked.map((run) => {
@@ -1364,38 +1414,33 @@
       if (row[limit] > base) faster += 1; else if (row[limit] < base) slower += 1; else same += 1;
     }
     const parts = [];
-    if (faster + slower + same) parts.push(`higher on ${faster}, lower on ${slower}, unchanged on ${same} ${faster + slower + same === 1 ? 'scenario' : 'scenarios'} vs the earliest run that ran them`);
-    if (baselineOn) parts.push(`the earliest run on ${baselineOn}, so the baseline there`);
+    if (faster + slower + same) parts.push(`higher on ${faster}, lower on ${slower}, the same on ${same}`);
+    if (baselineOn) parts.push(faster + slower + same ? `the baseline on ${baselineOn}` : 'the baseline');
     return { key: run.run, name: run.name, title: run.detail, color: run.color, text: parts.length ? ` ${parts.join('; ')}` : ' ran none of the scenarios' };
   });
 
-  const renderScenarioView = (view, picked, scenario) => {
+  const renderScenarioView = (picked, scenario) => {
     const { run, items } = seriesItems(picked, scenario);
     const bySweep = state.series === 'scenarios';
     const where = bySweep ? `${SWEEP_LABELS[state.sweep].toLowerCase()} sweep in ${run.name}` : scenario.name;
     const withSteps = items.filter((item) => item.steps.length);
     facts(withSteps.map((item) => ({ key: item.key, name: item.name, title: item.detail, color: item.color, text: ` ${limitsOf(item.limits)}` })));
-    const shape = bySweep ? `One run, ${run.label}, over every scenario of the ${SWEEP_LABELS[state.sweep].toLowerCase()} sweep with the reference.`
-      : `${scenario.description}; ${count(scenario.exporters)} exporting instances.`;
-    if (view.id === 'ladder') {
-      stage.title.textContent = `Verdict ladder · ${where}`;
-      stage.how.textContent = `${shape} Read a row left to right: every rate of the ladder the run offered, and what the hub did at each. A run climbs until two rates in a row fail.`;
-      legend(stage.legend, VERDICT_KEY);
-      if (withSteps.length) drawLadder(stage.chart, withSteps); else emptyLine(stage.chart, 'No picked run ran this scenario.');
+    const shape = bySweep ? `${run.name}, every scenario of the sweep.` : `${scenario.description}.`;
+    const measure = MEASURES[state.measure];
+    const value = measure.value || ((row) => row[state.measure]);
+    stage.title.textContent = `${measure.label} · ${where}`;
+    stage.how.textContent = `${measure.what} ${shape}`;
+    const tones = new Set(withSteps.flatMap((item) => item.steps.map((row) => verdict(row.verdict).tone)));
+    legend(stage.legend, VERDICT_KEY.filter((each) => tones.has(each.tone)), 'Verdict at each rate');
+    if (!withSteps.length) {
+      emptyLine(stage.chart, 'No picked run ran this scenario.');
     } else {
-      const measure = MEASURES[state.measure];
-      stage.title.textContent = `${measure.label} · ${where}`;
-      stage.how.textContent = `${measure.what} ${shape} Each dot is one rate of the ladder, measured once the step settled.`;
-      if (!withSteps.length) {
-        emptyLine(stage.chart, 'No picked run ran this scenario.');
-      } else {
-        const series = withSteps.map((item) => ({ key: item.key, name: item.name, color: item.color,
-          values: item.steps.map((row) => ({ x: row.rate, y: row[state.measure], raw: row })) }));
-        const configured = measure.configured ? [...new Set(withSteps.map((item) => measure.configured(item.scenario)))] : [];
-        const references = [...(measure.references || []), ...(configured.length === 1 ? [{ y: configured[0], label: `configured: ${measure.format(configured[0])}` }] : [])];
-        const top = Math.max(maxOf(series.flatMap((each) => each.values), (point) => point.y), ...references.map((reference) => reference.y));
-        lineChart(stage.chart, { height: chartHeight(), series, yMax: measure.max ?? (top > 0 ? top * 1.1 : 1), yFormat: measure.format, references });
-      }
+      const series = withSteps.map((item) => ({ key: item.key, name: item.name, color: item.color,
+        values: item.steps.map((row) => ({ x: row.rate, y: value(row), raw: row })) }));
+      const configured = measure.configured ? [...new Set(withSteps.map((item) => measure.configured(item.scenario)))] : [];
+      const references = [...(measure.references || []), ...(configured.length === 1 ? [{ y: configured[0], label: `configured: ${measure.format(configured[0])}` }] : [])];
+      const top = Math.max(maxOf(series.flatMap((each) => each.values).filter((point) => present(point.y)), (point) => point.y), ...references.map((reference) => reference.y));
+      lineChart(stage.chart, { height: chartHeight(), series, yMax: measure.max ?? (top > 0 ? top * 1.1 : 1), yFormat: measure.format, references });
     }
     fillTable(stage.table, stepColumns, stepRows(withSteps), (row) => row.item.key);
   };
@@ -1407,9 +1452,8 @@
     const missing = picked.filter((run) => !timelines.some((each) => each.run === run));
     const zoomed = state.step && timelines.some((each) => each.rows.some((row) => row.rate === state.step));
     stage.title.textContent = `${measure.label} · ${scenario.name}${zoomed ? ` · the step offering ${count(state.step)} spans/s` : ''}`;
-    stage.how.textContent = `${measure.what} ${scenario.description}; ${count(scenario.exporters)} exporting instances. `
-      + (zoomed ? 'One step of thirty seconds; the first five settle before the step is measured.' : 'Every second of the run, one step of the ladder after the other; click a step to zoom in on it.');
-    legend(stage.legend, measure.also ? [{ name: measure.also.label }] : []);
+    stage.how.textContent = `${measure.what} ${zoomed ? 'One step; its first 5 s settle before it is measured.' : 'Every step in turn; click one to zoom in.'}`;
+    legend(stage.legend, measure.also ? [{ name: 'Rate offered at each step', block: 'key-muted' }] : []);
     facts(timelines.map(({ run }) => ({ key: run.run, name: run.name, title: run.detail, color: run.color, text: ` ${limitsOf(rowsOf(run.run).get(scenario.scenario))}` })));
     document.getElementById('all-steps').hidden = !zoomed;
     stage.note.textContent = missing.length && timelines.length ? `Seconds are kept for the latest three runs only, so none for ${listOf(missing.map((run) => run.name))}.` : '';
@@ -1427,7 +1471,7 @@
       button.setAttribute('aria-pressed', String(state[button.dataset.param] === button.dataset.value));
     }
     const wanted = allRuns.filter((run) => state.runs.includes(run.order)).slice(0, MAX_PICKED);
-    const picked = wanted.length ? wanted : allRuns.length <= DEFAULT_RUNS ? allRuns : [allRuns[0], ...allRuns.slice(1 - DEFAULT_RUNS)];
+    const picked = wanted.length ? wanted : allRuns.slice(-DEFAULT_RUNS);
     const pickedIds = new Set(picked.map((run) => run.run));
     renderPicker(picked, pickedIds);
     const view = viewOf(state.view);
@@ -1451,33 +1495,35 @@
     stage.chart.hidden = about || table;
     stage.tableBox.hidden = about || !table;
     stage.note.textContent = '';
+    stage.chart.classList.remove('fit');
     stage.legend.replaceChildren();
     facts([]);
     const limit = LIMITS[state.limit];
-    const reference = scenarios.find((each) => each.sweep === 'reference');
     if (about) {
       stage.title.textContent = 'How it was measured';
       stage.how.textContent = 'What the runs are, what each scenario looks like, the machine and the load, and where the writer spends its time.';
       return;
     }
-    if (view.id === 'overview' || view.id === 'change') {
-      const change = view.id === 'change';
-      stage.title.textContent = change ? 'What changed between runs' : 'All scenarios at a glance';
-      stage.how.textContent = change
-        ? `Each bar is how far a run moved from the earliest picked run that ran the same scenario: ${limit.what}. Right is better, left is worse; a tick at zero marks the run `
-          + 'the others are measured against. Click a row to open that scenario rate by rate.'
-        : `One row per scenario, one dot per run at ${limit.what}. Further right is better. Dots that sit apart in a row are a change between runs; a line joins the lowest `
-          + 'and the highest. Click a row to open that scenario rate by rate.';
+    if (view.id === 'change') {
+      stage.title.textContent = 'What changed · writer capacity';
+      stage.how.textContent = 'Spans processed per second of writer CPU, against the earliest run picked, at the rates both runs offered. Click a row for its rates.';
+      facts(capacityFacts(picked));
+      stage.chart.classList.add('fit');
+      if (picked.length < 2) emptyLine(stage.chart, `Pick a second run in the top bar to see its change against ${picked[0].name}.`);
+      else drawDots(stage.chart, picked, state.limit, 'change');
+      fillTable(stage.table, capacityColumns, capacityRows(picked), (row) => row.scenario);
+    } else if (view.id === 'overview') {
+      stage.title.textContent = `Limits per scenario · ${limit.short}`;
+      stage.how.textContent = `Each dot is ${limit.what}. Limits move in steps of the ladder, and runs of one commit can land a step apart.`;
       facts(changeFacts(picked, state.limit));
-      if (change && picked.length < 2) emptyLine(stage.chart, `Pick a second run in the top bar to see its change against ${picked[0].name}.`);
-      else drawDots(stage.chart, picked, state.limit, change ? 'change' : 'rates');
+      stage.chart.classList.add('fit');
+      drawDots(stage.chart, picked, state.limit, 'rates');
       fillTable(stage.table, limitColumns, comparedRows(picked), (row) => row.scenario);
     } else if (view.sweep) {
       const sweep = SWEEPS[view.sweep];
       const members = membersOf(view.sweep);
       stage.title.textContent = `${view.title} · ${limit.label}`;
-      stage.how.textContent = `This sweep asks ${sweep.what}. Across: the one thing it changes of the reference${reference ? `, ${reference.description}` : ''}. `
-        + `Up: ${limit.what}. One line per run; where lines sit apart, the runs differ. Click a point to open that scenario rate by rate.`;
+      stage.how.textContent = `${sweep.what[0].toUpperCase()}${sweep.what.slice(1)}; everything else is the reference shape. Click a point for its rates.`;
       const ranOf = (run) => members.filter((member) => rowsOf(run.run).has(member.scenario) && present(rowsOf(run.run).get(member.scenario)[state.limit]));
       facts(picked.map((run) => {
         const rows = rowsOf(run.run);
@@ -1497,7 +1543,7 @@
     } else if (view.id === 'seconds') {
       renderSecondsView(picked, scenario);
     } else {
-      renderScenarioView(view, picked, scenario);
+      renderScenarioView(picked, scenario);
     }
   }
 

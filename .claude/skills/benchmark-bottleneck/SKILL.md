@@ -5,7 +5,7 @@ description: Autonomously find where the monitor hub's throughput stops and remo
 
 # Find a bottleneck, remove it, and prove it
 
-Arguments: `$ARGUMENTS`, optionally a scenario (such as `applications-200`), a sweep, or a measure to focus on, and how many pull requests or hours to spend.
+Arguments: `$ARGUMENTS`, optionally a scenario (such as `applications-500`), a sweep, or a measure to focus on, and how many pull requests or hours to spend.
 
 Work autonomously: do not stop to ask for approval between steps. Decide from the evidence, keep a journal of what was tried and why, and tell the user at the
 end, or when a pull request is open. Stop and ask only when something outside this skill's reach blocks the work (a build that fails before any change, a
@@ -16,7 +16,7 @@ dependency that does not resolve, a push or pull request that is refused).
 | 1. Analyse | Nothing: reads the results that exist | Bottlenecks are ranked, each with a probe to measure it |
 | 2. Probe before | The target scenario and one or two check scenarios, on the base commit | The probe shows the bottleneck, and the profile agrees |
 | 3. Try a change | `./gradlew test`, then the same probes | A change improves the target and worsens no check, or the candidates run out |
-| 4. Prove it | `./gradlew saturation` before and after, about 70 minutes each | Both runs are in `docs/saturation` and the screenshots show the gain |
+| 4. Prove it | `./gradlew saturation` before and after, about 35 minutes each | Both runs are in `docs/saturation` and the screenshots show the gain |
 | 5. Pull request | `git push`, `gh pr create` | The pull request is open and the user is told |
 
 **Stop** after one pull request, or after five changes that did not improve anything, unless the arguments ask for more; then report what the journal holds.
@@ -168,8 +168,10 @@ Name each run so the page says what it measured, in at most about 40 characters:
 the "before" by the same words, such as `Before reserved queue room and pool`. The page shows the name instead of "Run N"; the query string still picks runs by
 their number, which `dashboard.py` prints. Name a run kept, or rename one, with `--rename <N>=<name>`.
 
-Compare each scenario's `keepsUp`, `holds`, `failsAt` and `failsAs` between the two runs. The full runs must confirm the probe: the target scenario's limit
-better, and no scenario worse by more than one step. When they do not, record it, drop the commit, and go back to step 3.
+Compare each scenario's writer capacity (the table of the page's `change` view: spans processed per second of the writer on a core, over the rates both
+runs offered) and its `keepsUp`, `holds`, `failsAt` and `failsAs` between the two runs. Runs of one commit differ by a few percent in capacity and up to a
+step in a limit. The full runs must confirm the probe: the target scenario's capacity or limit better, no scenario's capacity lower by more than 5%, and no
+limit worse by more than one step. When they do not, record it, drop the commit, and go back to step 3.
 
 ### Screenshots
 
@@ -188,15 +190,15 @@ install chromium-headless-shell` in the background. Then screenshot the page, ch
 ```bash
 PLAYWRIGHT_BROWSERS_PATH=<cache> NODE_PATH=<scratch>/pw/node_modules node .claude/skills/benchmark-bottleneck/dashboard_screenshots.cjs \
   build/saturation-page/dashboard.html docs/saturation/proof/<slug> \
-  change="view=change&limit=<keepsUp|holds|failsAt>&runs=<before>,<after>" \
-  ladder="view=ladder&scenario=<target>&runs=<before>,<after>" \
-  measure="view=steps&scenario=<target>&measure=<measure that shows the mechanism>&runs=<before>,<after>"
+  change="view=change&runs=<before>,<after>" \
+  target="view=steps&scenario=<target>&measure=<measure that shows the mechanism>&runs=<before>,<after>"
 ```
 
-The script fails on a page without data or with a script error, and grows the window so a view's every row is in the image. Views worth showing: `change`
-(every scenario's limit, before against after, for the `limit` that moved most), `ladder` (the target's verdict at each rate), `steps` with the measure that
-shows how the change works (such as `busy`, `writerBusy`, `shedUnretained`, `gcMsPerS`), and a `sweep-<sweep>` view when the change moves a whole sweep. Look
-at each screenshot before using it (Read the PNG): it must show the two runs and the difference the pull request claims.
+The script takes each view as a figure: the title, the runs, the chart and its key, 1,000 pixels wide so a pull request shows it unscaled. It fails on a page
+without data or with a script error, and grows the window so a view's every row is in the image. Show two figures: `change` (every scenario's change in writer
+capacity, labelled) and `steps` for the target, with the measure that shows how the change works (such as `writerBusy`, `capacity`, `busy`,
+`shedUnretained`, `gcMsPerS`); its strips under the chart give the verdict at each rate, so the limits show too. Add `view=sweep-applications` only when the
+change moves that whole sweep. Look at each screenshot before using it (Read the PNG): it must show the two runs and the difference the pull request claims.
 
 ### Improve the page when it hides the gain
 
@@ -206,8 +208,8 @@ runs better, a bug. The page is `docs/saturation/dashboard.html`, a template wit
 
 - Keep the page self-contained: one HTML file that opens from disk, its state in the query string, no external scripts or fonts.
 - Change what serves every run, not this one pull request: no run numbers or scenario names written into the page.
-- Write the page again with `dashboard.py --out build/saturation-page/dashboard.html`, and screenshot every view (`overview`, `change`, each
-  `sweep-<sweep>`, `ladder`, `steps`, `seconds`, `about`) for the runs kept, so a change that breaks another view shows as the script failing. Look at them.
+- Write the page again with `dashboard.py --out build/saturation-page/dashboard.html`, and screenshot every view (`change`, `overview`, each
+  `sweep-<sweep>`, `steps`, `seconds`, `about`, and one with `figure=0`) for the runs kept, so a change that breaks another view shows as the script failing. Look at them.
 - Commit it on the branch in a commit of its own, before the data, and say what it changed in one line of the pull request.
 
 Commit the data and the screenshots on the branch in a commit of their own: `docs/saturation/{runs,steps,seconds,scenarios}.json` and
@@ -239,19 +241,21 @@ Keep the pull request short. The title says what got faster, in a few words. The
 | Keeps up with | ... | ... |
 | Holds without refusing | ... | ... |
 | First fails at | ... | ... |
+| Writer capacity, spans/s per core | ... | ... |
 | <The measure that shows the mechanism, at a rate both ran> | ... | ... |
 
 <One row per check scenario whose limits changed, or one line saying none changed.> Full saturation runs on <machine>, kept in `docs/saturation`.
 <When the page changed: one line saying what it now shows.>
 
 ![What changed between runs](https://github.com/<owner>/<repo>/blob/<commit>/docs/saturation/proof/<slug>/change.png?raw=true)
-![<Target> rate by rate](https://github.com/<owner>/<repo>/blob/<commit>/docs/saturation/proof/<slug>/ladder.png?raw=true)
+![<Measure> at <target> rate by rate](https://github.com/<owner>/<repo>/blob/<commit>/docs/saturation/proof/<slug>/target.png?raw=true)
 ```
 
 Link the screenshots by the commit that added them, so the images stay as they were when the branch moves on.
 
 When `main` moves before the pull request is merged, and above all when it adds runs of its own, the run data conflicts: each pull request numbers its runs
 after the last run on its base. Rebase the branch onto `origin/main`, take the run data from `main` (`git checkout origin/main --
-docs/saturation/{runs,steps,seconds,scenarios}.json`), add the two runs again from `build/saturation-probe/full-{before,after}` with their names, take the
+docs/saturation/{runs,steps,seconds,scenarios}.json`), add the two runs again from `build/saturation-probe/full-{before,after}` with their names (and `--only` with the scenarios
+`scenarios.json` holds, when a run's results hold scenarios `SaturationScenario` no longer defines), take the
 screenshots again with the new run numbers, update the body's links, and push with `--force-with-lease`; this branch is this skill's own. Then tell the user: the pull request's link,
 the table, and anything the journal holds that the pull request leaves out, such as changes that did not work and the next bottleneck.
