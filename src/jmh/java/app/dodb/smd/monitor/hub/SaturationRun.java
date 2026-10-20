@@ -24,6 +24,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -43,6 +44,8 @@ import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.ToDoubleFunction;
 import java.util.function.ToLongFunction;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static java.util.Objects.requireNonNull;
 
@@ -52,6 +55,10 @@ import static java.util.Objects.requireNonNull;
 // as exporters do. A batch the hub answers busy is counted and not sent again. Generators of disjoint ranges of applications produce the load on
 // their own threads, so it keeps up with the hub. Every epoch is sampled; each step is summarized without its first seconds, while the load and
 // the queues settle at the new rate. A step the writer clearly keeps up with ends early, and the run stops at the first step that fails.
+//
+// With clients (FrameClients), the hub's own WebSocket publishes the frames instead, and the run also measures what the clients read of them and
+// how late. Clients that read frames as they come connect before the run's clock starts and read the filled hub's snapshot; slow ones connect as it
+// starts, as a page that opens on a busy hub.
 public final class SaturationRun {
 
     private static final long SEED = 20261017;
@@ -66,6 +73,7 @@ public final class SaturationRun {
     private static final double EASY_WRITER_BUSY = 0.5;
     private static final long GENERATOR_LATE_NANOS = Duration.ofMillis(250).toNanos();
     private static final long MEGABYTE = 1024 * 1024;
+    private static final int DELIVERY_COLUMNS = 13;
     // The run every scenario of one invocation belongs to, named by when it started and the commit; the parent passes it on to the JVM of each.
     private static final String RUN_PROPERTY = "saturation.run";
     // What the run ran on, from -PsaturationMachine; described from the JVM when absent.
@@ -90,6 +98,11 @@ public final class SaturationRun {
     private final Map<Long, Long> generatorLateNanos = new ConcurrentHashMap<>();
     private final Map<Long, FrameSample> frames = new ConcurrentHashMap<>();
     private final List<Sample> samples = new CopyOnWriteArrayList<>();
+    private final FrameClients.Audience audience = FrameClients.configured();
+    private final List<FrameReceipt> receipts = new CopyOnWriteArrayList<>();
+    // Read from the clients as the run ends, before they close.
+    private long fastDisconnects;
+    private long slowDisconnects;
 
     private SaturationRun(SaturationScenario scenario, Optional<Duration> fill, Path output, SaturationProgress progress) {
         this.scenario = requireNonNull(scenario);
@@ -187,11 +200,19 @@ public final class SaturationRun {
             partition.ahead.put(partition.generate());
             threads.add(Thread.ofPlatform().name("saturation-generator-" + threads.size()).daemon().start(partition::generateAhead));
         }
-        clock.start();
-        threads.add(Thread.ofPlatform().name("saturation-sampler").daemon().start(() -> sample(writer)));
-        threads.add(Thread.ofPlatform().name("saturation-publisher").daemon().start(this::publish));
+        var clients = audience.any() ? Optional.of(FrameClients.serve(hub, audience, this::written, receipts::add)) : Optional.<FrameClients>empty();
         var submitters = Executors.newFixedThreadPool(SUBMITTERS, Thread.ofPlatform().name("saturation-submitter-", 0).daemon().factory());
         try {
+            if (clients.isPresent()) {
+                clients.get().connect(audience.fast(), false);
+                clients.get().awaitFirstFrames();
+            }
+            clock.start();
+            clients.ifPresent(each -> each.connect(audience.slow(), true));
+            threads.add(Thread.ofPlatform().name("saturation-sampler").daemon().start(() -> sample(writer)));
+            if (clients.isEmpty()) {
+                threads.add(Thread.ofPlatform().name("saturation-publisher").daemon().start(this::publish));
+            }
             return offer(submitters);
         } finally {
             submitters.shutdownNow();
@@ -200,6 +221,11 @@ public final class SaturationRun {
                 thread.join();
             }
             submitters.awaitTermination(5, TimeUnit.SECONDS);
+            clients.ifPresent(each -> {
+                fastDisconnects = each.disconnects(false);
+                slowDisconnects = each.disconnects(true);
+                each.close();
+            });
             hub.close();
         }
     }
@@ -365,13 +391,17 @@ public final class SaturationRun {
                 var started = System.nanoTime();
                 var frame = new Frame(epoch.sequence(), FrameView.from(epoch.at(), epoch.statistics(), epoch.health(), OptionalLong.empty()));
                 var json = previous == null ? mapper.writeValueAsString(frame.snapshot()) : mapper.writeValueAsString(frame.deltaFrom(previous, mapper));
-                frames.put(epoch.sequence(), new FrameSample(System.nanoTime() - started, json.getBytes(StandardCharsets.UTF_8).length, skipped));
+                written(epoch, started, System.nanoTime(), json.getBytes(StandardCharsets.UTF_8).length, skipped);
                 previous = frame;
                 sequence = epoch.sequence();
             }
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    private void written(Epoch epoch, long startedNanos, long writtenNanos, long bytes, long skipped) {
+        frames.put(epoch.sequence(), new FrameSample(epoch.at(), writtenNanos, writtenNanos - startedNanos, bytes, skipped));
     }
 
     private SaturationStep summarize(int index) {
@@ -440,20 +470,28 @@ public final class SaturationRun {
     private void write(List<SaturationStep> steps) throws IOException {
         var rows = new ArrayList<String>();
         rows.add("second,sequence,offered,accepted,busy,refused,queued,drained,shedUnretained,shedUnjoined,writerCpuMs,writerIdleMs,processCpuMs,tickLateMs,"
-            + "publishLagMs,gcMs,heapMb,retained,horizonS,historyS,accountedMb,frameMs,frameBytes,framesSkipped,generatorLateMs");
+            + "publishLagMs,gcMs,heapMb,retained,horizonS,historyS,accountedMb,frameMs,frameBytes,framesSkipped,generatorLateMs,"
+            + "tickMs,buildMs,waitMs,sendMs,lagMs,lagMaxMs,snapshots,unread,slowSendMs,slowLagMs,slowLagMaxMs,slowSnapshots,slowUnread");
+        var reads = receipts.stream().collect(Collectors.groupingBy(FrameReceipt::epoch));
         for (var sample : samples) {
             var frame = Optional.ofNullable(frames.get(sample.sequence()));
-            rows.add(String.join(",", List.of(sample.second(), sample.sequence(), sample.offered(), sample.accepted(), sample.busy(), sample.refused(),
+            var delivery = frame.map(each -> deliveryColumns(sample, each, reads.getOrDefault(sample.sequence(), List.of())))
+                .orElse(Collections.nCopies(DELIVERY_COLUMNS, -1L));
+            rows.add(String.join(",", Stream.concat(Stream.of(sample.second(), sample.sequence(), sample.offered(), sample.accepted(), sample.busy(), sample.refused(),
                     sample.queued(), sample.drained(), sample.shedUnretained(), sample.shedUnjoined(), sample.writerCpuNanos() / 1_000_000, sample.writerIdleNanos() / 1_000_000,
                     sample.processCpuNanos() / 1_000_000, sample.tickLateNanos() / 1_000_000, sample.publishLagNanos() / 1_000_000, sample.gcMillis(),
                     sample.heapBytes() / MEGABYTE, sample.retained(), sample.horizonSeconds(), sample.historySeconds(), sample.accountedBytes() / MEGABYTE,
                     frame.map(each -> each.nanos() / 1_000_000).orElse(-1L), frame.map(FrameSample::bytes).orElse(-1L),
-                    frame.map(FrameSample::skipped).orElse(-1L), generatorLateNanos.getOrDefault(sample.second(), -1_000_000L) / 1_000_000)
-                .stream().map(String::valueOf).toList()));
+                    frame.map(FrameSample::skipped).orElse(-1L), generatorLateNanos.getOrDefault(sample.second(), -1_000_000L) / 1_000_000), delivery.stream())
+                .map(String::valueOf).toList()));
         }
         Files.write(output.resolve(scenario.id() + ".csv"), rows);
         Files.write(output.resolve(scenario.id() + ".verdicts"), steps.stream().map(step -> step.rate() + "," + step.verdict()).toList());
-        writeResult(steps);
+        var deliveries = audience.any() ? steps.stream().map(this::delivery).toList() : List.<SaturationDelivery>of();
+        if (audience.any()) {
+            writeReceipts();
+        }
+        writeResult(steps, deliveries);
         var summary = new ArrayList<String>();
         summary.add("## " + scenario.name() + " (" + scenario.id() + ")");
         summary.add("");
@@ -466,13 +504,23 @@ public final class SaturationRun {
         summary.add("");
         summary.add(SaturationStep.verdictOf(steps));
         summary.add("");
+        if (audience.any()) {
+            summary.add(("Frames read by %d clients as they come and %d reading %,d characters a second, which disconnected %d and %d times; lag from the end of "
+                + "the second an epoch closes, send from the message written").formatted(audience.fast(), audience.slow(), audience.slowCharsPerSecond(),
+                fastDisconnects, slowDisconnects));
+            summary.add("");
+            summary.add(SaturationDelivery.HEADER);
+            summary.add(SaturationDelivery.SEPARATOR);
+            deliveries.forEach(delivery -> summary.add(delivery.row()));
+            summary.add("");
+        }
         Files.write(output.resolve("summary.md"), summary, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         progress.report(output, SaturationStep.verdictOf(steps));
     }
 
     // The run's result for the saturation page: the run, the scenario's shape, its limits against the ladder's maximum, and every step with its
     // verdict.
-    private void writeResult(List<SaturationStep> steps) throws IOException {
+    private void writeResult(List<SaturationStep> steps, List<SaturationDelivery> deliveries) throws IOException {
         var mapper = new ObjectMapper();
         var profile = scenario.profile();
         var keptUpTo = SaturationStep.keptUpTo(steps);
@@ -508,7 +556,91 @@ public final class SaturationRun {
         result.put("failsAt", failure.map(SaturationStep::rate).orElse(null));
         result.put("failsAs", failure.map(step -> step.verdict().name()).orElse(null));
         result.put("steps", stepRows);
+        if (audience.any()) {
+            var delivery = new LinkedHashMap<String, Object>();
+            delivery.put("clients", audience.fast());
+            delivery.put("slowClients", audience.slow());
+            delivery.put("slowCharsPerSecond", audience.slowCharsPerSecond());
+            delivery.put("disconnects", fastDisconnects);
+            delivery.put("slowDisconnects", slowDisconnects);
+            delivery.put("steps", deliveries);
+            result.put("delivery", delivery);
+        }
         Files.writeString(output.resolve(scenario.id() + ".json"), mapper.writerWithDefaultPrettyPrinter().writeValueAsString(result));
+    }
+
+    // The parts of an epoch's frame's lag up to the frame, which every client shares: the end of the second to the tick, the tick to the epoch's
+    // publication as the sampler saw it, and the publication to the publisher's start on the frame. Then, for the fast clients and for the slow
+    // ones, the part after the frame's writing, its send and read, for the client in the middle, so the parts add up to that client's lag; that lag
+    // and the most lag of a client; and the clients that read the frame as a snapshot, and those that never read it, whether the hub skipped them or
+    // the run ended first. -1 for what is missing, such as the figures of clients the run has none of.
+    private List<Long> deliveryColumns(Sample sample, FrameSample frame, List<FrameReceipt> reads) {
+        var end = secondEndNanos(frame);
+        var tick = clock.nanoTimeAt(frame.at());
+        var started = frame.writtenNanos() - frame.nanos();
+        var build = Math.min(sample.publishLagNanos(), started - tick);
+        var columns = new ArrayList<>(List.of(millis(tick - end), millis(build), millis(started - tick - build)));
+        columns.addAll(clientColumns(audience.fast(), reads.stream().filter(read -> !read.slow()).toList(), frame, end));
+        columns.addAll(clientColumns(audience.slow(), reads.stream().filter(FrameReceipt::slow).toList(), frame, end));
+        return columns;
+    }
+
+    private static List<Long> clientColumns(int clients, List<FrameReceipt> reads, FrameSample frame, long end) {
+        if (clients == 0) {
+            return Collections.nCopies(5, -1L);
+        }
+        var received = reads.stream().mapToLong(FrameReceipt::receivedNanos).sorted().toArray();
+        var middle = received.length == 0 ? -1 : received[(received.length - 1) / 2];
+        return List.of(
+            middle < 0 ? -1 : millis(middle - frame.writtenNanos()),
+            middle < 0 ? -1 : millis(middle - end),
+            received.length == 0 ? -1 : millis(received[received.length - 1] - end),
+            reads.stream().filter(FrameReceipt::snapshot).count(),
+            clients - reads.stream().mapToInt(FrameReceipt::client).distinct().count());
+    }
+
+    private static long millis(long nanos) {
+        return nanos / 1_000_000;
+    }
+
+    // What the clients read of the frames of the step's seconds after it settled, the seconds measure summarizes.
+    private SaturationDelivery delivery(SaturationStep step) {
+        var firstSecond = step.firstSecond() + SETTLING_SECONDS;
+        var published = new HashMap<Long, FrameSample>();
+        for (var sample : samples) {
+            var frame = frames.get(sample.sequence());
+            if (frame != null && sample.second() >= firstSecond && sample.second() <= step.lastSecond()) {
+                published.put(sample.sequence(), frame);
+            }
+        }
+        var reads = receipts.stream().filter(receipt -> published.containsKey(receipt.epoch())).map(receipt -> {
+            var frame = published.get(receipt.epoch());
+            return new SaturationDelivery.Read(receipt.slow(), receipt.snapshot(), receipt.receivedNanos() - secondEndNanos(frame),
+                receipt.receivedNanos() - frame.writtenNanos());
+        }).toList();
+        return SaturationDelivery.of(step.rate(), published.size(), audience, reads);
+    }
+
+    // Every frame a client read of an epoch ticked once the clock ran, with the second its epoch closes, as the CSV of the seconds counts them.
+    private void writeReceipts() throws IOException {
+        var rows = new ArrayList<String>();
+        rows.add("second,epoch,client,slow,snapshot,chars,lagMs,sendMs");
+        for (var receipt : receipts) {
+            var frame = frames.get(receipt.epoch());
+            if (frame == null || frame.at().getEpochSecond() - origin.getEpochSecond() <= fillSeconds) {
+                continue;
+            }
+            rows.add(String.join(",", List.of(frame.at().getEpochSecond() - origin.getEpochSecond() - 1, receipt.epoch(), receipt.client(), receipt.slow(),
+                    receipt.snapshot(), receipt.chars(), (receipt.receivedNanos() - secondEndNanos(frame)) / 1_000_000,
+                    (receipt.receivedNanos() - frame.writtenNanos()) / 1_000_000)
+                .stream().map(String::valueOf).toList()));
+        }
+        Files.write(output.resolve(scenario.id() + "-frames.csv"), rows);
+    }
+
+    // The end of the second an epoch closes; the writer ticks just after it.
+    private long secondEndNanos(FrameSample frame) {
+        return clock.nanoTimeAt(frame.at().truncatedTo(ChronoUnit.SECONDS));
     }
 
     // The short commit, marked when the working tree differs from it; unknown outside a git checkout.
@@ -569,7 +701,7 @@ public final class SaturationRun {
         return values.stream().mapToDouble(value).average().orElse(0);
     }
 
-    private static <T> double percentile(List<T> values, ToLongFunction<T> value, double quantile) {
+    static <T> double percentile(List<T> values, ToLongFunction<T> value, double quantile) {
         var sorted = values.stream().mapToLong(value).sorted().toArray();
         return sorted.length == 0 ? 0 : sorted[(int) Math.min(sorted.length - 1, Math.ceil(quantile * sorted.length) - 1)];
     }
@@ -611,7 +743,12 @@ public final class SaturationRun {
                           long accountedBytes) {
     }
 
-    private record FrameSample(long nanos, long bytes, long skipped) {
+    // The frame of an epoch, ticked at the given instant: when the publisher had written it, how long that took, its size, and the epochs skipped before it.
+    private record FrameSample(Instant at, long writtenNanos, long nanos, long bytes, long skipped) {
+
+        private FrameSample {
+            requireNonNull(at);
+        }
     }
 
     private record Interval(Sample before, Sample after, Optional<FrameSample> frame) {

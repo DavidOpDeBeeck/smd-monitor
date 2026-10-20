@@ -150,6 +150,11 @@ fun JavaExec.saturationJvm(output: Provider<Directory>) {
     providers.gradleProperty("saturationJvmArgs").orNull?.let { jvmArgs(it.split(" ").filter(String::isNotBlank)) }
     // For example -PsaturationMachine="i5-12600K, 64 GB, Windows 11", to name the machine in the results; described from the JVM otherwise.
     providers.gradleProperty("saturationMachine").orNull?.let { jvmArgs("-Dsaturation.machine=$it") }
+    // For example -PsaturationClients=4 -PsaturationSlowClients=1, to publish the frames over the hub's WebSocket to clients and measure what they read
+    // and how late (FrameClients); the slow ones read 10,000,000 characters of JSON a second, or -PsaturationSlowClientRate.
+    providers.gradleProperty("saturationClients").orNull?.let { jvmArgs("-Dsaturation.clients=$it") }
+    providers.gradleProperty("saturationSlowClients").orNull?.let { jvmArgs("-Dsaturation.slowClients=$it") }
+    providers.gradleProperty("saturationSlowClientRate").orNull?.let { jvmArgs("-Dsaturation.slowClientRate=$it") }
     doFirst { output.get().asFile.mkdirs() }
 }
 

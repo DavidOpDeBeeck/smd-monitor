@@ -305,6 +305,16 @@ them on one scale, so an improvement shows as a limit that moves right. A limit 
 apart, so the page also compares the writer's capacity: the spans processed per second of the writer on a core, at the rates both runs offered. It moves by
 a few percent between runs of one commit, so a change of a tenth shows plainly. Compare only runs of the same machine, and run on an idle one.
 
+With `-PsaturationClients=4 -PsaturationSlowClients=1`, the hub's own WebSocket publishes the frames in place of the run's publisher: `MonitorFrameSocket` on
+Tomcat, with `permessage-deflate`, to clients on the loopback address. Per step the run then also reports what the clients read of the frames published: the
+snapshots among them, the lag from the end of the second an epoch closes to the frame's last byte read, and the send from the message written to that byte.
+Clients that read frames as they come connect before the run's clock starts. Slow ones read 10 MB of JSON a second, about what a 16 Mbit/s link carries once
+deflated, or `-PsaturationSlowClientRate` characters, and connect as the clock starts, as a page that opens on a busy hub. The summary adds a table per
+scenario, the JSON a `delivery` object, and `<scenario>-frames.csv` lists every frame read. The clients share the hub's cores and leave out the network and
+the page's parsing. On the saturation page, *Second by second* › *Frame delivery* stacks each second's lag in its parts (tick, epoch build, publisher wait,
+frame write, and send and read), which add up to the lag of the fast or, toggled, the slow client in the middle, and marks the seconds a client read as a
+snapshot or never read. Picked runs get a panel each, on shared axes, as every second-by-second measure does.
+
 Run 1, 2026-10-20, on a Ryzen 7 5825U (16 threads, 32 GB, Linux) at the commit before the optimizations of pull requests #1 to #3, in spans per second:
 
 | Sweep        | Scenario                  | Keeps up | Holds   | Fails at          |
@@ -360,5 +370,10 @@ Budgets still missed and work deferred, with the cause found and the levers to t
 - **The batch time is 5.6 ms p99.** The tail is collection pauses on a 2 GB live set. Levers: fewer allocations in decoding; a pause-time goal.
 - **The span index takes about 300 bytes per fact**, so at small budgets the horizon shrinks first. Levers: compact facts the way `Specimen` is, or a lower
   specimen floor.
+- **A slow page falls behind unseen.** A client is busy, and skips to a snapshot, only while its send is unfinished, and a send finishes once the kernel's
+  socket buffers take it; on Linux they grow to 16 MB at each end. In a reference run with a client reading 1 MB of JSON a second, below the 1.2 MB of a
+  delta, the client read every delta and none was skipped, 250 ms later each second, until 23 s behind when the run ended; clients reading as frames come
+  read them 250 to 520 ms after their second. Once the buffers fill, the snapshot of 17.7 MB that follows is slower still to read. Levers: the page
+  acknowledges the epoch it applied, and the hub sends a client nothing new while its acknowledgement is more than a frame behind.
 - **Shedding and the clock-ahead flag are covered by tests only.** The demo's in-process exporters never fill a queue share and share the hub's clock. Lever: a demo
   instance in another process that exports bursts, and one whose clock runs ahead.
