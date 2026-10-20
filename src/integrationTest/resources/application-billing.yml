@@ -1,0 +1,11 @@
+spring:
+  application:
+    name: billing
+
+# Billing compresses its export, as an exporter configured for gzip does.
+management:
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          compression: gzip

@@ -1,11 +1,17 @@
 package app.dodb.smd.monitor.hub.spring;
 
 import app.dodb.smd.monitor.hub.HubConfig;
+import app.dodb.smd.monitor.hub.otlp.OtlpProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.util.unit.DataSize;
 
+import java.io.IOException;
+import java.net.InetAddress;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
@@ -15,8 +21,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class MonitorHubPropertiesTest {
 
     @Test
-    void bind_nothingSet_matchesTheHubDefaults() {
-        var properties = bind(Map.of());
+    void bind_applicationYml_matchesTheHubDefaults() throws IOException {
+        var properties = applicationYml().bindOrCreate("smd.monitor.hub", MonitorHubProperties.class);
 
         var defaults = HubConfig.withDefaults().build();
         assertThat(properties.memory().toBytes()).isEqualTo(defaults.memory());
@@ -31,6 +37,18 @@ class MonitorHubPropertiesTest {
         assertThat(properties.maxEdges()).isEqualTo(defaults.maxEdges());
         assertThat(properties.silentAfter()).isEqualTo(defaults.silentAfter());
         assertThat(properties.retireAfter()).isEqualTo(defaults.retireAfter());
+    }
+
+    @Test
+    void bind_applicationYml_listensOnEveryAddressOfBothPorts() throws IOException {
+        var yml = applicationYml();
+
+        var otlp = yml.bindOrCreate("smd.monitor.hub.otlp", OtlpProperties.class);
+        var server = yml.bind("server.address", InetAddress.class);
+
+        assertThat(otlp.port()).isEqualTo(4318);
+        assertThat(otlp.listenAddress()).isEmpty();
+        assertThat(server.isBound()).isFalse();
     }
 
     @Test
@@ -49,6 +67,11 @@ class MonitorHubPropertiesTest {
             properties.put(keysAndValues[index], keysAndValues[index + 1]);
         }
         return properties;
+    }
+
+    private static Binder applicationYml() throws IOException {
+        var sources = new YamlPropertySourceLoader().load("application.yml", new ClassPathResource("application.yml"));
+        return new Binder(ConfigurationPropertySources.from(sources));
     }
 
     private static MonitorHubProperties bind(Map<String, String> properties) {

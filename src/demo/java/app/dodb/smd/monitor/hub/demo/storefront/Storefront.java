@@ -17,8 +17,8 @@ import app.dodb.smd.monitor.hub.demo.shipping.Shipping.ShipmentScheduledEvent;
 import app.dodb.smd.spring.EnableSMD;
 import app.dodb.smd.spring.EventBusSpecCustomizer;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
@@ -35,6 +35,7 @@ import static app.dodb.smd.monitor.hub.demo.HubDemo.awaitLatency;
 @Configuration(proxyBeanMethods = false)
 @EnableAutoConfiguration
 @EnableScheduling
+@EnableConfigurationProperties(StorefrontProperties.class)
 @EnableSMD(packages = "app.dodb.smd.monitor.hub.demo.storefront")
 @Import(Storefront.StorefrontHandlers.class)
 public class Storefront {
@@ -54,10 +55,8 @@ public class Storefront {
             .processingGroup("payment-follow-up").source(Topic.PAYMENTS.outlet());
     }
 
-    // --storefront.smd.demo.orders-per-second=N places N more orders every second on each instance, in parallel, so a hub with a small memory
-    // budget has to let go of traces.
     public record StorefrontHandlers(EventPublisher events, ObjectProvider<CommandGateway> commands, ObjectProvider<QueryGateway> queries,
-                                     @Value("${smd.demo.orders-per-second:0}") int ordersPerSecond) {
+                                     StorefrontProperties properties) {
 
         @Scheduled(fixedDelay = 350, initialDelay = 1000)
         public void browse() {
@@ -74,11 +73,11 @@ public class Storefront {
 
         @Scheduled(fixedRate = 1000, initialDelay = 1000)
         public void checkOutInBulk() {
-            if (ordersPerSecond == 0) {
+            if (properties.ordersPerSecond() == 0) {
                 return;
             }
             try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-                for (var order = 0; order < ordersPerSecond; order++) {
+                for (var order = 0; order < properties.ordersPerSecond(); order++) {
                     executor.submit(this::checkOut);
                 }
             }

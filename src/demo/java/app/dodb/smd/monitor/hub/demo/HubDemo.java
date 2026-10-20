@@ -23,10 +23,9 @@ public class HubDemo {
 
     public static void main(String[] args) {
         var hub = new SpringApplicationBuilder(MonitorHubApplication.class)
-            .properties("server.address=127.0.0.1", "server.port=8080", "spring.application.name=smd-monitor-hub",
-                "management.tracing.sampling.probability=0.0")
+            .profiles("hub")
             .run(Arrays.stream(args).filter(arg -> APPLICATIONS.stream().noneMatch(application -> arg.startsWith(prefix(application)))).toArray(String[]::new));
-        var traces = "http://127.0.0.1:" + hub.getEnvironment().getProperty("local.server.port") + "/v1/traces";
+        var traces = "http://127.0.0.1:" + hub.getEnvironment().getProperty("local.smd.monitor.hub.otlp.port") + "/v1/traces";
         // The readers subscribe before the applications that write to their topics start.
         start(Inventory.class, "inventory", "inventory-1", traces, args);
         start(Payments.class, "payments", "payments-1", traces, args);
@@ -38,14 +37,14 @@ public class HubDemo {
     private static void start(Class<?> service, String application, String host, String traces, String[] args) {
         var prefix = prefix(application);
         var serviceArgs = Arrays.stream(args).filter(arg -> arg.startsWith(prefix)).map(arg -> "--" + arg.substring(prefix.length()));
+        // The profiles configure the application; its host and the hub's port are known only now. One JVM holds the hub and every application,
+        // and only one may register the admin MBean an IDE enables through a system property, which only an argument outranks.
+        var known = Stream.of("--spring.application.admin.enabled=false", "--management.opentelemetry.resource-attributes.host.name=" + host,
+            "--management.opentelemetry.tracing.export.otlp.endpoint=" + traces);
         new SpringApplicationBuilder(service)
             .web(WebApplicationType.NONE)
-            .properties("spring.application.name=" + application, "management.opentelemetry.resource-attributes.host.name=" + host,
-                "management.tracing.sampling.probability=1.0", "management.opentelemetry.tracing.export.otlp.endpoint=" + traces,
-                "management.opentelemetry.tracing.export.schedule-delay=1s", "spring.task.scheduling.pool.size=4", "spring.main.banner-mode=off")
-            // One JVM holds the hub and every application, and only one may register the admin MBean an IDE enables through a system property; a
-            // command-line argument outranks it.
-            .run(Stream.concat(Stream.of("--spring.application.admin.enabled=false"), serviceArgs).toArray(String[]::new));
+            .profiles("exporter", application)
+            .run(Stream.concat(known, serviceArgs).toArray(String[]::new));
     }
 
     private static String prefix(String application) {

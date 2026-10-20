@@ -1,0 +1,17 @@
+# Every demo application: records every SMD span and exports each second, as docs/monitor.md recommends.
+spring:
+  main:
+    banner-mode: "off"
+  task:
+    scheduling:
+      pool:
+        size: 4
+
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+  opentelemetry:
+    tracing:
+      export:
+        schedule-delay: 1s
