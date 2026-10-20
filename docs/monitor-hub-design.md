@@ -346,10 +346,10 @@ Budgets still missed and work deferred, with the cause found and the levers to t
   Lever: say in `monitor.md` how the budget should grow with the applications.
 - **The publisher at 500 applications** writes a delta in about 1.5 seconds under load, so pages miss frames, and its garbage lengthens the collections that
   pause the writer. Already done: the delta keys records by the values that name them rather than by text, and latency figures round their nanoseconds as
-  integers rather than through an exact decimal; together they took a quarter of a frame and over half the publisher's garbage, and the writer now keeps up
-  with 100,000 spans per second at 500 applications where it fell behind. What is left: reading every field of every record by reflection to compare two
-  frames (about a fifth of the publisher; caching the accessors moved that time into the reflective call). Levers: those of the delta below, and rebuilding
-  only the records that changed.
+  integers rather than through an exact decimal. Together they took a quarter of a frame and over half the publisher's garbage, whose collections paused the
+  writer: at 500 applications its capacity rose by a tenth, and frames fit a second up to 40,000 spans per second where none did (runs 5 and 6 in
+  `docs/saturation`). What is left: reading every field of every record by reflection to compare two frames (about a fifth of the publisher; caching the
+  accessors moved that time into the reflective call). Levers: those of the delta below, and rebuilding only the records that changed.
 - **The delta frame is above 100 KB** (1.4 MB at the design target). Thousands of keys change every second as seconds enter and leave the window. Levers: refresh
   percentiles and history counts every few seconds instead of every second, or subscribe each page to the keys of its scope and view, which reverses W1.
 - **The failures query takes 97 ms p99.** Each query walks every failed specimen and works out its propagation. Lever: index failed specimens by cause in the
