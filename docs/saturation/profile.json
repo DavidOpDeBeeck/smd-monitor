@@ -1,11 +1,2 @@
 [
-{"method":"Hub.receive","what":"Receiving batches: indexing, counting, linking, retaining","share":0.502,"kind":"receive"},
-{"method":"Hub.tick","what":"The tick: windows, expiry, fitting the budget, building the epoch","share":0.494,"kind":"tick"},
-{"method":"ApplicationMonitor.statistics","what":"Rebuilding every key's statistics for the epoch","share":0.369,"kind":"tick"},
-{"method":"ApplicationCounting.stages","what":"Statistics of every type and handling","share":0.279,"kind":"tick"},
-{"method":"Specimens.fit","what":"Evicting traces to fit the specimen allowance, after every batch and at the tick","share":0.227,"kind":"fit"},
-{"method":"ApplicationCounting.edges","what":"Statistics of every link, crossing, route, and raised failure","share":0.063,"kind":"tick"},
-{"method":"Hub.fit","what":"Fitting counting, join, and specimens into the budget at the tick","share":0.054,"kind":"fit"},
-{"method":"SpanIndex.fit","what":"Forgetting span index entries of the applications furthest above their share","share":0.048,"kind":"fit"},
-{"method":"Counters.series","what":"The per-second series of every key's window","share":0.032,"kind":"tick"}
 ]
