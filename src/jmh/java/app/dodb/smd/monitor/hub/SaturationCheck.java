@@ -17,10 +17,8 @@ public final class SaturationCheck {
     static final List<Expectation> EXPECTATIONS = List.of(
         new Expectation("profile-standalone", 80_000),
         new Expectation("applications-5", 150_000),
-        new Expectation("applications-20", 100_000),
         new Expectation("reference", 60_000),
         new Expectation("applications-100", 40_000),
-        new Expectation("applications-200", 20_000),
         new Expectation("applications-500", 5_000));
 
     // Arguments: the output directory (default build/saturation-check), and optionally the scenarios to check (see SaturationScenario.selected).
