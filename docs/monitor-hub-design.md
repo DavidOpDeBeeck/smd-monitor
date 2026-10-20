@@ -333,12 +333,15 @@ documented rate, a heavier steady state than one reached by stepping up, so the 
 
 Budgets still missed and work deferred, with the cause found and the levers to try.
 
-- **Many applications cap the writer.** 500 applications refuse at 125,000 spans per second where 20 hold 300,000. Already done: the reservoirs keep their entries
-  by application, `Specimens` and `SpanIndex` keep running byte counts, `SpanIndex` fits from a heap of the applications above their share built once per fit,
-  `Specimens`, which fits after every batch, keeps its heap from one fit to the next and sets aside the applications at their floor until Recent holds a trace of
-  theirs or their reservoirs grow, sparklines copy out of their rings, failure series are read in one pass, handlings are summed from their groups, and span IDs
-  are parsed once on the receiving thread. What is left: the epoch's statistics, rebuilt for every key each second (`docs/saturation/profile.json`).
-  Generational ZGC removed the tick's pause tail but cost the writer 0.1 to 0.3 cores and lowered the limits; G1 stays.
+- **Many applications cap the writer.** 500 applications first fail at 80,000 spans per second where 5 hold 200,000 (run 1 in `docs/saturation`). Already
+  done: the reservoirs keep their entries by application, `Specimens` and `SpanIndex` keep running byte counts, `SpanIndex` fits from a heap of the applications
+  above their share built once per fit, `Specimens`, which fits after every batch, keeps its heap from one fit to the next and sets aside the applications at
+  their floor until Recent holds a trace of theirs or their reservoirs grow, sparklines copy out of their rings, failure series are read in one pass, handlings
+  are summed from their groups, and span IDs are parsed once on the receiving thread. A running total keeps the counts it last read until it changes, so
+  consecutive epochs share them; entry points are a bit per dispatch stage; a total adds and subtracts only the latency buckets a second used; and a series of
+  zeros, such as the failures of a stage that never failed, is not copied. What is left: the epoch's statistics, still rebuilt for every key each second (about
+  40% of the writer at 500 applications, spread over a lookup per key in each structure). Generational ZGC removed the tick's pause tail but cost the writer
+  0.1 to 0.3 cores and lowered the limits; G1 stays.
 - **Small budgets with many applications.** The queues' 10% split equally leaves small shares, so bunched exports shed a little with the writer below half busy.
   Lever: say in `monitor.md` how the budget should grow with the applications.
 - **The publisher at 500 applications** writes a delta in about a second, so pages miss frames. Levers: those of the delta below, and rebuilding only the records
@@ -348,7 +351,8 @@ Budgets still missed and work deferred, with the cause found and the levers to t
 - **The failures query takes 97 ms p99.** Each query walks every failed specimen and works out its propagation. Lever: index failed specimens by cause in the
   writer as they are retained, and their propagation as children link.
 - **Building an epoch takes 158 ms p99.** It rewrites the statistics of 27,500 types every second and snapshots the changed traces; the tail is collection pauses.
-  Lever: rebuild only the keys that counted or changed, which also shortens the publisher's comparison.
+  Counts that did not change are shared with the previous epoch already, but a key's record is new every second, as its sparkline moves with the window. Lever:
+  rebuild only the keys that counted or changed, with a sparkline that moves without a copy, which also shortens the publisher's comparison.
 - **The batch time is 5.6 ms p99.** The tail is collection pauses on a 2 GB live set. Levers: fewer allocations in decoding; a pause-time goal.
 - **The span index takes about 300 bytes per fact**, so at small budgets the horizon shrinks first. Levers: compact facts the way `Specimen` is, or a lower
   specimen floor.

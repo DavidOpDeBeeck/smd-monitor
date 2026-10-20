@@ -19,7 +19,7 @@ import static java.util.Objects.requireNonNull;
 // The keys an application counts by, each with a dense ID per kind in the order first seen (A1). An application keeps up to max-types message
 // types and max-groups processing groups apart; the dispatches of further types count under the other dispatch of their kind, and their
 // handlings, or those of further groups, under the other handling. Each kind of edge keeps up to max-edges apart and counts further ones under
-// its other ID. The catalog also holds what the statistics say of the keys: the entry-point types, each group's delivery, and which handlings
+// its other ID. The catalog also holds what the statistics say of the keys: the dispatches that entered traces, each group's delivery, and which handlings
 // ran asynchronously. It counts what it assigned to an other key as overflow. Owned by the hub's writer.
 public final class Catalog {
 
@@ -41,7 +41,8 @@ public final class Catalog {
     private final Interned<RaisedFailure> failures;
     // Admission bounds the instances of an application.
     private final Interned<InstanceName> instances = new Interned<>(Integer.MAX_VALUE, 0);
-    private final Set<MessageType> entryPoints = new HashSet<>();
+    // The dispatch stages that entered a trace.
+    private final BitSet entryPoints = new BitSet();
     private final Map<String, EventDelivery> deliveries = new HashMap<>();
     private final BitSet asynchronous = new BitSet();
     private long overflowed;
@@ -162,12 +163,12 @@ public final class Catalog {
         return failures.key(id);
     }
 
-    public void entered(MessageType type) {
-        entryPoints.add(type);
+    public void entered(int stage) {
+        entryPoints.set(stage);
     }
 
-    public boolean entryPoint(MessageType type) {
-        return entryPoints.contains(type);
+    public boolean entryPoint(int stage) {
+        return entryPoints.get(stage);
     }
 
     // The delivery of the group's latest handling; instances that configure a group differently take turns.
@@ -198,7 +199,7 @@ public final class Catalog {
     // The heap the keys take, with the types and groups admitted apart.
     public long bytes() {
         var keys = (long) stages.size() + links.size() + crossings.size() + groupLinks.size() + routes.size() + sinkRoutes.size() + failures.size()
-            + instances.size() + types.size() + groups.size() + entryPoints.size() + deliveries.size();
+            + instances.size() + types.size() + groups.size() + deliveries.size();
         return keys * Footprint.CATALOG_KEY;
     }
 

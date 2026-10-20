@@ -136,8 +136,7 @@ final class Hub {
         applications.keySet().forEach(name -> retentions.put(name, specimens.retention(name)));
         var statistics = new HubStatistics(session, sequence, end, config.window(), history, config.settle(), config.retireAfter(),
             applications.values().stream()
-                .map(application -> application.statistics(reporting.getOrDefault(application.name(), List.of()),
-                    stage -> specimens.retained(application.name(), stage)))
+                .map(application -> application.statistics(reporting.getOrDefault(application.name(), List.of()), specimens.retained(application.name())))
                 .toList());
         var health = health(retentions, refused, queues);
         return new Epoch(++epochs, now, statistics, health, view);

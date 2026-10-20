@@ -45,8 +45,9 @@ public final class Footprint {
         + 2 * REFERENCE;
 
     // A count of one timed key in one second, bucket, or total, with its slot and up to two latency buckets inline; a histogram that uses more
-    // buckets adds an array of them. An occurrence key counts in an int beside its key in the slots of its table.
-    public static final long CELL = object(5 * INT + REFERENCE + 2 * LONG) + 2 * (INT + REFERENCE);
+    // buckets adds an array of them. A total refers to the counts it last read, which the latest epoch holds. An occurrence key counts in an
+    // int beside its key in the slots of its table.
+    public static final long CELL = object(5 * INT + 2 * REFERENCE + 2 * LONG) + 2 * (INT + REFERENCE);
     public static final long HISTOGRAM = ints(19);
     public static final long OCCURRENCE = 2 * (INT + INT);
     // A second or 10-second bucket of counts, with its slot in the ordered map, and each table it holds cells of.
