@@ -419,9 +419,9 @@
 
   // Formats.
   const count = (value) => Math.round(value).toLocaleString('en-US');
-  const share = (value) => `${(value * 100).toFixed(1)}%`;
-  // An axis tick needs no decimals a value does.
-  const tickFormat = (format) => (format === share ? (value) => `${Math.round(value * 100)}%` : format === count ? compact : format);
+  const share = (value) => `${(value * 100).toFixed(value === 0 || Math.abs(value) >= 0.01 ? 1 : Math.abs(value) >= 0.001 ? 2 : 3)}%`;
+  // An axis tick needs no decimals a value does, unless the axis zoomed in on small shares.
+  const tickFormat = (format) => (format === share ? (value) => share(value).replace(/\.0+%$/, '%') : format === count ? compact : format);
   const signed = (value) => {
     const percent = Math.abs(value * 100).toFixed(Math.abs(value) < 0.1 ? 1 : 0);
     return `${Number(percent) === 0 ? '' : value > 0 ? '+' : '−'}${percent}%`;
@@ -567,6 +567,12 @@
     { id: 'about', group: 'About', title: 'How it was measured', controls: [] },
   ];
   const viewOf = (id) => VIEWS.find((view) => view.id === id);
+  // The top of a measure's axis: its fixed maximum, such as 100% for a share, unless every value stays below a fifth of it; then the axis zooms
+  // to the values, so a share of a tenth of a percent still shows.
+  const axisTop = (measure, top, headroom) => {
+    if (!(top > 0)) return measure.max ?? 1;
+    return measure.max !== undefined && top >= measure.max / 5 ? measure.max : top * headroom;
+  };
 
   // The page's state lives in the query string, so a view can be linked; runs are named there by their number.
   const PARAMS = {
@@ -1051,7 +1057,7 @@
     let top = maxOf(all, value);
     if (measure.also) top = Math.max(top, maxOf(all, (row) => row.rate));
     if (measure.capacity) top = Math.max(top, scenario.queueSpans);
-    const yMax = measure.max ?? (top > 0 ? top * 1.08 : 1);
+    const yMax = axisTop(measure, top, 1.08);
     const yTicks = niceTicks(0, yMax, 6);
     const yTick = tickFormat(measure.format);
     const left = Math.ceil(maxOf(yTicks, (tick) => textWidth(svg, yTick(tick)))) + 12;
@@ -1442,7 +1448,7 @@
       const configured = measure.configured ? [...new Set(withSteps.map((item) => measure.configured(item.scenario)))] : [];
       const references = [...(measure.references || []), ...(configured.length === 1 ? [{ y: configured[0], label: `configured: ${measure.format(configured[0])}` }] : [])];
       const top = Math.max(maxOf(series.flatMap((each) => each.values).filter((point) => present(point.y)), (point) => point.y), ...references.map((reference) => reference.y));
-      lineChart(stage.chart, { height: chartHeight(), series, yMax: measure.max ?? (top > 0 ? top * 1.1 : 1), yFormat: measure.format, references });
+      lineChart(stage.chart, { height: chartHeight(), series, yMax: axisTop(measure, top, 1.1), yFormat: measure.format, references });
     }
     fillTable(stage.table, stepColumns, stepRows(withSteps), (row) => row.item.key);
   };

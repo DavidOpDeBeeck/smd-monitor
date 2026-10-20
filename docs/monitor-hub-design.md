@@ -111,8 +111,8 @@ The hub keeps four kinds of state, each with its own lifetime and bound.
 | C1  | The core is a plain single-threaded object without locks. A writer thread and the intake queues wrap it.                                                   |
 | C2  | Admission is synchronous on the receiving thread: application and instance limits, clock skew, and liveness. It answers OTLP partial success exactly.      |
 | C3  | Processing is asynchronous. Spans dropped by shedding are reported in health, not in the OTLP response.                                                    |
-| C4  | Each application has a bounded intake queue, drained round-robin. A queue within its share takes one batch beyond it while all queues fit their capacity. A full queue answers 503 with `Retry-After` for that application only. |
-| C5  | Shedding by the fill of an application's queue behind the batch the writer takes: from 50% only failed and slow spans become specimens; from 80% spans are deduplicated but not indexed or joined. Counting is never skipped. |
+| C4  | Each application has a bounded intake queue, drained round-robin. Half an equal share of the capacity is reserved for each application; the rest is a pool an application borrows from beyond its reserved room, up to half the pool. A full queue answers 503 with `Retry-After` for that application only. |
+| C5  | Shedding only beyond an application's reserved room, by the fill of the pool or of the application's half of it behind the batch the writer takes, whichever is fuller: from 50% only failed and slow spans become specimens; from 80% spans are deduplicated but not indexed or joined. Counting is never skipped. |
 | C6  | One epoch per second: one immutable view of catalog, aggregates, specimens, and health, shared by the frame and the queries.                               |
 | C7  | Building an epoch costs in proportion to what changed: at most one copy of changed array chunks.                                                           |
 | C8  | JSON is serialized off the writer, once per epoch, and shared by every client.                                                                             |
@@ -222,7 +222,7 @@ Per tick, after each second:
 | Epoch                          | 1 s, just after each second            |
 | Coarse bucket                  | 10 s                                   |
 | Budget ceilings                | Queues 10%, counting 50%, join 25%     |
-| Shedding thresholds            | 50% and 80% of the queue               |
+| Shedding thresholds            | 50% and 80% of the pool or of its half |
 | Slowest and Failures K         | 5 per type, 20 per cause (minimum 1)   |
 | Invocations per trace          | 10,000                                 |
 | Concurrent queries             | 4                                      |
