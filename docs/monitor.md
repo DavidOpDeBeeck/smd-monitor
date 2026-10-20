@@ -180,18 +180,16 @@ applications have 200 message types and 50 processing groups each, except the de
 | Applications × instances   | Keeps up with   |
 | -------------------------- | --------------- |
 | 5 × 10                     | 150,000 spans/s |
-| 20 × 10                    | 100,000 spans/s |
 | 50 × 10                    | 60,000 spans/s  |
 | 50 × 20, the design target | 80,000 spans/s  |
 | 100 × 10                   | 40,000 spans/s  |
-| 200 × 10                   | 20,000 spans/s  |
 | 500 × 10                   | 5,000 spans/s   |
 
 - Above these rates the hub first sheds: it still counts every span, but retains or links fewer. Then it answers 503 to the applications whose queues are full.
 - A busy hub keeps a shorter link horizon and history within its budget; a larger budget keeps more. Give a hub of many applications more than the default.
 - The rates leave out decoding requests, which runs on the servlet threads, the network, queries, and frames.
 
-To check these rates on another machine or after a change, run `./gradlew saturationCheck` on an otherwise idle machine (about 40 minutes); it fails naming each row
+To check these rates on another machine or after a change, run `./gradlew saturationCheck` on an otherwise idle machine (about 30 minutes); it fails naming each row
 that no longer keeps up. [Saturation](monitor-hub-design.md#saturation) describes the runs that find where each shape stops.
 
 ## Secure the hub

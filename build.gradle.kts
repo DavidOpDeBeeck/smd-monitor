@@ -155,7 +155,7 @@ fun JavaExec.saturationJvm(output: Provider<Directory>) {
 
 // Open-loop saturation runs of the hub with its writer thread, which raise the span rate step by step until it sheds, falls behind, or refuses;
 // see SaturationScenario. Narrow them with -PsaturationScenarios=quick (the reference and the profiles), a sweep such as applications, or IDs such as
-// applications-200, and shorten the history filled first with -PsaturationFill=PT2M. Offer only some rates instead of the ladder with
+// applications-500, and shorten the history filled first with -PsaturationFill=PT2M. Offer only some rates instead of the ladder with
 // -PsaturationRates=40000,50000,60000, and write into another directory of build than saturation with -PsaturationOutput=saturation-probe, so a
 // probe leaves the full run's results alone. Each run prints a line per rate after where the run stands and about how long it still takes, keeps
 // the latest in <output>/progress.txt, appends a table per scenario to <output>/summary.md, and writes every second to <output>/<scenario>.csv.
@@ -173,7 +173,7 @@ tasks.register<JavaExec>("saturation") {
 }
 
 // Adds the run in build/saturation to the runs kept in docs/saturation and writes build/saturation/dashboard.html (docs/saturation/dashboard.py).
-// Take some scenarios of the results only with -PsaturationOnly=reference,applications-200, and name the run on the page with
+// Take some scenarios of the results only with -PsaturationOnly=reference,applications-500, and name the run on the page with
 // -PsaturationName="Reserved queue room" instead of Run N. Runs Python with the py launcher on Windows, where
 // python often opens the Microsoft Store instead, and python3 elsewhere; choose another with -PsaturationPython=/path/to/python.
 tasks.register<Exec>("saturationDashboard") {

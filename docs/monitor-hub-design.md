@@ -287,11 +287,13 @@ queue batches as the servlet threads do, the writer drains and ticks, and a publ
 whole history at its first rate, then offers each rate of a ladder up to 300,000 spans per second for 30 seconds, open loop: every second's exports are offered
 whether or not the hub kept up, and a batch answered busy is not sent again. A step **keeps up** when nothing was refused or shed, the writer was busy less than
 90% of the time, and the queues drained; it **holds** when it only shed. `SaturationScenario` defines the scenarios in sweeps, each varying one dimension of the
-reference: 50 applications × 10 instances, 200 types and 50 groups each, 2 GB, and a 15-minute history.
+reference: 50 applications × 10 instances, 200 types and 50 groups each, 2 GB, and a 15-minute history. The writer's cost per span grows with the applications,
+so that sweep has three points (5, 100, 500); the instances (100), types (1,000), and budget (256 MB) sweeps keep only the point where their dimension costs
+most, as the points between tracked the reference. With the design target that makes eight scenarios.
 
 ```bash
-./gradlew saturation                                   # every scenario, about 70 minutes
-./gradlew saturation -PsaturationScenarios=quick       # the reference and the profiles; or a sweep, or IDs such as applications-200
+./gradlew saturation                                   # every scenario, about 35 minutes
+./gradlew saturation -PsaturationScenarios=quick       # the reference and the profiles; or a sweep, or IDs such as applications-500
 ./gradlew saturation -PsaturationScenarios=applications-500 -PsaturationRates=40000,50000 -PsaturationJfr=build/saturation/a500.jfr
 ./gradlew saturationDashboard                          # adds build/saturation to docs/saturation and writes build/saturation/dashboard.html
 ```
@@ -299,7 +301,9 @@ reference: 50 applications × 10 instances, 200 types and 50 groups each, 2 GB, 
 A run writes a table, every second as CSV, and its limits and steps as JSON to `build/saturation`, and the latest progress line to `build/saturation/progress.txt`.
 Name the machine with `-PsaturationMachine="..."`, pass collector flags with `-PsaturationJvmArgs`, name the run on the page with `-PsaturationName="..."`
 instead of Run N, and choose the Python of `saturationDashboard` with `-PsaturationPython`. `docs/saturation` keeps every run added; its page compares
-them on one scale, so an improvement shows as a limit that moves right. Compare only runs of the same machine, and run on an idle one.
+them on one scale, so an improvement shows as a limit that moves right. A limit moves in steps of the ladder, and two runs of one commit can land a step
+apart, so the page also compares the writer's capacity: the spans processed per second of the writer on a core, at the rates both runs offered. It moves by
+a few percent between runs of one commit, so a change of a tenth shows plainly. Compare only runs of the same machine, and run on an idle one.
 
 Run 6, 2026-10-19, on the machine of [Results](#results), in spans per second:
 
@@ -308,19 +312,11 @@ Run 6, 2026-10-19, on the machine of [Results](#results), in spans per second:
 | Reference    | 50 × 10                   | 150,000  | 300,000 | —                 |
 | Profile      | 50 × 20, 500 types        | 200,000  | 300,000 | —                 |
 | Applications | 5                         | 250,000  | 250,000 | 300,000, behind   |
-|              | 20                        | 250,000  | 300,000 | —                 |
 |              | 100                       | 125,000  | 250,000 | 300,000, refuses  |
-|              | 200                       | 100,000  | 150,000 | 200,000, refuses  |
 |              | 500                       | 50,000   | 100,000 | 125,000, refuses  |
-| Instances    | 1                         | 200,000  | 300,000 | —                 |
-|              | 50                        | 150,000  | 250,000 | 300,000, refuses  |
-|              | 100                       | 200,000  | 300,000 | —                 |
-| Types        | 50                        | 200,000  | 300,000 | —                 |
-|              | 1,000                     | 150,000  | 250,000 | 300,000, behind   |
+| Instances    | 100                       | 200,000  | 300,000 | —                 |
+| Types        | 1,000                     | 150,000  | 250,000 | 300,000, behind   |
 | Budget       | 256 MB                    | 30,000   | 50,000  | 60,000, refuses   |
-|              | 512 MB                    | 60,000   | 125,000 | 150,000, refuses  |
-|              | 1,024 MB                  | 150,000  | 200,000 | 250,000, refuses  |
-|              | 4,096 MB                  | 250,000  | 250,000 | 300,000, behind   |
 
 How to read it:
 
@@ -328,7 +324,7 @@ How to read it:
 - The writer saturates before its CPU does: busy includes collection pauses and waiting for a core.
 - Shedding starts before the writer is saturated, when an application's exports bunch up in its queue share. Counting stays exact throughout.
 - Memory gives way before throughput: under load the link horizon and then the history shorten within the budget.
-- Many instances cost little: 100 instances per application keep up where 1 does.
+- Many instances cost little: 100 instances per application keep up where the reference's 10 do.
 
 `./gradlew saturationCheck` checks the rates [monitor.md](monitor.md#throughput) documents, one per scenario in `SaturationCheck`. It fills the whole history at the
 documented rate, a heavier steady state than one reached by stepping up, so the documented rates sit below these limits. Keep the two identical.

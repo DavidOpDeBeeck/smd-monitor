@@ -15,7 +15,8 @@ import static java.util.Objects.requireNonNull;
 // on one scale and an improvement is never cut off by a scenario's own last rate.
 //
 // The scenarios compare: each sweep changes one dimension of the reference shape and keeps the others, so a difference between two of its
-// scenarios has one cause. The two profiles are the design targets, which docs/monitor.md documents for users.
+// scenarios has one cause. Only the applications sweep has several points, as the writer's cost per span grows with applications; the other
+// sweeps keep the one point where their dimension costs most. The profile is the design target, which docs/monitor.md documents for users.
 record SaturationScenario(String id, String name, Sweep sweep, LoadProfile profile, List<Integer> rates, Duration step) {
 
     private static final long MEGABYTE = 1024 * 1024;
@@ -34,16 +35,15 @@ record SaturationScenario(String id, String name, Sweep sweep, LoadProfile profi
 
     static final List<SaturationScenario> ALL = Stream.of(
             Stream.of(new SaturationScenario("reference", "Reference", Sweep.REFERENCE, REFERENCE, ladderFrom(FILL_RATE), STEP)),
-            IntStream.of(5, 20, 100, 200, 500).mapToObj(applications -> new SaturationScenario("applications-" + applications, applications + " applications",
+            IntStream.of(5, 100, 500).mapToObj(applications -> new SaturationScenario("applications-" + applications, applications + " applications",
                 Sweep.APPLICATIONS, shape(applications, REFERENCE.instances(), REFERENCE.types(), REFERENCE.memory()), ladderFrom(FILL_RATE),
                 STEP)),
-            IntStream.of(1, 50, 100).mapToObj(instances -> new SaturationScenario("instances-" + instances, instances == 1 ? "1 instance each" : instances + " instances each",
-                Sweep.INSTANCES, shape(REFERENCE.applications(), instances, REFERENCE.types(), REFERENCE.memory()), ladderFrom(FILL_RATE), STEP)),
-            IntStream.of(50, 1_000).mapToObj(types -> new SaturationScenario("types-" + types, "%,d types each".formatted(types), Sweep.TYPES,
-                shape(REFERENCE.applications(), REFERENCE.instances(), types, REFERENCE.memory()), ladderFrom(FILL_RATE), STEP)),
-            IntStream.of(256, 512, 1_024, 4_096).mapToObj(megabytes -> new SaturationScenario("budget-" + megabytes + "mb", "%,d MB budget".formatted(megabytes),
-                Sweep.BUDGET, shape(REFERENCE.applications(), REFERENCE.instances(), REFERENCE.types(), megabytes * MEGABYTE),
-                ladderFrom(FILL_RATE), STEP)),
+            Stream.of(new SaturationScenario("instances-100", "100 instances each", Sweep.INSTANCES,
+                shape(REFERENCE.applications(), 100, REFERENCE.types(), REFERENCE.memory()), ladderFrom(FILL_RATE), STEP)),
+            Stream.of(new SaturationScenario("types-1000", "1,000 types each", Sweep.TYPES,
+                shape(REFERENCE.applications(), REFERENCE.instances(), 1_000, REFERENCE.memory()), ladderFrom(FILL_RATE), STEP)),
+            Stream.of(new SaturationScenario("budget-256mb", "256 MB budget", Sweep.BUDGET,
+                shape(REFERENCE.applications(), REFERENCE.instances(), REFERENCE.types(), 256 * MEGABYTE), ladderFrom(FILL_RATE), STEP)),
             Stream.of(new SaturationScenario("profile-standalone", "Standalone guideline", Sweep.PROFILE, LoadProfile.STANDALONE, ladderFrom(FILL_RATE), STEP)))
         .flatMap(scenarios -> scenarios)
         .toList();
@@ -61,7 +61,7 @@ record SaturationScenario(String id, String name, Sweep sweep, LoadProfile profi
     }
 
     // The scenarios the comma-separated names select: "all"; "quick", the reference and the profiles; a sweep, such as "applications", with the
-    // reference it varies; "profiles"; or a scenario's ID, such as "applications-200".
+    // reference it varies; "profiles"; or a scenario's ID, such as "applications-500".
     static List<SaturationScenario> selected(String names) {
         var selected = new LinkedHashSet<SaturationScenario>();
         for (var name : Arrays.stream(names.split(",")).map(String::strip).filter(each -> !each.isEmpty()).toList()) {
