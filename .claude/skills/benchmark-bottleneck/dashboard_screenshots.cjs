@@ -44,12 +44,16 @@ async function main() {
       if (errors.length) {
         throw new Error(`The page failed for ${query}: ${errors.join('; ')}`);
       }
-      // The page fits the window and scrolls its panels within it; grow the window by what they hide, so the screenshot holds every row.
-      const hidden = await tab.evaluate(() => Math.max(0, ...[...document.querySelectorAll('*')]
-        .filter((element) => /auto|scroll/.test(getComputedStyle(element).overflowY))
-        .map((element) => element.scrollHeight - element.clientHeight)));
-      if (hidden > 0) {
-        await tab.setViewportSize({ width: viewport.width, height: viewport.height + hidden });
+      // The page fits the window and scrolls its panels within it; grow the window by what they hide, so the screenshot holds every row and
+      // every column.
+      const hidden = await tab.evaluate(() => {
+        const scrolling = [...document.querySelectorAll('*')].map((element) => [element, getComputedStyle(element)]);
+        const most = (axis, overflow) => Math.max(0, ...scrolling.filter(([, style]) => /auto|scroll/.test(style[overflow]))
+          .map(([element]) => (axis === 'x' ? element.scrollWidth - element.clientWidth : element.scrollHeight - element.clientHeight)));
+        return { x: most('x', 'overflowX'), y: most('y', 'overflowY') };
+      });
+      if (hidden.x > 0 || hidden.y > 0) {
+        await tab.setViewportSize({ width: viewport.width + hidden.x, height: viewport.height + hidden.y });
         await tab.waitForFunction(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)))));
       }
       const out = path.join(outDir, `${name}.png`);
