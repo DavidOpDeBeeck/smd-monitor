@@ -208,6 +208,10 @@ runs better, a bug. The page is `docs/saturation/dashboard.html`, a template wit
 
 - Keep the page self-contained: one HTML file that opens from disk, its state in the query string, no external scripts or fonts.
 - Change what serves every run, not this one pull request: no run numbers or scenario names written into the page.
+- Compare runs in one chart when each run is a line of a few points on a shared scale, and the comparison happens at a point: whose line is higher at
+  a rate, whose limit sits further right. Rate by rate, the sweeps, and the limits per scenario overlay their runs; in panels the eye would jump
+  between charts to compare two points. Give each run a panel of its own, on the same axes, when overlaid runs would cover or tangle: stacked parts,
+  such as frame delivery, and long series of seconds, such as second by second. `multiples` draws the panels.
 - Write the page again with `dashboard.py --out build/saturation-page/dashboard.html`, and screenshot every view (`change`, `overview`, each
   `sweep-<sweep>`, `steps`, `seconds`, `about`, and one with `figure=0`) for the runs kept, so a change that breaks another view shows as the script failing. Look at them.
 - Commit it on the branch in a commit of its own, before the data, and say what it changed in one line of the pull request.

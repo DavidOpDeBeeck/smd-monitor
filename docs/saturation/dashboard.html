@@ -1302,7 +1302,9 @@
     if (!step) hit.addEventListener('click', (event) => setState({ step: rowAt(event).rate }));
   };
 
-  // One panel per run, stacked, each with its own head; the charts in them share their scales, so the runs compare panel to panel.
+  // One panel per run, stacked, each with its own head; the charts in them share their scales, so the runs compare panel to panel. Panels serve
+  // charts whose runs would cover or tangle overlaid: stacked parts, and long series of seconds. A chart that compares runs at a point, a line of a
+  // few points each on one scale (rate by rate, the sweeps, the limits per scenario), overlays its runs instead, so two points sit side by side.
   const multiples = (container, items, height, draw) => {
     container.replaceChildren();
     const box = Object.assign(document.createElement('div'), { className: 'multiples' });
