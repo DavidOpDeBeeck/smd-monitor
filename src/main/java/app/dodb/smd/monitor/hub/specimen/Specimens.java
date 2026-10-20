@@ -44,6 +44,11 @@ public final class Specimens {
     private final Map<ApplicationName, Retaining> applications = new HashMap<>();
     private final Reservoirs reservoirs = new Reservoirs();
     private final LinkedHashSet<TraceComponent> changed = new LinkedHashSet<>();
+    // The applications by their bytes, kept from one fit to the next, as a fit follows every batch and ordering every application each time
+    // would cost the writer more the more applications report. Each application has at most one current entry, with the bytes it was queued
+    // with; an entry no longer current is skipped when it comes up. An application that grew since is queued again before a fit.
+    private final PriorityQueue<Using> furthest = new PriorityQueue<>(Comparator.comparingLong(Using::bytes).reversed());
+    private final ArrayList<Retaining> grown = new ArrayList<>();
     private int live;
     private int traces;
     // The bytes of every application's specimens and parents, kept with theirs, so fitting does not add them up again for each trace it drops.
@@ -66,6 +71,7 @@ public final class Specimens {
         retainedBytes += Footprint.SPECIMEN;
         retaining.byStage.merge(specimen.stage(), 1, Integer::sum);
         retaining.recent.addLast(trace);
+        mayGiveWay(retaining);
     }
 
     public boolean retains(InvocationId id) {
@@ -81,8 +87,10 @@ public final class Specimens {
         }
         var child = childPosition.specimen().withParent(parent);
         if (childPosition.specimen().parent().isEmpty()) {
-            retaining(child.application()).parents++;
+            var retaining = retaining(child.application());
+            retaining.parents++;
             retainedBytes += Footprint.PARENT;
+            grew(retaining);
         }
         writable(childPosition.chunk()).specimens[childPosition.offset()] = child;
         var childTrace = components[childPosition.traceSlot()].find();
@@ -131,36 +139,81 @@ public final class Specimens {
         if (bytes() <= allowance) {
             return true;
         }
-        // While fitting, an application's bytes only fall and the share only grows, as traces leave: one within its share stays within it.
-        // An application queued with more bytes than it has now, because a trace dropped for another took members of it, is queued again; one
-        // that reached its floor is not.
-        var furthest = new PriorityQueue<Using>(Comparator.comparingLong(Using::bytes).reversed());
-        var share = share(allowance);
-        applications.forEach((name, retaining) -> {
-            if (retaining.bytes() > share) {
-                furthest.add(new Using(name, retaining, retaining.bytes()));
-            }
-        });
+        if (furthest.size() > 2 * applications.size() + 64) {
+            furthest.clear();
+            applications.values().forEach(application -> application.queuedBytes = -1);
+            applications.values().forEach(this::queue);
+        } else {
+            grown.forEach(this::queue);
+        }
+        grown.clear();
+        // While fitting, an application's bytes only fall and the share only grows, as traces leave: one within its share stays within it. An
+        // application keeps giving way while it is still the furthest, as an entry's bytes are at least its application's.
         while (bytes() > allowance) {
             var using = furthest.poll();
             if (using == null) {
                 return false;
             }
-            if (using.retaining.bytes() == using.bytes) {
-                if (using.bytes <= share(allowance)) {
-                    return false;
-                }
-                if (!leaveOldestRecent(using.retaining)) {
-                    var displaced = reservoirs.shrink(using.application);
-                    if (displaced.isEmpty()) {
-                        continue;
-                    }
-                    displaced.get().forEach(this::releaseEntry);
-                }
+            var retaining = using.retaining;
+            if (retaining.queuedBytes != using.bytes || applications.get(retaining.name) != retaining) {
+                continue;
             }
-            furthest.add(new Using(using.application, using.retaining, using.retaining.bytes()));
+            retaining.queuedBytes = -1;
+            if (retaining.bytes() != using.bytes) {
+                queue(retaining);
+                continue;
+            }
+            if (using.bytes <= share(allowance)) {
+                queue(retaining);
+                return false;
+            }
+            if (giveWay(retaining, allowance)) {
+                queue(retaining);
+            } else {
+                retaining.floored = true;
+            }
         }
         return true;
+    }
+
+    // Lets go of the application's traces while the specimens do not fit and it stays the furthest above its share; false once it reached
+    // its floor.
+    private boolean giveWay(Retaining retaining, long allowance) {
+        var next = furthest.peek();
+        do {
+            if (!leaveOldestRecent(retaining)) {
+                var displaced = reservoirs.shrink(retaining.name);
+                if (displaced.isEmpty()) {
+                    return false;
+                }
+                displaced.get().forEach(this::releaseEntry);
+            }
+        } while (bytes() > allowance && retaining.bytes() > share(allowance) && (next == null || retaining.bytes() >= next.bytes));
+        return true;
+    }
+
+    // An application at its floor may give way again once Recent holds a trace of it, or its reservoirs grew.
+    private void mayGiveWay(Retaining retaining) {
+        retaining.floored = false;
+        grew(retaining);
+    }
+
+    private void grew(Retaining retaining) {
+        if (!retaining.grown) {
+            retaining.grown = true;
+            grown.add(retaining);
+        }
+    }
+
+    // Queues the application with its bytes now, unless its current entry has them or it reached its floor. A fit lets go of the entries no
+    // longer current once they outnumber the applications.
+    private void queue(Retaining retaining) {
+        retaining.grown = false;
+        if (retaining.floored || retaining.queuedBytes == retaining.bytes() || applications.get(retaining.name) != retaining) {
+            return;
+        }
+        retaining.queuedBytes = retaining.bytes();
+        furthest.add(new Using(retaining, retaining.queuedBytes));
     }
 
     private long share(long allowance) {
@@ -170,7 +223,11 @@ public final class Specimens {
     // Raises the K of every application one step while the specimens take less than 80% of the allowance.
     public void relax(long allowance) {
         if (bytes() < allowance * GROW_BELOW) {
-            applications.keySet().forEach(reservoirs::grow);
+            applications.values().forEach(retaining -> {
+                if (reservoirs.grow(retaining.name)) {
+                    mayGiveWay(retaining);
+                }
+            });
         }
     }
 
@@ -328,7 +385,11 @@ public final class Specimens {
         changed.remove(smaller);
         changed.add(larger);
         // A trace that rejoins Recent is let go with the other traces of its applications.
-        rejoiningApplications.forEach(application -> retaining(application).recent.addLast(larger));
+        rejoiningApplications.forEach(application -> {
+            var retaining = retaining(application);
+            retaining.recent.addLast(larger);
+            mayGiveWay(retaining);
+        });
     }
 
     // The failure of the member deepest in the trace, which the Failures reservoir keys the trace by (F1).
@@ -472,13 +533,14 @@ public final class Specimens {
     }
 
     private Retaining retaining(ApplicationName application) {
-        return applications.computeIfAbsent(application, ignored -> new Retaining());
+        return applications.computeIfAbsent(application, Retaining::new);
     }
 
     // What an application retains: its specimens and the parents found of them, its traces in the order Recent took them, and its names; and
     // the start of the latest specimen the hub dropped.
     private static final class Retaining {
 
+        private final ApplicationName name;
         private final Names names = new Names();
         private final ArrayDeque<TraceComponent> recent = new ArrayDeque<>();
         private final Map<Stage, Integer> byStage = new HashMap<>();
@@ -487,6 +549,15 @@ public final class Specimens {
         private long evicted;
         private long fragments;
         private long droppedThroughNanos = Long.MIN_VALUE;
+        // The bytes of its current entry among the furthest, -1 while it has none; whether it grew since it was last queued; and whether it
+        // reached its floor, with nothing in Recent and its reservoirs at their lowest K.
+        private long queuedBytes = -1;
+        private boolean grown;
+        private boolean floored;
+
+        private Retaining(ApplicationName name) {
+            this.name = name;
+        }
 
         private long bytes() {
             return retained * Footprint.SPECIMEN + parents * Footprint.PARENT;
@@ -497,7 +568,7 @@ public final class Specimens {
     }
 
     // An application fitting may take from, with its bytes when it was queued.
-    private record Using(ApplicationName application, Retaining retaining, long bytes) {
+    private record Using(Retaining retaining, long bytes) {
     }
 
     // The specimens an application retains, how many the hub dropped, and the children that began fragments; the heap its specimens and their

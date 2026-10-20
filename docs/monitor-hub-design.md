@@ -334,10 +334,11 @@ documented rate, a heavier steady state than one reached by stepping up, so the 
 Budgets still missed and work deferred, with the cause found and the levers to try.
 
 - **Many applications cap the writer.** 500 applications refuse at 125,000 spans per second where 20 hold 300,000. Already done: the reservoirs keep their entries
-  by application, `Specimens` and `SpanIndex` keep running byte counts and fit from a heap of the applications above their share built once per fit, sparklines
-  copy out of their rings, failure series are read in one pass, handlings are summed from their groups, and span IDs are parsed once on the receiving thread. What
-  is left: the epoch's statistics, rebuilt for every key each second, and `Specimens.fit` (`docs/saturation/profile.json`). Generational ZGC removed the tick's
-  pause tail but cost the writer 0.1 to 0.3 cores and lowered the limits; G1 stays.
+  by application, `Specimens` and `SpanIndex` keep running byte counts, `SpanIndex` fits from a heap of the applications above their share built once per fit,
+  `Specimens`, which fits after every batch, keeps its heap from one fit to the next and sets aside the applications at their floor until Recent holds a trace of
+  theirs or their reservoirs grow, sparklines copy out of their rings, failure series are read in one pass, handlings are summed from their groups, and span IDs
+  are parsed once on the receiving thread. What is left: the epoch's statistics, rebuilt for every key each second (`docs/saturation/profile.json`).
+  Generational ZGC removed the tick's pause tail but cost the writer 0.1 to 0.3 cores and lowered the limits; G1 stays.
 - **Small budgets with many applications.** The queues' 10% split equally leaves small shares, so bunched exports shed a little with the writer below half busy.
   Lever: say in `monitor.md` how the budget should grow with the applications.
 - **The publisher at 500 applications** writes a delta in about a second, so pages miss frames. Levers: those of the delta below, and rebuilding only the records

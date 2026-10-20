@@ -166,6 +166,27 @@ class SpecimensTest {
     }
 
     @Test
+    void fit_otherApplicationGrewFurthestSinceTheLastFit_dropsOnlyItsTraces() {
+        for (var index = 0; index < 3; index++) {
+            retain(BILLING, OPEN, NOW, Duration.ofMillis(1), Optional.empty(), null);
+        }
+        for (var index = 0; index < 100; index++) {
+            retain(OPEN, NOW, Duration.ofMillis(1));
+        }
+        specimens.fit(singleTraces(20));
+        var tickets = specimens.retention(TICKETS);
+        for (var index = 0; index < 25; index++) {
+            retain(BILLING, OPEN, NOW, Duration.ofMillis(1), Optional.empty(), null);
+        }
+
+        var fits = specimens.fit(singleTraces(40));
+
+        assertThat(fits).isTrue();
+        assertThat(specimens.retention(TICKETS)).isEqualTo(tickets);
+        assertThat(specimens.retention(BILLING)).extracting(Specimens.Retention::retained, Specimens.Retention::evicted).containsExactly(23, 5L);
+    }
+
+    @Test
     void fit_onlyReservoirsLeft_lowersSlowestKToZeroAndFailuresKToOneKeepingTheLatestOfEachCause() {
         for (var index = 0; index < 30; index++) {
             retain(TICKETS, OPEN, NOW, Duration.ofMillis(index + 1), Optional.empty(), STORM);
@@ -233,6 +254,33 @@ class SpecimensTest {
         assertThat(specimens.retains(child.id())).isFalse();
         assertThat(specimens.retention(TICKETS).bytes()).isEqualTo(Footprint.SPECIMEN);
         assertThat(specimens.bytes()).isEqualTo(singleTraces(1));
+    }
+
+    @Test
+    void fit_applicationAtItsFloorRetainsAgain_dropsTheNewTrace() {
+        retain(TICKETS, OPEN, NOW, Duration.ofMillis(1), Optional.empty(), STORM);
+        specimens.fit(0);
+        var healthy = retain(OPEN, NOW, Duration.ofMillis(1));
+
+        var fits = specimens.fit(0);
+
+        assertThat(fits).isFalse();
+        assertThat(specimens.retains(healthy.id())).isFalse();
+        assertThat(specimens.retention(TICKETS)).extracting(Specimens.Retention::retained, Specimens.Retention::evicted).containsExactly(1, 1L);
+    }
+
+    @Test
+    void fit_applicationAtItsFloorAfterItsReservoirsGrew_lowersFailuresKAgain() {
+        retain(TICKETS, OPEN, NOW, Duration.ofMillis(1), Optional.empty(), STORM);
+        specimens.fit(0);
+        specimens.relax(Long.MAX_VALUE);
+        var latest = retain(TICKETS, OPEN, NOW, Duration.ofMillis(2), Optional.empty(), STORM);
+
+        var fits = specimens.fit(0);
+
+        assertThat(fits).isFalse();
+        assertThat(specimens.retains(latest.id())).isTrue();
+        assertThat(specimens.retention(TICKETS)).extracting(Specimens.Retention::failuresK, Specimens.Retention::retained).containsExactly(1, 1);
     }
 
     @Test
