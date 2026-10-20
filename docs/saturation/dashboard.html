@@ -1018,7 +1018,9 @@
     const left = Math.ceil(maxOf(yTicks, (tick) => textWidth(svg, yTick(tick)))) + 12;
     const stripHeight = 10;
     const stripGap = 4;
-    const strips = series.length * (stripHeight + stripGap) + 6;
+    // The strips keep clear of the plot, so the axis's lowest label never crowds the first strip's dot.
+    const stripsTop = 18;
+    const strips = series.length * (stripHeight + stripGap) + stripsTop;
     const margin = { top: 16, right: 20, bottom: 48 + strips, left };
     const axisY = height - 48;
     const xs = [...new Set(series.flatMap((each) => each.values.map((point) => point.x)))].sort((a, b) => a - b);
@@ -1039,7 +1041,7 @@
     // Keeping up is the expected case, so it stays quiet and the eye goes to where a run starts to shed and fail.
     const TONES = { ok: ['var(--ok)', 0.3], warn: ['var(--warn)', 0.85], bad: ['var(--bad)', 0.85], muted: ['var(--reference)', 0.5] };
     series.forEach((each, index) => {
-      const top = height - margin.bottom + 6 + index * (stripHeight + stripGap);
+      const top = height - margin.bottom + stripsTop + index * (stripHeight + stripGap);
       el(svg, 'circle', { cx: margin.left - 9, cy: top + stripHeight / 2, r: 4, fill: each.color, 'data-key': each.key });
       for (const point of each.values) {
         const [from, to] = edges[xs.indexOf(point.x)];
@@ -1199,7 +1201,7 @@
     const rugLabels = ['snapshot', 'not read'];
     const yTick = lagTicks(yMax);
     const left = Math.ceil(Math.max(...yTicks.map((tick) => textWidth(svg, yTick(tick))), ...rugLabels.map((label) => textWidth(svg, label)))) + 14;
-    const rug = 44;
+    const rug = 52;
     const margin = { top: 24, right: 20, bottom: 44 + rug, left };
     const plotBottom = height - margin.bottom;
     const x = linearScale(tRange, [margin.left, width - margin.right]);
@@ -1251,7 +1253,7 @@
     }
     el(svg, 'line', { class: 'reference', x1: margin.left, x2: width - margin.right, y1: y(FRAME_DUE_MS), y2: y(FRAME_DUE_MS) });
     el(svg, 'text', { x: width - margin.right, y: y(FRAME_DUE_MS) - 6, 'text-anchor': 'end' }, 'next frame due');
-    const rugAt = (index) => plotBottom + 18 + index * 14;
+    const rugAt = (index) => plotBottom + 26 + index * 14;
     rugLabels.forEach((label, index) => el(svg, 'text', { class: 'title', x: margin.left - 8, y: rugAt(index), dy: '0.32em', 'text-anchor': 'end' }, label));
     const tickWidth = Math.max(2, Math.min(6, (x(tRange[0] + 1) - x(tRange[0])) * 0.6));
     for (const row of rows) {
