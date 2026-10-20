@@ -305,18 +305,18 @@ them on one scale, so an improvement shows as a limit that moves right. A limit 
 apart, so the page also compares the writer's capacity: the spans processed per second of the writer on a core, at the rates both runs offered. It moves by
 a few percent between runs of one commit, so a change of a tenth shows plainly. Compare only runs of the same machine, and run on an idle one.
 
-Run 6, 2026-10-19, on the machine of [Results](#results), in spans per second:
+Run 1, 2026-10-20, on a Ryzen 7 5825U (16 threads, 32 GB, Linux) at the commit before the optimizations of pull requests #1 to #3, in spans per second:
 
 | Sweep        | Scenario                  | Keeps up | Holds   | Fails at          |
 |--------------|---------------------------|----------|---------|-------------------|
-| Reference    | 50 × 10                   | 150,000  | 300,000 | —                 |
-| Profile      | 50 × 20, 500 types        | 200,000  | 300,000 | —                 |
-| Applications | 5                         | 250,000  | 250,000 | 300,000, behind   |
-|              | 100                       | 125,000  | 250,000 | 300,000, refuses  |
-|              | 500                       | 50,000   | 100,000 | 125,000, refuses  |
-| Instances    | 100                       | 200,000  | 300,000 | —                 |
-| Types        | 1,000                     | 150,000  | 250,000 | 300,000, behind   |
-| Budget       | 256 MB                    | 30,000   | 50,000  | 60,000, refuses   |
+| Reference    | 50 × 10                   | 150,000  | 200,000 | 250,000, behind   |
+| Profile      | 50 × 20, 500 types        | 100,000  | 200,000 | 250,000, refuses  |
+| Applications | 5                         | 200,000  | 200,000 | 250,000, behind   |
+|              | 100                       | 80,000   | 150,000 | 200,000, refuses  |
+|              | 500                       | 30,000   | 60,000  | 80,000, refuses   |
+| Instances    | 100                       | 150,000  | 150,000 | 200,000, behind   |
+| Types        | 1,000                     | 125,000  | 150,000 | 200,000, refuses  |
+| Budget       | 256 MB                    | 20,000   | 40,000  | 50,000, refuses   |
 
 How to read it:
 

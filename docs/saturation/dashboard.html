@@ -349,7 +349,7 @@
           <h3>How it was measured</h3>
           <table class="setup" id="setup-table"><thead></thead><tbody></tbody></table>
         </div>
-        <div class="card">
+        <div class="card" id="profile-card">
           <h3>Where the writer's time goes with the most applications</h3>
           <p class="note">Share of the writer thread's CPU samples that include each method (a sample counts for every method on its stack), over the fill and both
             steps of a JFR recording of the baseline.</p>
@@ -1258,6 +1258,8 @@
       { label: 'Seconds kept', text: true, value: (run) => (seconds.some((row) => row.run === run.run) ? 'yes' : 'no') },
     ], allRuns);
     const kinds = { receive: 'var(--series-1)', fit: 'var(--series-2)', tick: 'var(--reference)' };
+    // A profile is kept only for the machine the runs ran on; without one the card has nothing to show.
+    document.getElementById('profile-card').hidden = !profile.length;
     document.getElementById('profile-list').replaceChildren(...profile.map((row) => {
       const item = Object.assign(document.createElement('div'), { className: 'profile-row' });
       const track = Object.assign(document.createElement('div'), { className: 'bar-track' });
