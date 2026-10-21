@@ -66,6 +66,9 @@ Never let a frame or query hold up ingest, and never mutate an epoch after publi
 - Sealed results when callers distinguish outcomes; booleans for predicates.
 - Validate nullability and invariants in constructors with single-argument `requireNonNull(value)`; do not repeat it in methods. Do not copy collections defensively.
 - Validate configuration once, before use. Errors at user-facing boundaries state what is invalid, what was expected, and the value or name involved.
+- Configure Spring contexts in yml: the hub's defaults in `application.yml`, each test and demo application in a profile yml of its own. Pass only values
+  known at run time, such as a bound port or an instance's host, as command-line arguments; never `SpringApplicationBuilder.properties`, which every yml
+  outranks. Read properties through `@ConfigurationProperties` records, not `@Value`.
 - Contain reflection, unchecked casts, serialization, and nullable values at their boundaries.
 - Write methods top to bottom: derive values, guard, act, translate boundary failures, return.
 - `var` when the type is obvious. Streams for transformations and searches; loops for mutation, resources, and early exits.

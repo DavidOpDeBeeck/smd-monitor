@@ -1,0 +1,7 @@
+spring:
+  application:
+    name: storefront
+
+smd:
+  demo:
+    orders-per-second: 0

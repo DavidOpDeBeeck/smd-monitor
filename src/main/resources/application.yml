@@ -1,0 +1,29 @@
+# The hub's defaults. Override any of them with arguments, environment variables such as SMD_MONITOR_HUB_MEMORY=2GB, or an application.yml beside the
+# jar; docs/monitor.md describes each.
+spring:
+  application:
+    name: smd-monitor-hub
+
+server:
+  port: 8080
+  # The forwarded headers of a proxy in front of the page name its origin to the WebSocket; Tomcat trusts them from private addresses only.
+  forward-headers-strategy: native
+
+smd:
+  monitor:
+    hub:
+      otlp:
+        port: 4318
+      memory: 256MB
+      window: 1m
+      history: 5m
+      settle: 5s
+      link-horizon: 60s
+      max-applications: 100
+      max-instances: 256
+      max-types: 1000
+      max-groups: 200
+      max-edges: 5000
+      silent-after: 10s
+      retire-after: 10m
+      allowed-origins: []

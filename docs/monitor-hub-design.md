@@ -118,6 +118,7 @@ The hub keeps four kinds of state, each with its own lifetime and bound.
 | C8  | JSON is serialized off the writer, once per epoch, and shared by every client.                                                                             |
 | C9  | At most 4 queries run at once; beyond that the hub answers 429.                                                                                             |
 | C10 | An exception in one batch drops that batch, reports it, and logs it once. The writer keeps running.                                                         |
+| C11 | Exports arrive on a port of their own, with its own Tomcat connector and threads; each port refuses the other's paths. The page can be published without the endpoint, and pages never take a thread from admission. |
 
 ### Memory and specimens
 
@@ -180,7 +181,7 @@ The hub keeps four kinds of state, each with its own lifetime and bound.
 
 ```
  OTLP/HTTP                                                              ┌─► MonitorFrameSocket: delta to clients in sync,
- (servlet)                                                              │   snapshot to clients that missed one
+ (own port)                                                             │   snapshot to clients that missed one
      └──────────► Admission ──► IntakeQueues ──► HubWriter ──► Epochs ──┤
                   limits,       per application,  drains round-robin,   │
                   skew,         bounded,          ticks each second,    └─► MonitorHubQueries: at most 4 at once,
@@ -192,10 +193,10 @@ The hub keeps four kinds of state, each with its own lifetime and bound.
 
 | Thread                          | Runs                                                   | Touches                                         |
 |---------------------------------|--------------------------------------------------------|-------------------------------------------------|
-| Servlet threads (export)        | Decoding, `Admission`, `IntakeQueues.offer`            | Admission (own lock), the queues (thread-safe) |
+| OTLP port threads (export)      | Decoding, `Admission`, `IntakeQueues.offer`            | Admission (own lock), the queues (thread-safe) |
 | `smd-monitor-hub` writer        | Receiving batches, ticking, building epochs           | All mutable state of `Hub`, exclusively         |
 | Frame publisher                 | Building, diffing, and serializing frames; async sends | The latest two epochs, immutable                |
-| Servlet threads (queries)       | `Queries` over the latest epoch                        | The epoch, immutable                            |
+| Page port threads (queries)     | `Queries` over the latest epoch                        | The epoch, immutable                            |
 
 Per span, on the writer, in arrival order within its application:
 

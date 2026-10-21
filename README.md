@@ -61,8 +61,8 @@ which storefront compensates by cancelling the order and inventory by releasing 
 java -jar build/libs/smd-monitor-hub-0.0.1.jar
 ```
 
-The hub serves the page at <http://127.0.0.1:8080/> and receives spans at `/v1/traces`. It listens on the loopback address only, because it has no authentication: put
-a reverse proxy in front of it to reach it from other hosts.
+The hub serves the page at <http://127.0.0.1:8080/> and receives spans at <http://127.0.0.1:4318/v1/traces>, on a port of its own. It has no
+authentication: put a reverse proxy that authenticates in front of the page, and keep the OTLP port private. The `Dockerfile` runs it in a container.
 
 Then add `spring-boot-starter-opentelemetry` to each application, sample every span, and point its OTLP exporter at the hub. See
 [Set up the monitor](docs/monitor.md#set-up-the-monitor).

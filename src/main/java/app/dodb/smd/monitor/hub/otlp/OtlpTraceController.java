@@ -18,6 +18,7 @@ import static java.util.Objects.requireNonNull;
 @RestController
 class OtlpTraceController {
 
+    static final String PATH = "/v1/traces";
     // Bounds every request as read, and once inflated when compressed: well above the default exporter batch of 512 spans, and read from the
     // request as a stream so a larger one never fills the heap.
     static final int MAX_BODY_BYTES = 16 * 1024 * 1024;
@@ -31,7 +32,7 @@ class OtlpTraceController {
 
     // Answers once admission decided, before the hub's writer processes the spans. A full queue answers 503 for the whole request; the batches
     // of other applications in it were taken, and the hub counts them once when they arrive again.
-    @PostMapping(value = "/v1/traces", consumes = PROTOBUF, produces = PROTOBUF)
+    @PostMapping(value = PATH, consumes = PROTOBUF, produces = PROTOBUF)
     ResponseEntity<byte[]> traces(InputStream body, @RequestHeader(name = "Content-Encoding", required = false) String encoding) {
         SpanIntake intake;
         try {

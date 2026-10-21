@@ -72,10 +72,8 @@ class MonitorHubIntegrationTest {
 
     @BeforeEach
     void startHubAndTickets() {
-        hub = new SpringApplicationBuilder(MonitorHubApplication.class)
-            .properties("server.port=0", "server.address=127.0.0.1", "management.tracing.sampling.probability=0.0")
-            .run();
-        tickets = new SpringApplicationBuilder(TicketApplication.class).web(WebApplicationType.NONE).properties(recording("tickets")).run();
+        hub = new SpringApplicationBuilder(MonitorHubApplication.class).profiles("hub").run();
+        tickets = exporting(TicketApplication.class, "tickets");
     }
 
     @AfterEach
@@ -87,10 +85,8 @@ class MonitorHubIntegrationTest {
 
     @Test
     void traces_eventForwardedToAnotherApplication_isADeliveryOfItsOrigin() {
-        // Billing compresses its export, as an exporter configured for gzip does.
-        try (var billing = new SpringApplicationBuilder(BillingApplication.class).web(WebApplicationType.NONE).properties(recording("billing"))
-            .properties("management.opentelemetry.tracing.export.otlp.compression=gzip")
-            .run()) {
+        // Billing compresses its export (application-billing.yml), as an exporter configured for gzip does.
+        try (var billing = exporting(BillingApplication.class, "billing")) {
             openTicket();
             var published = awaitInvocation(TICKETS, invocation -> invocation.type().name().equals(TicketOpened.class.getName())
                 && invocation.span().stage() instanceof Stage.Dispatch);
@@ -113,7 +109,7 @@ class MonitorHubIntegrationTest {
 
     @Test
     void traces_malformedProtobuf_answersAnInvalidArgumentStatus() throws Exception {
-        var response = post("application/x-protobuf", new byte[]{0x0A, 0x7F});
+        var response = post(otlp("/v1/traces"), "application/x-protobuf", new byte[]{0x0A, 0x7F});
 
         assertThat(response.statusCode()).isEqualTo(400);
         assertThat(response.headers().firstValue("Content-Type")).hasValueSatisfying(type -> assertThat(type).startsWith("application/x-protobuf"));
@@ -124,9 +120,32 @@ class MonitorHubIntegrationTest {
 
     @Test
     void traces_json_isAnUnsupportedMediaType() throws Exception {
-        var response = post("application/json", "{}".getBytes(StandardCharsets.UTF_8));
+        var response = post(otlp("/v1/traces"), "application/json", "{}".getBytes(StandardCharsets.UTF_8));
 
         assertThat(response.statusCode()).isEqualTo(415);
+    }
+
+    @Test
+    void traces_onThePagePort_isNotFound() throws Exception {
+        var response = post(base("http") + "/v1/traces", "application/x-protobuf", new byte[0]);
+
+        assertThat(response.statusCode()).isEqualTo(404);
+    }
+
+    @Test
+    void page_onTheOtlpPort_isNotFound() throws Exception {
+        var response = client.send(HttpRequest.newBuilder(URI.create(otlp("/"))).GET().build(), HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(404);
+    }
+
+    @Test
+    void start_otlpPortIsTheServerPort_failsNamingBothProperties() {
+        var builder = new SpringApplicationBuilder(MonitorHubApplication.class);
+
+        assertThatThrownBy(() -> builder.run("--server.port=18080", "--smd.monitor.hub.otlp.port=18080"))
+            .rootCause()
+            .hasMessage("smd.monitor.hub.otlp.port must differ from server.port, which serves the page; both are 18080");
     }
 
     @Test
@@ -232,6 +251,23 @@ class MonitorHubIntegrationTest {
         assertThatThrownBy(() -> handshake.get(5, TimeUnit.SECONDS)).hasCauseInstanceOf(WebSocketHandshakeException.class);
     }
 
+    // A page served over HTTPS behind Traefik, which forwards the upgrade as wss, so the hub cannot tell the page's origin is its own.
+    @Test
+    void connect_allowedOriginForwardedAsWss_acceptsTheHandshake() throws Exception {
+        var listener = new FrameListener();
+
+        var socket = client.newWebSocketBuilder()
+            .header("Origin", "https://monitor.example")
+            .header("X-Forwarded-Host", "monitor.example")
+            .header("X-Forwarded-Proto", "wss")
+            .buildAsync(URI.create(base("ws") + "/live"), listener)
+            .get(5, TimeUnit.SECONDS);
+
+        listener.awaitFrame(frame -> true);
+        assertThat(listener.messages.getFirst().get("type").asString()).isEqualTo("snapshot");
+        socket.abort();
+    }
+
     @Test
     void resources_get_servesThePageAndItsAssetsAtTheRoot() throws Exception {
         var page = query("/");
@@ -267,8 +303,8 @@ class MonitorHubIntegrationTest {
         return client.send(HttpRequest.newBuilder(URI.create(base("http") + path)).GET().build(), HttpResponse.BodyHandlers.ofString());
     }
 
-    private HttpResponse<byte[]> post(String contentType, byte[] body) throws Exception {
-        var request = HttpRequest.newBuilder(URI.create(base("http") + "/v1/traces"))
+    private HttpResponse<byte[]> post(String url, String contentType, byte[] body) throws Exception {
+        var request = HttpRequest.newBuilder(URI.create(url))
             .header("Content-Type", contentType)
             .POST(HttpRequest.BodyPublishers.ofByteArray(body))
             .build();
@@ -279,15 +315,19 @@ class MonitorHubIntegrationTest {
         return hub.getBean(MonitorHub.class);
     }
 
-    // An application that records its SMD spans and exports them to the hub.
-    private String[] recording(String application) {
-        return new String[]{"spring.application.name=" + application, "management.opentelemetry.resource-attributes.host.name=" + application + "-1",
-            "management.tracing.sampling.probability=1.0", "management.opentelemetry.tracing.export.otlp.endpoint=" + base("http") + "/v1/traces",
-            "management.opentelemetry.tracing.export.schedule-delay=50ms"};
+    // Starts an application that records its SMD spans and exports them to the hub; its profile names it, and the hub's port is known only now.
+    private ConfigurableApplicationContext exporting(Class<?> application, String profile) {
+        return new SpringApplicationBuilder(application).web(WebApplicationType.NONE)
+            .profiles("exporter", profile)
+            .run("--management.opentelemetry.tracing.export.otlp.endpoint=" + otlp("/v1/traces"));
     }
 
     private String base(String scheme) {
         return scheme + "://127.0.0.1:" + ((WebServerApplicationContext) hub).getWebServer().getPort();
+    }
+
+    private String otlp(String path) {
+        return "http://127.0.0.1:" + hub.getEnvironment().getProperty("local.smd.monitor.hub.otlp.port") + path;
     }
 
     @Configuration(proxyBeanMethods = false)

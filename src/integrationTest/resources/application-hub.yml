@@ -1,0 +1,15 @@
+# The hub under test: free ports, and no spans of its own.
+server:
+  port: 0
+
+smd:
+  monitor:
+    hub:
+      otlp:
+        port: 0
+      allowed-origins: https://monitor.example
+
+management:
+  tracing:
+    sampling:
+      probability: 0.0

@@ -1,0 +1,11 @@
+# An application that records every SMD span and exports it to the hub soon.
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+  opentelemetry:
+    resource-attributes:
+      "[host.name]": ${spring.application.name}-1
+    tracing:
+      export:
+        schedule-delay: 50ms

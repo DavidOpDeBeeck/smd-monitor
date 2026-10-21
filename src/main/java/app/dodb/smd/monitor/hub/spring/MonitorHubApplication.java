@@ -3,8 +3,8 @@ package app.dodb.smd.monitor.hub.spring;
 import app.dodb.smd.monitor.hub.HubConfig;
 import app.dodb.smd.monitor.hub.MonitorHub;
 import app.dodb.smd.monitor.hub.otlp.MonitorHubOtlpConfiguration;
+import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
-import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,11 +19,8 @@ import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 @Import(MonitorHubOtlpConfiguration.class)
 public class MonitorHubApplication {
 
-    // Defaults only: the hub has no authentication, so it listens on the loopback address unless server.address says otherwise.
     public static void main(String[] args) {
-        new SpringApplicationBuilder(MonitorHubApplication.class)
-            .properties("server.address=127.0.0.1", "spring.application.name=smd-monitor-hub")
-            .run(args);
+        SpringApplication.run(MonitorHubApplication.class, args);
     }
 
     // The writer thread starts with the context and stops with it.
@@ -66,8 +63,9 @@ public class MonitorHubApplication {
         return new MonitorFrameSocket(hub, frames);
     }
 
+    // The page's own origin is always allowed; others, such as the page's behind a proxy that forwards the upgrade as wss, only when listed.
     @Bean
-    WebSocketConfigurer monitorHubWebSocketConfigurer(MonitorFrameSocket socket) {
-        return registry -> registry.addHandler(socket, "/live");
+    WebSocketConfigurer monitorHubWebSocketConfigurer(MonitorFrameSocket socket, MonitorHubProperties properties) {
+        return registry -> registry.addHandler(socket, "/live").setAllowedOrigins(properties.allowedOrigins().toArray(String[]::new));
     }
 }

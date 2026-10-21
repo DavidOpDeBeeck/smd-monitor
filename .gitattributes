@@ -1,0 +1,3 @@
+# The wrapper script runs in Linux containers too, so it keeps LF line endings on every checkout.
+/gradlew text eol=lf
+*.bat text eol=crlf

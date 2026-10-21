@@ -44,7 +44,7 @@ management:
     tracing:
       export:
         otlp:
-          endpoint: http://smd-monitor-hub:8080/v1/traces
+          endpoint: http://smd-monitor-hub:4318/v1/traces
         schedule-delay: 1s
   otlp:
     metrics:
@@ -83,17 +83,41 @@ describes, with a sampler that keeps every SMD span.
 java -jar build/libs/smd-monitor-hub-0.0.1.jar --smd.monitor.hub.memory=2GB
 ```
 
-The hub needs Java 25. Configure it like any Spring Boot application: arguments, environment variables such as `SMD_MONITOR_HUB_MEMORY=2GB`, or an
-`application.properties` beside the jar. It listens on port 8080 of `127.0.0.1` only; read [Secure the hub](#secure-the-hub) before you change `server.address`.
+The hub needs Java 25. Its [`application.yml`](../src/main/resources/application.yml) lists its properties with their defaults. Override them like any Spring
+Boot application's: arguments, environment variables such as `SMD_MONITOR_HUB_MEMORY=2GB`, or an `application.yml` beside the jar with only the keys you change. It
+listens on two ports, on every address; read [Secure the hub](#secure-the-hub) before you expose them.
 
-| Path         | Serves                                                     |
-|--------------|------------------------------------------------------------|
-| `/`          | The monitor page                                           |
-| `/v1/traces` | The OTLP/HTTP endpoint the applications export to          |
-| `/live`      | The WebSocket that sends the page its frames               |
-| `/api/...`   | The queries the page makes for retained invocations        |
+| Port   | Path         | Serves                                              |
+|--------|--------------|-----------------------------------------------------|
+| `8080` | `/`          | The monitor page                                    |
+| `8080` | `/live`      | The WebSocket that sends the page its frames        |
+| `8080` | `/api/...`   | The queries the page makes for retained invocations |
+| `4318` | `/v1/traces` | The OTLP/HTTP endpoint the applications export to   |
 
-Set `server.servlet.context-path` to serve them under a prefix, such as `/ops/monitor`.
+Each port answers 404 for the other's paths, so a proxy can publish the page without the endpoint. The endpoint has Tomcat threads of its own, so pages never
+take a thread from the exports.
+
+| Property                          | Default       | Meaning                                                                                  |
+|-----------------------------------|---------------|------------------------------------------------------------------------------------------|
+| `server.port`                     | `8080`        | The page's port                                                                          |
+| `server.address`                  | Every address | The address the page's port listens on                                                   |
+| `smd.monitor.hub.otlp.port`       | `4318`        | The OTLP endpoint's port, the standard one of OTLP/HTTP; differs from the page's         |
+| `smd.monitor.hub.otlp.address`    | Every address | The address the OTLP port listens on                                                     |
+| `smd.monitor.hub.allowed-origins` | None          | Origins besides the page's own that may open `/live`, such as `https://monitor.example`  |
+
+Set `server.servlet.context-path` to serve the paths under a prefix, such as `/ops/monitor`, on both ports.
+
+### Run it in Docker
+
+The repository's `Dockerfile` builds the hub and runs it on Java 25:
+
+```shell
+docker build -t smd-monitor-hub .
+docker run -p 127.0.0.1:8080:8080 --memory=1536m --name smd-monitor-hub smd-monitor-hub
+```
+
+Containers on the hub's network export to `http://smd-monitor-hub:4318/v1/traces` without the port being published. The JVM's heap is 75% of the container's
+memory, and the hub warns when the budget exceeds 25% of the heap: give the container about 5.5 times the budget, 1.5 GB for the default `256MB`.
 
 ### Try the demo
 
@@ -110,8 +134,8 @@ topic that the processing groups of the next one read:
   declined, and storefront cancels their orders, which releases their stock.
 - `shipping` schedules a shipment for each captured payment, and storefront emails the customer; about 5% of the shipping labels fail, asynchronously.
 
-Pass `--args="--server.port=8083"` to change the port, and prefix an argument with an application's name, such as `--storefront.smd.demo.orders-per-second=50`,
-to pass it to that application instead of the hub.
+Pass `--args="--server.port=8083 --smd.monitor.hub.otlp.port=4319"` to change the ports, and prefix an argument with an application's name, such as
+`--storefront.smd.demo.orders-per-second=50`, to pass it to that application instead of the hub.
 
 ## Configuration
 
@@ -188,21 +212,24 @@ applications have 200 message types and 50 processing groups each, except the de
 
 - Above these rates the hub first sheds: it still counts every span, but retains or links fewer. Then it answers 503 to the applications whose queues are full.
 - A busy hub keeps a shorter link horizon and history within its budget; a larger budget keeps more. Give a hub of many applications more than the default.
-- The rates leave out decoding requests, which runs on the servlet threads, the network, queries, and frames.
+- The rates leave out decoding requests, which runs on the OTLP port's threads, the network, queries, and frames.
 
 To check these rates on another machine or after a change, run `./gradlew saturationCheck` on an otherwise idle machine (about 30 minutes); it fails naming each row
 that no longer keeps up. [Saturation](monitor-hub-design.md#saturation) describes the runs that find where each shape stops.
 
 ## Secure the hub
 
-The hub has no authentication: whoever reaches it can open the page and send it spans. That is why it listens on the loopback address only. To open it to other
-hosts, put a reverse proxy in front of it, on the same host or on a network only the proxy reaches, and set `server.address` to match:
+The hub has no authentication: whoever reaches the page's port sees every application, and whoever reaches the OTLP port can send it spans. Keep each port to its
+own audience, or set `server.address` and `smd.monitor.hub.otlp.address` to `127.0.0.1` to reach the hub from its own host only:
 
-- Authenticate the operators who open `/`, its assets, `/api`, and the WebSocket handshake at `/live`; all are read-only `GET`s.
-- Let the instances or a Collector reach `POST /v1/traces`. Exporters cannot log in, so restrict it by network, or require headers you configure on the exporter with
-  `management.opentelemetry.tracing.export.otlp.headers`.
-- Forward WebSocket upgrades, keep the `Host` header, send `X-Forwarded-Proto`, and set `server.forward-headers-strategy=native`: the WebSocket only accepts handshakes
-  from the page's own origin. HTTPS pages use `wss:` automatically.
+- **The page's port.** Put a reverse proxy in front of it, on the same host or on a network only the proxy reaches, that authenticates the operators who open `/`,
+  its assets, `/api`, and the WebSocket handshake at `/live`; all are read-only `GET`s. Forward WebSocket upgrades, keep the `Host` header, and send
+  `X-Forwarded-Proto`: the WebSocket only accepts handshakes from the page's own origin. The hub reads forwarded headers from proxies on private addresses only
+  (`server.forward-headers-strategy=native`); set `server.tomcat.remoteip.internal-proxies` for a proxy elsewhere. HTTPS pages use `wss:` automatically.
+  Traefik, Coolify's proxy, forwards the upgrade as `wss`, which hides that the page's origin is the hub's own: list it in `smd.monitor.hub.allowed-origins`,
+  such as `SMD_MONITOR_HUB_ALLOWED_ORIGINS=https://monitor.example.com`.
+- **The OTLP port.** Do not publish it. Exporters cannot log in, so let only the instances or a Collector reach it, on a private network or behind a firewall.
+  Across networks, put a proxy in front of it that requires headers you configure on the exporter with `management.opentelemetry.tracing.export.otlp.headers`.
 
 The page loads no external resources. Payloads, results, principals, custom metadata, exception messages, and stack traces are never recorded: spans carry message
 and parent IDs, class names, thread names, timing, status, and the failure's exception class.

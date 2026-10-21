@@ -1,0 +1,10 @@
+.git
+.gradle
+.idea
+.claude
+build
+docs
+frontend/node_modules
+frontend/.env.local
+**/out
+**/bin
