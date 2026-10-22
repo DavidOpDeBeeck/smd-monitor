@@ -170,6 +170,9 @@ def add_run(data, results_dir, only, name, keep_seconds, step_seconds):
     steps = [step for step in data['steps'] if step['run'] != run_id]
     seconds = [second for second in data['seconds'] if second['run'] != run_id]
     by_scenario = {scenario['scenario']: scenario for scenario in data['scenarios']}
+    # A run kept from before runs recorded their queue capacity takes its scenario's, which every run had then.
+    runs = [run if 'queueSpans' in run or run['scenario'] not in by_scenario else dict(run, queueSpans=by_scenario[run['scenario']]['queueSpans'])
+            for run in runs]
     for result in results:
         rates = [step['rate'] for step in result['steps']]
         runs.append({
@@ -185,6 +188,8 @@ def add_run(data, results_dir, only, name, keep_seconds, step_seconds):
             'failsAs': result['failsAs'],
             'maxOffered': max(rates),
             'maxRate': result['maxRate'],
+            # The spans its intake queues held at most, as its budget sized them; queues that count room in bytes hold this many when names are shared.
+            'queueSpans': result['queueSpans'],
             # The clients a run with -PsaturationClients served its frames to.
             **({'delivery': {field: result['delivery'][field] for field in ['clients', 'slowClients', 'slowCharsPerSecond']}} if 'delivery' in result else {}),
         })

@@ -3,6 +3,7 @@ package app.dodb.smd.monitor.hub;
 import app.dodb.smd.monitor.hub.RecordingInstance.MutableClock;
 import app.dodb.smd.monitor.hub.budget.Budgets;
 import app.dodb.smd.monitor.hub.budget.MemoryBudget;
+import app.dodb.smd.monitor.hub.intake.QueuedBytes;
 import app.dodb.smd.monitor.hub.span.MessageSpan;
 import app.dodb.smd.monitor.hub.span.Outcome;
 import org.junit.jupiter.api.AfterEach;
@@ -91,7 +92,7 @@ class MonitorHubRuntimeTest {
 
     @Test
     void submit_applicationQueueFull_answersBusyForThatApplicationAndAcceptsAnother() {
-        var hub = new MonitorHub(HubConfig.withDefaults().build(), Clock.systemUTC(), Budgets.queuing(2), Long.MAX_VALUE);
+        var hub = new MonitorHub(HubConfig.withDefaults().build(), Clock.systemUTC(), Budgets.queuing(2 * oneSpan()), Long.MAX_VALUE);
         hub.submit(tickets.batch(tickets.dispatch(OPEN)));
 
         var busy = hub.submit(tickets.batch(tickets.dispatch(OPEN), tickets.dispatch(OPEN)));
@@ -103,7 +104,7 @@ class MonitorHubRuntimeTest {
 
     @Test
     void submit_queueTheWriterDrained_acceptsTheApplicationAgain() throws InterruptedException {
-        var hub = new MonitorHub(HubConfig.withDefaults().build(), Clock.systemUTC(), Budgets.queuing(2), Long.MAX_VALUE);
+        var hub = new MonitorHub(HubConfig.withDefaults().build(), Clock.systemUTC(), Budgets.queuing(2 * oneSpan()), Long.MAX_VALUE);
         hub.submit(tickets.batch(tickets.dispatch(OPEN), tickets.dispatch(OPEN)));
         var busy = hub.submit(tickets.batch(tickets.dispatch(OPEN)));
         hub.writer().receiveQueued();
@@ -116,17 +117,16 @@ class MonitorHubRuntimeTest {
 
     @Test
     void submit_refusedByAdmission_answersTheRefusalWithoutQueueingAnything() {
-        var hub = new MonitorHub(HubConfig.withDefaults().maxApplications(1).build(), Clock.systemUTC(), Budgets.queuing(2), Long.MAX_VALUE);
+        var hub = new MonitorHub(HubConfig.withDefaults().maxApplications(1).build(), Clock.systemUTC(), Budgets.generous(), Long.MAX_VALUE);
         hub.submit(tickets.batch(tickets.dispatch(OPEN)));
 
         var refused = hub.submit(billing.batch(billing.dispatch(ASSIGN), billing.dispatch(ASSIGN)));
-        var accepted = hub.submit(tickets.batch(tickets.dispatch(OPEN)));
 
         assertThat(refused).isInstanceOfSatisfying(Submission.Accepted.class, answer -> assertThat(answer.refusal()).hasValueSatisfying(refusal -> {
             assertThat(refusal.spans()).isEqualTo(2);
             assertThat(refusal.reason()).contains("already monitors 1 applications", BILLING.value());
         }));
-        assertThat(accepted).isEqualTo(new Submission.Accepted(Optional.empty()));
+        assertThat(hub.queues().health().queued()).isEqualTo(1);
     }
 
     @Test
@@ -157,7 +157,7 @@ class MonitorHubRuntimeTest {
     @Test
     void tick_applicationRetiredByAdmission_dropsItsStateAndItsQueue() throws InterruptedException {
         var clock = new MutableClock();
-        var hub = new MonitorHub(HubConfig.withDefaults().maxApplications(1).build(), clock, Budgets.queuing(2), Long.MAX_VALUE);
+        var hub = new MonitorHub(HubConfig.withDefaults().maxApplications(1).build(), clock, Budgets.queuing(2 * oneSpan()), Long.MAX_VALUE);
         hub.submit(tickets.batch(tickets.dispatch(OPEN)));
         hub.writer().receiveQueued();
         clock.advance(HubConfig.DEFAULT_RETIRE_AFTER);
@@ -167,6 +167,11 @@ class MonitorHubRuntimeTest {
         assertThat(epoch.statistics().applications()).isEmpty();
         assertThat(retained(epoch)).isEmpty();
         assertThat(hub.submit(billing.batch(billing.dispatch(ASSIGN), billing.dispatch(ASSIGN)))).isEqualTo(new Submission.Accepted(Optional.empty()));
+    }
+
+    // The room a batch of one dispatch takes in the queues.
+    private long oneSpan() {
+        return QueuedBytes.of(tickets.batch(tickets.dispatch(OPEN)));
     }
 
     private void awaitRelease() {

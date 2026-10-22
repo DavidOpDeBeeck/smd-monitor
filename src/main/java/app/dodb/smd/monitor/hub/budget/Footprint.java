@@ -58,11 +58,27 @@ public final class Footprint {
     // A name or stage an application's invocations share, other than a string, with its slot.
     private static final long NAME = HASH_ENTRY + 64;
 
-    // A span waiting in an intake queue, as decoded: its references, IDs, stage, thread name, and outcome.
-    public static final long QUEUED_SPAN = object(8 * REFERENCE) + 2 * (object(2 * REFERENCE) + string(32) + string(16)) + OPTIONAL + MESSAGE_ID
-        + object(2 * REFERENCE) + object(2 * REFERENCE) + string(64) + OPTIONAL + INSTANT + string(48) + object(2 * REFERENCE) + DURATION + REFERENCE;
+    // A span waiting in an intake queue, packed into its batch's columns: its IDs, the span it continues, its message ID, start, and duration; its
+    // kind and flags; and its references to the names its batch holds once each.
+    public static final long QUEUED_SPAN = 10 * LONG + 2 * INT + 2 + 5 * REFERENCE;
+    // A sink send waiting in an intake queue, packed likewise: its IDs and start, and its references to its event's and its delivery's names.
+    public static final long QUEUED_SEND = 4 * LONG + INT + 2 * REFERENCE;
+    private static final int QUEUED_BATCH_FIELDS = 10 * REFERENCE + 2 * INT + LONG;
 
     private Footprint() {
+    }
+
+    // A batch waiting in an intake queue, packed into columns, without the names it holds: the batch, its application, instance, and session, its
+    // columns, and its slot in its queue.
+    public static long queuedBatch(int spans, int sends) {
+        return object(QUEUED_BATCH_FIELDS) + 3 * object(REFERENCE) + longs(10 * spans) + ints(2 * spans) + bytes(2 * spans) + references(5 * spans) + longs(4 * sends)
+            + ints(sends) + references(2 * sends) + REFERENCE + object(REFERENCE + LONG);
+    }
+
+    // A name a queued batch holds once, however many of its spans refer to it, in its own characters: Latin-1 or two bytes each.
+    public static long queuedName(String name) {
+        var latin1 = name.chars().allMatch(character -> character <= 0xFF);
+        return object(REFERENCE + INT + 2) + (ARRAY_HEADER + (long) name.length() * (latin1 ? 1 : 2) + 7) / 8 * 8;
     }
 
     // What an application's invocations share, such as a thread name or an exception type, counted one by one as their length varies.
@@ -73,6 +89,18 @@ public final class Footprint {
     // An array of ints, such as a series of counts per second.
     public static long ints(int length) {
         return (ARRAY_HEADER + (long) INT * length + 7) / 8 * 8;
+    }
+
+    private static long longs(int length) {
+        return ARRAY_HEADER + (long) LONG * length;
+    }
+
+    private static long bytes(int length) {
+        return (ARRAY_HEADER + length + 7) / 8 * 8;
+    }
+
+    private static long references(int length) {
+        return (ARRAY_HEADER + (long) REFERENCE * length + 7) / 8 * 8;
     }
 
     // A string of Latin-1 characters, as the hub's names are.

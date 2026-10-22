@@ -111,7 +111,7 @@ The hub keeps four kinds of state, each with its own lifetime and bound.
 | C1  | The core is a plain single-threaded object without locks. A writer thread and the intake queues wrap it.                                                                                                                                                                                                            |
 | C2  | Admission is synchronous on the receiving thread: application and instance limits, clock skew, and liveness. It answers OTLP partial success exactly.                                                                                                                                                               |
 | C3  | Processing is asynchronous. Spans dropped by shedding are reported in health, not in the OTLP response.                                                                                                                                                                                                             |
-| C4  | Each application has a bounded intake queue, drained round-robin. Half an equal share of the capacity is reserved for each application; the rest is a pool an application borrows from beyond its reserved room, up to half the pool. A full queue answers 503 with `Retry-After` for that application only.        |
+| C4  | Each application has a bounded intake queue, drained round-robin. Half an equal share of the capacity is reserved for each application; the rest is a pool an application borrows from beyond its reserved room, up to half the pool. A full queue answers 503 with `Retry-After` for that application only. A batch waits packed into columns, each of its names held once, and takes the room of the bytes it holds. |
 | C5  | Shedding only beyond an application's reserved room, by the fill of the pool or of the application's half of it behind the batch the writer takes, whichever is fuller: from 50% only failed and slow spans become specimens; from 80% spans are deduplicated but not indexed or joined. Counting is never skipped. |
 | C6  | One epoch per second: one immutable view of catalog, aggregates, specimens, and health, shared by the frame and the queries.                                                                                                                                                                                        |
 | C7  | Building an epoch costs in proportion to what changed: at most one copy of changed array chunks.                                                                                                                                                                                                                    |
@@ -193,8 +193,8 @@ The hub keeps four kinds of state, each with its own lifetime and bound.
 
 | Thread                      | Runs                                                   | Touches                                        |
 |-----------------------------|--------------------------------------------------------|------------------------------------------------|
-| OTLP port threads (export)  | Decoding, `Admission`, `IntakeQueues.offer`            | Admission (own lock), the queues (thread-safe) |
-| `smd-monitor-hub` writer    | Receiving batches, ticking, building epochs            | All mutable state of `Hub`, exclusively        |
+| OTLP port threads (export)  | Decoding, `Admission`, packing, `IntakeQueues.offer`   | Admission (own lock), the queues (thread-safe) |
+| `smd-monitor-hub` writer    | Unpacking, receiving batches, ticking, building epochs | All mutable state of `Hub`, exclusively        |
 | Frame publisher             | Building, diffing, and serializing frames; async sends | The latest two epochs, immutable               |
 | Page port threads (queries) | `Queries` over the latest epoch                        | The epoch, immutable                           |
 
@@ -246,7 +246,7 @@ in 0.8 s instead of 1.9 s, from 14.8 MB of jars instead of 25.7 MB, and loads ha
 |----------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `hub`          | `MonitorHub` (the runtime facade: `submit` returns a sealed `Submission`), `HubConfig`, `Hub` (the core), `HubWriter`, `Epochs`, `Epoch`, `Queries` and its query and answer records                      |
 | `hub.span`     | `MessageSpan`, `SinkSend`, `SpanRef`, `Stage`, `MessageType`, and the names: the records the OTLP adapter builds                                                                                          |
-| `hub.intake`   | `SpanBatch`, `Admission` (limits, skew, liveness), `IntakeQueues`, `Shedding`, `Refusal`                                                                                                                  |
+| `hub.intake`   | `SpanBatch`, `Admission` (limits, skew, liveness), `IntakeQueues`, `QueuedBatch`, `Shedding`, `Refusal`                                                                                                   |
 | `hub.catalog`  | `Catalog` (dense IDs with caps), `Interned`, and the edge keys `CausalLink`, `Crossing`, `GroupLink`, `EventRoute`, `SinkRoute`, `RaisedFailure`                                                          |
 | `hub.counting` | `Counters` with its `Block`s, `Cell`s, and `Totals`; `ArrivalLag`                                                                                                                                         |
 | `hub.join`     | `SpanIndex`, `SpanKey`, `Fact`, `Link`, `Unlinked`                                                                                                                                                        |
@@ -359,7 +359,10 @@ Budgets still missed and work deferred, with the cause found and the levers to t
   40% of the writer at 500 applications, spread over a lookup per key in each structure). Generational ZGC removed the tick's pause tail but cost the writer
   0.1 to 0.3 cores and lowered the limits; G1 stays.
 - **Small budgets with many applications.** The queues' 10% split equally leaves small shares, so bunched exports shed a little with the writer below half busy.
-  Lever: say in `monitor.md` how the budget should grow with the applications.
+  Already done: a batch waits packed into columns, each of its names once, and takes the room of the bytes it holds, about 110 bytes a span instead of the
+  470 its decoded objects took, so a 256 MB budget's queues hold about 244,000 spans rather than 36,000; at 50 applications the 256 MB scenario now keeps up
+  with 300,000 spans per second instead of 100,000. Lever, should it return at smaller budgets: say in `monitor.md` how the budget should grow with the
+  applications.
 - **The publisher at 500 applications** writes a delta in about 1.5 seconds under load, so pages miss frames, and its garbage lengthens the collections that
   pause the writer. Already done: the delta keys records by the values that name them rather than by text, and latency figures round their nanoseconds as
   integers rather than through an exact decimal. Together they took a quarter of a frame and over half the publisher's garbage, whose collections paused the

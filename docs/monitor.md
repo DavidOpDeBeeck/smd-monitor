@@ -174,8 +174,8 @@ history totals move in 10-second steps. A long window or history costs every pag
 
 The hub estimates everything it keeps against `smd.monitor.hub.memory`, by a fixed size per record kind. Roughly: a retained invocation takes 540 bytes, plus 380 for
 its trace and 140 for its parent's summary; a span the hub no longer retains takes 300 bytes in the link index until it leaves the horizon; a count of one type,
-group, or instance in one second takes 72 bytes, and of an arrow or failure cause 16. Measured at the design target, the heap the hub took stayed within 7% of its
-estimate and below the budget.
+group, or instance in one second takes 72 bytes, and of an arrow or failure cause 16. A span waiting in an intake queue takes 110 bytes, packed with the rest of
+its export, which holds each of its names once. Measured at the design target, the heap the hub took stayed within 7% of its estimate and below the budget.
 
 The budget is split by fixed ceilings: the intake queues up to 10%, counting up to 50%, the link index up to 25%, and retained invocations whatever those leave.
 The link index and the retained invocations are shared fairly: an application may borrow what others do not use, and the one furthest above its share gives way

@@ -69,7 +69,7 @@ public final class MemoryBudget {
         return Math.max(0, Math.min(specimens, total - queues - counted - joined));
     }
 
-    // The spans the intake queues hold in all.
+    // The spans the intake queues hold in all when each batch's spans share their names, as an instance's do; a batch takes the bytes it holds.
     public int queuedSpans() {
         return (int) Math.clamp(queues / Footprint.QUEUED_SPAN, 1, Integer.MAX_VALUE);
     }

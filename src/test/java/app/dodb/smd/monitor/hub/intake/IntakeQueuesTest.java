@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class IntakeQueuesTest {
 
@@ -31,7 +32,7 @@ class IntakeQueuesTest {
 
     @Test
     void drain_batchesOfTwoApplications_takesThemRoundRobinAndEachInOrder() throws InterruptedException {
-        var queues = new IntakeQueues(100);
+        var queues = spans(100);
         var tickets = List.of(batch(TICKETS, 1), batch(TICKETS, 1), batch(TICKETS, 1));
         var billing = List.of(batch(BILLING, 1), batch(BILLING, 1));
         tickets.forEach(queues::offer);
@@ -44,7 +45,7 @@ class IntakeQueuesTest {
 
     @Test
     void offer_burstBeyondTheReservedRoomWhileTheOthersAreQuiet_isTakenFromThePool() {
-        var queues = new IntakeQueues(40);
+        var queues = spans(40);
         queues.offer(batch(BILLING, 1));
         queues.offer(batch(TICKETS, 10));
 
@@ -57,7 +58,7 @@ class IntakeQueuesTest {
 
     @Test
     void offer_applicationBorrowingHalfThePool_isRefusedWhileTheOthersStillBorrow() {
-        var queues = new IntakeQueues(40);
+        var queues = spans(40);
         queues.offer(batch(BILLING, 1));
         queues.offer(batch(TICKETS, 10));
         queues.offer(batch(TICKETS, 10));
@@ -72,7 +73,7 @@ class IntakeQueuesTest {
 
     @Test
     void offer_poolSpent_refusesBorrowingButTakesBatchesWithinTheReservedRoom() {
-        var queues = new IntakeQueues(60);
+        var queues = spans(60);
         queues.offer(batch(TICKETS, 10));
         queues.offer(batch(BILLING, 10));
         queues.offer(batch(SHIPPING, 1));
@@ -89,7 +90,7 @@ class IntakeQueuesTest {
 
     @Test
     void offer_applicationsBorrowingUntilRefused_holdAtMostTheCapacity() {
-        var queues = new IntakeQueues(100);
+        var queues = spans(100);
 
         for (var round = 0; round < 50; round++) {
             for (var application : List.of(TICKETS, BILLING, SHIPPING)) {
@@ -103,7 +104,7 @@ class IntakeQueuesTest {
 
     @Test
     void offer_batchLargerThanTheShareIntoAnEmptyQueue_isTaken() {
-        var queues = new IntakeQueues(10);
+        var queues = spans(10);
 
         var taken = queues.offer(batch(TICKETS, 25));
 
@@ -113,7 +114,7 @@ class IntakeQueuesTest {
 
     @Test
     void offer_drainedQueue_takesBatchesAgain() throws InterruptedException {
-        var queues = new IntakeQueues(10);
+        var queues = spans(10);
         queues.offer(batch(TICKETS, 10));
         drainAll(queues);
 
@@ -124,7 +125,7 @@ class IntakeQueuesTest {
 
     @Test
     void drain_applicationBorrowingMore_shedsMoreAsItBorrows() throws InterruptedException {
-        var queues = new IntakeQueues(40);
+        var queues = spans(40);
         IntStream.range(0, 30).forEach(ignored -> queues.offer(batch(TICKETS, 1)));
 
         var sheddings = new ArrayList<Shedding>();
@@ -139,7 +140,7 @@ class IntakeQueuesTest {
 
     @Test
     void drain_poolFillingUp_shedsTheBorrowingApplications() throws InterruptedException {
-        var queues = new IntakeQueues(120);
+        var queues = spans(120);
         for (var application : List.of(TICKETS, BILLING, SHIPPING)) {
             queues.offer(batch(application, 1));
             queues.offer(batch(application, 20));
@@ -153,7 +154,7 @@ class IntakeQueuesTest {
 
     @Test
     void drain_fewBatchesBehindWhileThePoolIsMostlyFree_isNotShed() throws InterruptedException {
-        var queues = new IntakeQueues(200);
+        var queues = spans(200);
         queues.offer(batch(BILLING, 1));
         queues.offer(batch(TICKETS, 1));
         queues.offer(batch(TICKETS, 30));
@@ -167,7 +168,7 @@ class IntakeQueuesTest {
 
     @Test
     void drain_loneBatchBeyondTheReservedRoom_isNotShed() throws InterruptedException {
-        var queues = new IntakeQueues(10);
+        var queues = spans(10);
         queues.offer(batch(TICKETS, 8));
 
         var drained = queues.drain(Duration.ZERO);
@@ -177,7 +178,7 @@ class IntakeQueuesTest {
 
     @Test
     void retire_emptyQueueOfARetiredApplication_returnsItsShareToTheOthers() throws InterruptedException {
-        var queues = new IntakeQueues(20);
+        var queues = spans(20);
         queues.offer(batch(BILLING, 1));
         queues.offer(batch(TICKETS, 10));
         assertThat(queues.offer(batch(TICKETS, 1))).isFalse();
@@ -190,7 +191,7 @@ class IntakeQueuesTest {
 
     @Test
     void health_batchesDrainedAndOfferedSince_countsTheDrainedSpansSinceTheStart() throws InterruptedException {
-        var queues = new IntakeQueues(100);
+        var queues = spans(100);
         queues.offer(batch(TICKETS, 3));
         queues.offer(batch(BILLING, 2));
         drainAll(queues);
@@ -206,11 +207,64 @@ class IntakeQueuesTest {
 
     @Test
     void drain_nothingQueued_returnsEmptyOnceTheWaitEnds() throws InterruptedException {
-        var queues = new IntakeQueues(10);
+        var queues = spans(10);
 
         var drained = queues.drain(Duration.ofMillis(1));
 
         assertThat(drained).isEmpty();
+    }
+
+    @Test
+    void offer_capacityInBytes_takesTheReservedRoomAndHalfThePoolInPackedBytes() {
+        var room = QueuedBatch.of(batch(TICKETS, 10)).bytes();
+        var queues = new IntakeQueues(4 * room);
+        queues.offer(batch(TICKETS, 10));
+        queues.offer(batch(TICKETS, 10));
+
+        var halfThePool = queues.offer(batch(TICKETS, 10));
+        var beyondHalf = queues.offer(batch(TICKETS, 10));
+
+        assertThat(halfThePool).isTrue();
+        assertThat(beyondHalf).isFalse();
+        assertThat(queues.health().queuedBytes()).isEqualTo(3 * room);
+    }
+
+    @Test
+    void health_queuedBatches_holdTheBytesOfTheirPackedForm() throws InterruptedException {
+        var queues = new IntakeQueues(1_000_000);
+        var first = batch(TICKETS, 3);
+        var second = batch(BILLING, 5);
+        queues.offer(first);
+        queues.offer(second);
+        queues.drain(Duration.ZERO);
+
+        var health = queues.health();
+
+        assertThat(health.queued()).isEqualTo(5);
+        assertThat(health.queuedBytes()).isEqualTo(QueuedBatch.of(second).bytes());
+    }
+
+    @Test
+    void drain_packedBatch_returnsTheBatchAsOffered() throws InterruptedException {
+        var queues = new IntakeQueues(1_000_000);
+        var batch = batch(TICKETS, 3);
+        queues.offer(batch);
+
+        var drained = queues.drain(Duration.ZERO);
+
+        assertThat(drained).hasValueSatisfying(taken -> assertThat(taken.batch()).isEqualTo(batch));
+    }
+
+    @Test
+    void constructor_capacityBelowOneByte_isRejected() {
+        assertThatThrownBy(() -> new IntakeQueues(0))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("at least 1 byte", "got 0");
+    }
+
+    // Queues that weigh a batch by its spans and sends, as the policy tests count.
+    private static IntakeQueues spans(long capacity) {
+        return new IntakeQueues(capacity, QueuedBatch::size);
     }
 
     private static List<SpanBatch> drainAll(IntakeQueues queues) throws InterruptedException {
