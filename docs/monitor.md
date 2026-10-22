@@ -390,7 +390,8 @@ another build.
 
 **Queries.** The page asks for retained invocations under `/api` (`tape`, `traces`, `failures`, `timeline`, `invocations`, `types`), for how
 messages flow (`flow`) while the flow view or the live lanes show it, and for what each group's handlings counted (`handlings`) while a group is
-expanded or the failures or flow view shows them, and asks again with every
+expanded or the failures or flow view shows them, and for the failure causes the overview or the failures view lists (`causes`), ranked by the hub,
+and asks again with every
 frame while it is visible; a hidden tab asks nothing until it shows again. Every answer but the timeline's, which moves with the clock, carries an ETag of
 its content, which the page sends back, so an answer that did not change answers 304 and the page renders nothing again. The trace list and the tape ask again for their first 100 only: read from the top,
 that is the list; scrolled further down, it replaces the top while the rest stays as loaded until the list is read from the top again. Identical queries of one epoch are answered once for every page. At most 16

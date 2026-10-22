@@ -27,9 +27,9 @@ import static app.dodb.smd.monitor.json.FrameView.p95Millis;
 // within, routes, sink routes, and group links are only the flow view's and the live lanes', so the flow query answers them (FlowView). The
 // failed received
 // counts every failed invocation the hub received since it started; the event delay is the p95 over every handling of the window, or null
-// when none ran asynchronously. Its failures count every failed invocation under its own stage and exception type, those of the history
-// listed; other sums what the application counted beyond its caps. The seconds of the window from provisional-from on may still grow, as the
-// application's spans arrive that late.
+// when none ran asynchronously. Its failure causes come with the causes query (CausesView), as a page shows only the first few; other sums
+// what the application counted beyond its caps. The seconds of the window from provisional-from on may still grow, as the application's spans
+// arrive that late.
 public record ApplicationView(String name,
                               long failedReceived,
                               List<InstanceView> instances,
@@ -42,7 +42,6 @@ public record ApplicationView(String name,
                               List<KindView> kinds,
                               List<Long> enteredPerSecond,
                               List<Long> failedPerSecond,
-                              List<FailureView> failures,
                               OtherView other,
                               long provisionalFromEpochSecond) {
 
@@ -55,7 +54,7 @@ public record ApplicationView(String name,
             statistics.groups().stream().map(GroupView::from).toList(), statistics.crossings().stream().map(CrossingView::from).toList(),
             BriefView.from(statistics.dispatches()),
             BriefView.from(statistics.handlings()), p95Millis(statistics.eventDelay()), kinds, statistics.enteredPerSecond(), statistics.failedPerSecond(),
-            statistics.failures().stream().map(FailureView::from).toList(), OtherView.from(statistics.other()),
+            OtherView.from(statistics.other()),
             statistics.provisionalFrom().getEpochSecond());
     }
 
@@ -123,19 +122,6 @@ public record ApplicationView(String name,
     }
 
     public record KindView(String kind, BriefView window, List<Long> startedPerSecond) {
-    }
-
-    // The processing group is null for a dispatch, and only an event has handlings. A failure idle in the window has no seconds.
-    public record FailureView(String kind, String type, boolean handling, String processingGroup, String failureType, long window, long history,
-                              List<Long> windowPerSecond) {
-
-        static FailureView from(RaisedFailureStatistics statistics) {
-            var stage = statistics.failure().stage();
-            var type = stage.type();
-            return new FailureView(type.kind().name(), type.name(), stage instanceof Stage.Handling,
-                stage instanceof Stage.Handling handling ? handling.processingGroup() : null, statistics.failure().failureType(),
-                statistics.window(), statistics.history(), statistics.windowPerSecond());
-        }
     }
 
     // What the application counted beyond its caps: the dispatches and handlings of the types and processing groups it did not keep apart, and

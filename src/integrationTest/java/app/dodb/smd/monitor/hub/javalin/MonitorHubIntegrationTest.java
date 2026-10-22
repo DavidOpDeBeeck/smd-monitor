@@ -247,6 +247,22 @@ class MonitorHubIntegrationTest {
     }
 
     @Test
+    void api_causes_answersTheRankedCausesAndHowManyFailed() throws Exception {
+        var response = query("/api/causes?order=ranked&limit=20");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(new ObjectMapper().readTree(response.body()).propertyNames()).containsExactly("hubSession", "sequence", "total", "causes");
+    }
+
+    @Test
+    void api_causesInAnUnknownOrder_answersABadRequestNamingTheOrders() throws Exception {
+        var response = query("/api/causes?order=newest");
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(response.body()).contains("recent or ranked", "newest");
+    }
+
+    @Test
     void api_typeNotNamedAsAType_answersABadRequestWithContext() throws Exception {
         var response = query("/api/types?type=OpenTicket");
 

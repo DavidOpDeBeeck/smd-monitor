@@ -21,6 +21,7 @@ import type {
     WireApplication,
     WireApplicationHealth,
     WireBrief,
+    WireCauses,
     WireHealth,
     WireInstance,
     WireLink,
@@ -114,8 +115,6 @@ export interface ApplicationState {
     handlings: ReadonlyMap<HandlingKey, HandlingStatistics>;
     // Into this application's types from a parent type of another application.
     crossings: readonly Link[];
-    // Every failed invocation by its stage and exception type, once for every message it failed.
-    failures: readonly FailureCount[];
     other: OtherCounts;
     // The seconds of the window from this moment on may still grow, as the application's spans arrive that late.
     provisionalFrom: number;
@@ -248,6 +247,38 @@ export function flowFailures(flow: WireFlow | null): ReadonlyMap<TypeKey, readon
     );
 }
 
+export interface Causes {
+    // That match the query, of which it answered the first.
+    total: number;
+    causes: readonly FailureCount[];
+}
+
+export const NO_CAUSES: Causes = { total: 0, causes: [] };
+
+// The failure causes from the causes query's answer, in its order, or none before it answered.
+export function causes(answer: WireCauses | null): Causes {
+    if (!answer) return NO_CAUSES;
+    return {
+        total: answer.total,
+        causes: answer.causes.map(cause => {
+            const type = typeKey(cause.application, cause.kind, cause.type);
+            return {
+                key: failureKey(type, cause.handling, cause.processingGroup, cause.failureType),
+                application: cause.application,
+                typeKey: type,
+                kind: cause.kind,
+                messageType: cause.type,
+                handling: cause.handling,
+                processingGroup: cause.processingGroup,
+                failureType: cause.failureType,
+                window: cause.window,
+                history: cause.history,
+                windowPerSecond: cause.windowPerSecond,
+            };
+        }),
+    };
+}
+
 // What each handling counted, by its key, from the handlings query's answer, or nothing before it answered.
 export function handlingFigures(answer: WireHandlings | null): ReadonlyMap<HandlingKey, HandlingFigures> {
     return new Map(
@@ -321,22 +352,6 @@ function applicationState(application: WireApplication, health: WireApplicationH
         groups,
         handlings: new Map(groups.flatMap(group => group.handlings.map(handling => [handling.key, handling]))),
         crossings: application.crossings.map(crossing => linkOf(crossing.link, crossing.parentApplication)),
-        failures: application.failures.map(failure => {
-            const type = typeKey(name, failure.kind, failure.type);
-            return {
-                key: failureKey(type, failure.handling, failure.processingGroup, failure.failureType),
-                application: name,
-                typeKey: type,
-                kind: failure.kind,
-                messageType: failure.type,
-                handling: failure.handling,
-                processingGroup: failure.processingGroup,
-                failureType: failure.failureType,
-                window: failure.window,
-                history: failure.history,
-                windowPerSecond: failure.windowPerSecond,
-            };
-        }),
         other: otherCounts(application.other),
         provisionalFrom: application.provisionalFromEpochSecond * 1000,
         totals: {

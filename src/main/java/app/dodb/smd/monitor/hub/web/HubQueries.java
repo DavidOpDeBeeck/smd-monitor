@@ -4,12 +4,14 @@ import app.dodb.smd.monitor.hub.Epoch;
 import app.dodb.smd.monitor.hub.InvocationFilter;
 import app.dodb.smd.monitor.hub.InvocationId;
 import app.dodb.smd.monitor.hub.MonitorHub;
+import app.dodb.smd.monitor.hub.RaisedFailureStatistics;
 import app.dodb.smd.monitor.hub.TapeQuery;
 import app.dodb.smd.monitor.hub.TimelineQuery;
 import app.dodb.smd.monitor.hub.TraceOrder;
 import app.dodb.smd.monitor.hub.TraceQuery;
 import app.dodb.smd.monitor.hub.TypeSelection;
 import app.dodb.smd.monitor.hub.span.ApplicationName;
+import app.dodb.smd.monitor.json.CausesView;
 import app.dodb.smd.monitor.json.DurationsView;
 import app.dodb.smd.monitor.json.FailureCausesView;
 import app.dodb.smd.monitor.json.FlowView;
@@ -29,6 +31,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
@@ -118,6 +121,35 @@ public final class HubQueries {
         var selected = QueryNames.type(required("type", type));
         return answer(List.of("types", selected), epoch -> versioned(RetainedTypeView.from(epoch.session(), epoch.type(selected), epoch.history(selected),
             selected, epoch.statistics().applications())));
+    }
+
+    // The failure causes of every application, or of the one the scope names, ranked as a view shows them: recent, those that failed in the
+    // window, the most first; ranked, those that failed over the history, the most in the window first, then over the history. The limit bounds the
+    // causes answered, not the total counted.
+    public QueryAnswer causes(String scope, String order, String limit) {
+        var application = Optional.ofNullable(scope).map(ApplicationName::new);
+        var recent = switch (required("order", order)) {
+            case "recent" -> true;
+            case "ranked" -> false;
+            default -> throw new IllegalArgumentException("The query parameter order must be recent or ranked; got '" + order + "'");
+        };
+        var count = limit(limit);
+        return answer(List.of("causes", application, recent, count), epoch -> {
+            record Counted(ApplicationName application, RaisedFailureStatistics failure) {
+            }
+            var counted = epoch.statistics().applications().stream()
+                .filter(statistics -> application.isEmpty() || application.get().equals(statistics.application()))
+                .flatMap(statistics -> statistics.failures().stream().map(failure -> new Counted(statistics.application(), failure)))
+                .filter(each -> recent ? each.failure().window() > 0 : each.failure().history() > 0)
+                .sorted(Comparator.comparingLong((Counted each) -> each.failure().window()).reversed()
+                    .thenComparing(Comparator.comparingLong((Counted each) -> each.failure().history()).reversed())
+                    .thenComparing(each -> each.application().value())
+                    .thenComparing(each -> each.failure().failure().stage().type().name())
+                    .thenComparing(each -> each.failure().failure().failureType()))
+                .toList();
+            return versioned(new CausesView(epoch.session().toString(), epoch.sequence(), counted.size(),
+                counted.stream().limit(count).map(each -> CausesView.CauseView.from(each.application(), each.failure())).toList()));
+        });
     }
 
     // What each processing group's handlings counted, in every application or in the one the scope names, for an expanded group, the failures

@@ -149,15 +149,22 @@ export interface WireApplication {
     kinds: WireKind[];
     enteredPerSecond: number[];
     failedPerSecond: number[];
-    // Every failed invocation counted under its own stage and exception type, once for every message it failed.
-    failures: WireFailure[];
+    // Its failure causes come with the causes query (WireCauses).
     other: WireOther;
     // The seconds of the window from this one on may still grow, as the application's spans arrive that late.
     provisionalFromEpochSecond: number;
 }
 
-// The processing group is null for a dispatch, and only an event has handlings. A failure idle in the window has no seconds.
-export interface WireFailure {
+// The failure causes a view shows, in the order it asked for, out of the total that match: each a stage failing with one exception type, counted
+// once for every message it failed. The frame leaves them out, as a page shows only the first few.
+export interface WireCauses extends WireAnswer {
+    total: number;
+    causes: WireCause[];
+}
+
+// The processing group is null for a dispatch, and only an event has handlings. A cause idle in the window has no seconds.
+export interface WireCause {
+    application: string;
     kind: MessageKind;
     type: string;
     handling: boolean;

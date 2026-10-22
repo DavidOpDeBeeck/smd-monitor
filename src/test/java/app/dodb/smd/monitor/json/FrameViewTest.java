@@ -119,7 +119,7 @@ class FrameViewTest {
             "specimens", "retained", "completeSinceMillis", "oldestRetainedMillis", "effectiveHorizonSeconds", "slowestK", "failuresK");
         assertThat(frame.get("applications").get(0).propertyNames()).containsExactly("name", "failedReceived", "instances", "types", "groups",
             "crossings", "dispatches", "handlings", "eventDelayP95Millis", "kinds", "enteredPerSecond", "failedPerSecond",
-            "failures", "other", "provisionalFromEpochSecond");
+            "other", "provisionalFromEpochSecond");
         assertThat(frame.get("applications").get(0).get("instances").get(0).propertyNames()).containsExactly("name", "sessionId", "lastReportedAtMillis",
             "silent", "clockAhead", "exportLagMillis", "dispatches", "handlings");
         assertThat(frame.get("applications").get(0).get("other").propertyNames()).containsExactly("dispatchWindow", "dispatchHistory", "handlingWindow",
@@ -175,20 +175,6 @@ class FrameViewTest {
         assertThat(type.get("window").get(9).asDouble()).isEqualTo(2.0);
         assertThat(type.get("history").size()).isEqualTo(5);
         assertThat(type.get("history").valueStream().limit(4).map(JsonNode::asString)).containsExactly("1", "1", "0", "1");
-    }
-
-    @Test
-    void from_failedHandling_countsTheFailureUnderItsStageAndExceptionTypeWithItsSeconds() {
-        hub.receive(new SpanBatch(TICKETS, new InstanceName("tickets-1"), new SessionId("session-1"), List.of(
-            span("0000000000000001", Optional.empty(), MessageId.generate(), new Stage.Handling(EVENT, "ticket-view"),
-                new Outcome.Failed(Duration.ofMillis(1), "java.lang.IllegalStateException"))), List.of()));
-
-        var failure = json(OptionalLong.of(HEAP)).get("applications").get(0).get("failures").get(0);
-
-        assertThat(failure.propertyNames()).containsExactly("kind", "type", "handling", "processingGroup", "failureType", "window", "history", "windowPerSecond");
-        assertThat(failure.get("processingGroup").asString()).isEqualTo("ticket-view");
-        assertThat(failure.get("window").asLong()).isEqualTo(1);
-        assertThat(failure.get("windowPerSecond").valueStream().mapToLong(JsonNode::asLong).sum()).isEqualTo(1);
     }
 
     @Test

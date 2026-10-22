@@ -324,6 +324,77 @@ class HubQueriesTest {
         assertThat(invoice.get("incoming").get(0).get("parent").get("name").asString()).isEqualTo("OpenTicket");
     }
 
+    @Test
+    void causes_failedHandling_answersItsStageExceptionTypeAndSeconds() {
+        receive(failed("0000000000000001", new Stage.Handling(new MessageType(MessageKind.EVENT, "TicketOpened"), "ticket-view"), settled()));
+
+        var answer = mapper.readTree(queries.causes(null, "recent", null).body());
+
+        var cause = answer.get("causes").get(0);
+        assertThat(answer.get("total").asInt()).isEqualTo(1);
+        assertThat(cause.propertyNames()).containsExactly("application", "kind", "type", "handling", "processingGroup", "failureType", "window", "history",
+            "windowPerSecond");
+        assertThat(cause.get("application").asString()).isEqualTo("tickets");
+        assertThat(cause.get("processingGroup").asString()).isEqualTo("ticket-view");
+        assertThat(cause.get("window").asLong()).isEqualTo(1);
+        assertThat(cause.get("windowPerSecond").valueStream().mapToLong(JsonNode::asLong).sum()).isEqualTo(1);
+    }
+
+    @Test
+    void causes_recentWithALimit_answersTheMostFailedInTheWindowFirstOutOfAllThatFailed() {
+        receive(failed("0000000000000001", new Stage.Dispatch(new MessageType(MessageKind.COMMAND, "OpenTicket")), settled()));
+        receive(failed("0000000000000002", new Stage.Dispatch(new MessageType(MessageKind.COMMAND, "CloseTicket")), settled()));
+        receive(failed("0000000000000003", new Stage.Dispatch(new MessageType(MessageKind.COMMAND, "CloseTicket")), settled()));
+
+        var answer = mapper.readTree(queries.causes(null, "recent", "1").body());
+
+        assertThat(answer.get("total").asInt()).isEqualTo(2);
+        assertThat(answer.get("causes").size()).isEqualTo(1);
+        assertThat(answer.get("causes").get(0).get("type").asString()).isEqualTo("CloseTicket");
+    }
+
+    // The overview lists what fails now, the failures view what failed over the history.
+    @Test
+    void causes_failedOnlyBeforeTheWindow_answersItRankedButNotRecent() {
+        receive(failed("0000000000000001", new Stage.Dispatch(new MessageType(MessageKind.COMMAND, "OpenTicket")), Instant.now().minusSeconds(120)));
+
+        var recent = mapper.readTree(queries.causes(null, "recent", null).body());
+        var ranked = mapper.readTree(queries.causes(null, "ranked", null).body());
+
+        assertThat(recent.get("total").asInt()).isZero();
+        assertThat(ranked.get("total").asInt()).isEqualTo(1);
+        assertThat(ranked.get("causes").get(0).get("history").asLong()).isEqualTo(1);
+    }
+
+    @Test
+    void causes_scopeNamingAnApplication_answersThatApplicationsCausesOnly() {
+        receive(TICKETS, failed("0000000000000001", new Stage.Dispatch(new MessageType(MessageKind.COMMAND, "OpenTicket")), settled()));
+        receive(BILLING, failed("0000000000000002", new Stage.Dispatch(new MessageType(MessageKind.COMMAND, "CreateInvoice")), settled()));
+
+        var causes = mapper.readTree(queries.causes("billing", "recent", null).body()).get("causes");
+
+        assertThat(causes.size()).isEqualTo(1);
+        assertThat(causes.get(0).get("application").asString()).isEqualTo("billing");
+    }
+
+    @Test
+    void causes_unknownOrder_failsNamingTheOrders() {
+        hub.epoch();
+
+        assertThatThrownBy(() -> queries.causes(null, "newest", null))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("The query parameter order must be recent or ranked; got 'newest'");
+    }
+
+    @Test
+    void causes_orderMissing_failsNamingTheParameter() {
+        hub.epoch();
+
+        assertThatThrownBy(() -> queries.causes(null, null, null))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("order");
+    }
+
     private void receive(MessageSpan span) {
         receive(TICKETS, span);
     }
@@ -339,6 +410,17 @@ class HubQueriesTest {
             // Old enough that its second settled into the history.
             Instant.now().minusSeconds(10), "main",
             new Outcome.Completed(Duration.ofMillis(1)));
+    }
+
+    // Old enough that its second settled into the counts.
+    private static Instant settled() {
+        return Instant.now().minusSeconds(10);
+    }
+
+    private static MessageSpan failed(String spanId, Stage stage, Instant startedAt) {
+        var delivery = stage instanceof Stage.Handling ? Optional.of(EventDelivery.SYNC) : Optional.<EventDelivery>empty();
+        return new MessageSpan(SpanRef.of(TRACE, spanId), Optional.empty(), MessageId.generate(), stage, delivery, startedAt, "main",
+            new Outcome.Failed(Duration.ofMillis(1), "java.lang.IllegalStateException"));
     }
 
     private static MessageSpan span(String spanId, Optional<String> continues) {

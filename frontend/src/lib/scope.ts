@@ -1,7 +1,7 @@
 import { parseTypeKey, perKind } from './format';
 import { EMPTY_TOTALS, NO_OTHER, type ApplicationState, type InstanceState, type MonitorState, type Totals } from './state';
 import { sumSeries } from './throughput';
-import type { Brief, FailureCount, GroupStatistics, HandlingKey, HandlingStatistics, Link, OtherCounts, TypeKey, TypeStatistics } from './types';
+import type { Brief, GroupStatistics, HandlingKey, HandlingStatistics, Link, OtherCounts, TypeKey, TypeStatistics } from './types';
 
 // What the page shows: the whole system when application is null, or else that one application.
 export interface ScopedState {
@@ -12,7 +12,6 @@ export interface ScopedState {
     groups: readonly GroupStatistics[];
     handlings: ReadonlyMap<HandlingKey, HandlingStatistics>;
     instances: readonly InstanceState[];
-    failures: readonly FailureCount[];
     other: OtherCounts;
     // The seconds from this moment on may still grow in some application in scope, or null without applications.
     provisionalFrom: number | null;
@@ -31,7 +30,6 @@ export function scopedState(state: MonitorState, scope: string | null): ScopedSt
         groups: applications.flatMap(application => application.groups),
         handlings: new Map(applications.flatMap(application => [...application.handlings])),
         instances: applications.flatMap(application => application.instances),
-        failures: applications.flatMap(application => application.failures),
         other: combineOther(applications.map(application => application.other)),
         provisionalFrom: applications.length ? Math.min(...applications.map(application => application.provisionalFrom)) : null,
         totals: combineTotals(applications.map(application => application.totals)),

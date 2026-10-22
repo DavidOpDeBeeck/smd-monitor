@@ -59,7 +59,8 @@ public class UiServer implements AutoCloseable {
                 .get("/api/invocations", ctx -> answer(ctx, queries.invocations(ctx.queryParam("scope"), ctx.queryParam("messageIdPrefix"), ctx.queryParam("limit"))))
                 .get("/api/types", ctx -> answer(ctx, queries.type(ctx.queryParam("type"))))
                 .get("/api/flow", ctx -> answer(ctx, queries.flow(ctx.queryParam("scope"))))
-                .get("/api/handlings", ctx -> answer(ctx, queries.handlings(ctx.queryParam("scope"))));
+                .get("/api/handlings", ctx -> answer(ctx, queries.handlings(ctx.queryParam("scope"))))
+                .get("/api/causes", ctx -> answer(ctx, queries.causes(ctx.queryParam("scope"), ctx.queryParam("order"), ctx.queryParam("limit"))));
             config.routes.wsBeforeUpgrade(LIVE, ctx -> {
                 if (!Origins.allowed(ctx.header("Origin"), ctx.host(), settings.allowedOrigins())) {
                     throw new ForbiddenResponse();

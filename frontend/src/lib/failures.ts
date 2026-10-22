@@ -63,16 +63,6 @@ export function causeExamples(cause: WireFailureCause): CauseExamples {
 // Whether the cause raised the failure itself in a chain, by the heuristic that a failed parent propagated its failed child's failure.
 export const raisedHere = (chain: FailureChain) => chain.causeAt === chain.steps.length - 1;
 
-// The causes that failed something over the history, the most frequent in the window first, then over the history.
-export function rankedCauses(failures: readonly FailureCount[]): FailureCount[] {
-    return failures.filter(failure => failure.history > 0).sort((a, b) => b.window - a.window || b.history - a.history || a.key.localeCompare(b.key));
-}
-
-// The causes that failed something in the window, the most frequent first.
-export function recentCauses(failures: readonly FailureCount[]): FailureCount[] {
-    return failures.filter(failure => failure.window > 0).sort((a, b) => b.window - a.window || a.key.localeCompare(b.key));
-}
-
 export interface ApplicationFailures {
     application: string;
     causes: FailureCount[];
