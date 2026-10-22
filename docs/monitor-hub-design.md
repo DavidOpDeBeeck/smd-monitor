@@ -161,7 +161,7 @@ The hub keeps four kinds of state, each with its own lifetime and bound.
 
 | ID | Rule                                                                                                                                                   |
 |----|--------------------------------------------------------------------------------------------------------------------------------------------------------|
-| W1 | One system-wide frame per epoch over the WebSocket. Scope stays on the client.                                                                         |
+| W1 | One system-wide frame over the WebSocket every epoch for up to 16 clients, every second epoch up to 32, and so on, at most every fifth; a page's queries follow its frames. Scope stays on the client. |
 | W2 | Frames are deltas against the previous epoch, found by comparing two immutable snapshots. Each names its `epoch` and `base`.                           |
 | W3 | A snapshot goes to a client on connect and to any client more than three frames behind; one that skipped fewer receives the changes since the frame it holds. Each message is serialized at most once per epoch, as UTF-8, and shared. |
 | W4 | JSON, compressed by `permessage-deflate`. Statistics travel as arrays of figures in a fixed order.                                                     |
@@ -227,7 +227,7 @@ Per tick, after each second:
 | Invocations per trace    | 10,000                                 |
 | Concurrent queries       | 16                                     |
 | Cached answers per epoch | 256                                    |
-| WebSocket clients        | 64, with a 5 s send timeout            |
+| WebSocket clients        | 128, with a 5 s send timeout           |
 | Specimen chunk           | 4,096                                  |
 | Request body             | 16 MB, inflated or not                 |
 | `Retry-After`            | 2 s                                    |
@@ -346,7 +346,9 @@ viewing, so the hub's heap and collections are its own: each reads the frames ov
 view's query over HTTP whenever it reads a newer frame, as the page does (`SaturationPages`). The pages take the tape, the traces, the failures of the
 scope's 20 most frequent causes, and the timeline of the last minute in turn; the first four ask of the whole system and each later one of one
 application, so no two share an answer (W5) unless they share a view and a scope. For these runs the publisher takes any number of clients, and
-`-PsaturationQueryCap` sets how many queries run at once in place of C9's 4. Per step the run reports the queries, those answered 429 or timed out,
+`-PsaturationQueryCap` sets how many queries run at once in place of C9's limit. `-PsaturationFrameInterval=5` has the publisher send a frame every 5 seconds in place of every epoch, to explore a slower tick: in a ladder at 16 queries at
+once on 2026-10-22, ingest then kept up through 128 viewers where it fell behind from 48 with a frame every second, as building, sending, and the
+queries pages ask after each frame all fell to a fifth. Per step the run reports the queries, those answered 429 or timed out,
 which leave a page with its last answer, the time to an answer, and the cores the viewers' JVM used, which shares the machine with the hub.
 
 The viewer ladder asks how many open UIs the hub serves while it ingests, and at what cost: a run without viewers, then one per number of viewers (1, 8,

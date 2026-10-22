@@ -261,11 +261,14 @@ def viewer_point(directory, baseline_capacity):
         viewers = result['queries']['viewers']
         with open(queries, encoding='utf-8') as file:
             rows = [row for row in csv.DictReader(file) if first <= int(row['second']) <= last]
+        # A page asks after every frame it reads, so the seconds some page asked after are the frames published: every second, or every few when
+        # the publisher sends a frame less often. A page is fresh for a frame when the hub answered the query it asked after it.
+        published = {int(row['second']) for row in rows} or {first}
         fresh = {page: set() for page in range(viewers)}
         for row in rows:
             if row['answer'] in ('answered', 'unchanged'):
                 fresh[int(row['page'])].add(int(row['second']))
-        shares = sorted(len(seconds) / (last - first + 1) for seconds in fresh.values())
+        shares = sorted(len(seconds) / len(published) for seconds in fresh.values())
         answered = sorted(float(row['answerMs']) for row in rows if row['answer'] in ('answered', 'unchanged'))
         point.update({
             'viewers': viewers, 'cap': result['queries']['queryCap'],

@@ -39,6 +39,49 @@ class FramePublisherTest {
     }
 
     @Test
+    void intervalFor_upToSixteenClients_isOneEpoch() {
+        assertThat(FramePublisher.intervalFor(0)).isEqualTo(1);
+        assertThat(FramePublisher.intervalFor(16)).isEqualTo(1);
+    }
+
+    @Test
+    void intervalFor_eachSixteenClientsMore_addsAnEpoch() {
+        assertThat(FramePublisher.intervalFor(17)).isEqualTo(2);
+        assertThat(FramePublisher.intervalFor(32)).isEqualTo(2);
+        assertThat(FramePublisher.intervalFor(33)).isEqualTo(3);
+        assertThat(FramePublisher.intervalFor(64)).isEqualTo(4);
+    }
+
+    @Test
+    void intervalFor_manyClients_isAtMostFiveEpochs() {
+        assertThat(FramePublisher.intervalFor(65)).isEqualTo(5);
+        assertThat(FramePublisher.intervalFor(1_000)).isEqualTo(5);
+    }
+
+    // W1: with an interval of two epochs, the epoch between two frames is left out, and the next frame carries its changes too.
+    @Test
+    void publish_intervalOfTwoEpochs_leavesTheEpochBetweenOutAndSendsTheChangesSinceTheFrameBefore() {
+        var spaced = new FramePublisher(hub.hub(), new MonitorFrames(), FramePublisher.MAX_CLIENTS, clients -> 2);
+        spaced.start();
+        try {
+            var sink = new RecordingSink(true);
+            spaced.connect(sink);
+            await().until(() -> sink.messages.size() == 1);
+            var first = sink.message(0).get("epoch").asLong();
+
+            hub.epoch();
+            var second = hub.epoch();
+
+            await().until(() -> sink.messages.size() == 2);
+            assertThat(sink.message(1).get("type").asString()).isEqualTo("delta");
+            assertThat(sink.message(1).get("base").asLong()).isEqualTo(first);
+            assertThat(sink.message(1).get("epoch").asLong()).isEqualTo(second.sequence());
+        } finally {
+            spaced.close();
+        }
+    }
+
+    @Test
     void connect_epochsPublished_sendsTheSnapshotAndThenTheChangesOfEach() {
         var sink = new RecordingSink(true);
         publisher.connect(sink);

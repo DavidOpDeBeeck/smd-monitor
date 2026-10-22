@@ -9,6 +9,7 @@ import app.dodb.smd.monitor.hub.web.MonitorFrames;
 import app.dodb.smd.monitor.hub.web.PublishedFrame;
 
 import java.net.URI;
+import java.util.function.IntUnaryOperator;
 import java.util.List;
 import java.util.OptionalInt;
 
@@ -27,11 +28,29 @@ public final class SaturationFrameServer implements AutoCloseable {
     // The publisher takes every client the run connects, however many; the hub runs the given number of queries at once, or its own limit.
     public static SaturationFrameServer start(MonitorHub hub, FrameWritten written, OptionalInt queryCap) {
         var settings = new HubSettings(0, "127.0.0.1", 0, null, List.of(), HubConfig.withDefaults().build());
-        var publisher = new FramePublisher(hub, new TimedFrames(written), Integer.MAX_VALUE);
+        var publisher = new FramePublisher(hub, new TimedFrames(written), Integer.MAX_VALUE, frameInterval());
         var queries = queryCap.isPresent() ? new HubQueries(hub, queryCap.getAsInt()) : new HubQueries(hub);
         var server = new UiServer(settings, hub, publisher, queries);
         server.start();
         return new SaturationFrameServer(server);
+    }
+
+    // How many epochs apart -Dsaturation.frameInterval has the publisher publish, whatever the clients; the hub's own interval for the clients by
+    // default.
+    private static IntUnaryOperator frameInterval() {
+        var value = System.getProperty("saturation.frameInterval");
+        if (value == null) {
+            return FramePublisher::intervalFor;
+        }
+        try {
+            var epochs = Integer.parseInt(value.strip());
+            if (epochs >= 1) {
+                return clients -> epochs;
+            }
+        } catch (NumberFormatException ignored) {
+            // Reported below.
+        }
+        throw new IllegalArgumentException("Saturation run expects -Dsaturation.frameInterval to be a whole number of seconds, 1 or more; got '" + value + "'");
     }
 
     public URI api() {

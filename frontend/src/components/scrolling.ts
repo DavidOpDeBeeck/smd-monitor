@@ -3,6 +3,8 @@ import { alignSeries, SECOND } from '../lib/throughput';
 import { easeFrames, prefersReducedMotion } from './motion';
 
 const RESCALE_TIME = 250;
+// A frame further apart than this, after a reconnect say, redraws the series in place rather than scroll for that long.
+const MAX_SCROLLED = 10 * SECOND;
 
 export function animateSeries(chart: {
     scroller: () => SVGGElement;
@@ -16,11 +18,14 @@ export function animateSeries(chart: {
     let frame = 0;
     let shift = 0;
     let shiftedAt = -Infinity;
+    // How long the series takes to scroll in what the latest frame added: the seconds it covers, so it moves at a step a second however far
+    // apart the hub sends frames.
+    let gap = SECOND;
     let shownMax: number | null = null;
     let drawnAt = 0;
 
     const draw = (now: number) => {
-        const progress = Math.min(1, (now - shiftedAt) / SECOND);
+        const progress = Math.min(1, (now - shiftedAt) / gap);
         const max = chart.max();
         const eased = shownMax === null || prefersReducedMotion() ? max : shownMax + (max - shownMax) * (1 - Math.exp(-(now - drawnAt) / RESCALE_TIME));
         shownMax = Math.abs(eased - max) < max * 0.002 ? max : eased;
@@ -35,8 +40,9 @@ export function animateSeries(chart: {
 
     createEffect(
         on(chart.endsAt, (time, previous) => {
-            if (time !== undefined && previous !== undefined && time > previous && !prefersReducedMotion()) {
-                shift = chart.step();
+            if (time !== undefined && previous !== undefined && time > previous && time - previous <= MAX_SCROLLED && !prefersReducedMotion()) {
+                gap = time - previous;
+                shift = (chart.step() * gap) / SECOND;
                 shiftedAt = performance.now();
             }
             redraw();
