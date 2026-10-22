@@ -1,37 +1,40 @@
-package app.dodb.smd.monitor.hub.spring;
+package app.dodb.smd.monitor.hub.web;
 
 import app.dodb.smd.monitor.hub.Epoch;
-import org.springframework.http.ResponseEntity;
 
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 import java.util.function.Supplier;
 
 import static java.util.Objects.requireNonNull;
 
-// The answers of the latest epoch asked about, by query (W5), so the queries of every page for the same epoch are answered once. A query is
-// keyed by its normalized form, the parsed query, which compares by value. The first to ask computes the answer while those asking the same wait
-// for it; other queries never wait. It keeps at most 256 answers, and forgets them when a later epoch is asked about; an answer that could not be
-// computed, as too many queries ran at once, is not kept.
-final class QueryCache {
+// The answers of the latest epoch asked about, by query (W5), so the queries of every page for the same epoch are answered once, and at most
+// MAX_RUNNING of them computed at once (C9), beyond which a query is answered 429. A query is keyed by its normalized form, the parsed query,
+// which compares by value. The first to ask computes the answer while those asking the same wait for it; other queries never wait. It keeps at
+// most 256 answers, and forgets them when a later epoch is asked about; a 429 is not kept.
+final class QueryAnswers {
 
     static final int MAX_ANSWERS = 256;
+    static final int MAX_RUNNING = 4;
+    private static final QueryAnswer BUSY = QueryAnswer.busy("The SMD monitor hub answers at most " + MAX_RUNNING + " queries at once; ask again shortly");
 
+    private final Semaphore running = new Semaphore(MAX_RUNNING);
     private volatile Answers answers = new Answers(-1, null);
 
-    // The answer of the query for the epoch, computed by the supplier unless known; null when the supplier answered null.
-    ResponseEntity<String> answer(Epoch epoch, Object query, Supplier<ResponseEntity<String>> compute) {
+    // The answer of the query for the epoch, computed by the supplier unless known.
+    QueryAnswer answer(Epoch epoch, Object query, Supplier<QueryAnswer> compute) {
         requireNonNull(query);
         var current = answersOf(epoch);
-        var mine = new CompletableFuture<ResponseEntity<String>>();
+        var mine = new CompletableFuture<QueryAnswer>();
         var known = current.byQuery.size() >= MAX_ANSWERS ? current.byQuery.get(query) : current.byQuery.putIfAbsent(query, mine);
         if (known != null) {
             return known.join();
         }
         try {
-            var answer = compute.get();
-            if (answer == null) {
+            var answer = running.tryAcquire() ? computeReleasing(compute) : BUSY;
+            if (answer == BUSY) {
                 current.byQuery.remove(query, mine);
             }
             mine.complete(answer);
@@ -40,6 +43,14 @@ final class QueryCache {
             current.byQuery.remove(query, mine);
             mine.completeExceptionally(failure);
             throw failure;
+        }
+    }
+
+    private QueryAnswer computeReleasing(Supplier<QueryAnswer> compute) {
+        try {
+            return compute.get();
+        } finally {
+            running.release();
         }
     }
 
@@ -60,7 +71,7 @@ final class QueryCache {
 
         private final long epoch;
         private final UUID session;
-        private final ConcurrentHashMap<Object, CompletableFuture<ResponseEntity<String>>> byQuery = new ConcurrentHashMap<>();
+        private final ConcurrentHashMap<Object, CompletableFuture<QueryAnswer>> byQuery = new ConcurrentHashMap<>();
 
         private Answers(long epoch, UUID session) {
             this.epoch = epoch;

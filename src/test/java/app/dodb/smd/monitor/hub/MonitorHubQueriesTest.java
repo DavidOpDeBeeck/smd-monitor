@@ -179,7 +179,7 @@ class MonitorHubQueriesTest {
         var open = tickets.dispatch(OPEN);
         tickets.reportTo(hub, open, tickets.dispatch(OPEN));
         billing.reportTo(hub, failed(billing.dispatch(ASSIGN, open), 1));
-        var query = new TraceQuery(Optional.of(BILLING), TypeSelection.EVERY_TYPE, Set.of(), Set.of(Outcome.Status.FAILED), true, "", TraceOrder.NEWEST,
+        var query = new TraceQuery(new InvocationFilter(Optional.of(BILLING), Set.of(), TypeSelection.EVERY_TYPE, Set.of(Outcome.Status.FAILED), ""), true, TraceOrder.NEWEST,
             Optional.empty(), 10);
 
         var page = hub.traces(query);
@@ -375,7 +375,7 @@ class MonitorHubQueriesTest {
     }
 
     private static TraceQuery traceQuery(TraceOrder order, Optional<TraceCursor> after, int limit) {
-        return new TraceQuery(Optional.empty(), TypeSelection.EVERY_TYPE, Set.of(), Set.of(), false, "", order, after, limit);
+        return new TraceQuery(InvocationFilter.EVERY_INVOCATION, false, order, after, limit);
     }
 
     private static MessageSpan timed(MessageSpan span, long millis) {

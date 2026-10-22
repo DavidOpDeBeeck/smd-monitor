@@ -4,7 +4,9 @@ import app.dodb.smd.monitor.hub.demo.inventory.Inventory;
 import app.dodb.smd.monitor.hub.demo.payments.Payments;
 import app.dodb.smd.monitor.hub.demo.shipping.Shipping;
 import app.dodb.smd.monitor.hub.demo.storefront.Storefront;
-import app.dodb.smd.monitor.hub.spring.MonitorHubApplication;
+import app.dodb.smd.monitor.hub.javalin.HubSettings;
+import app.dodb.smd.monitor.hub.javalin.MonitorHubServer;
+import io.avaje.config.Config;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 
@@ -17,15 +19,19 @@ import java.util.stream.Stream;
 // application appends its events to its own topic, which the processing groups of the next one read.
 public class HubDemo {
 
-    // Arguments starting with an application's name, such as --storefront.smd.demo.orders-per-second=50 or
-    // --payments.management.opentelemetry.tracing.export.schedule-delay=8s, configure that application; the others configure the hub.
+    // Every argument starts with an application's name, such as --storefront.smd.demo.orders-per-second=50 or
+    // --payments.management.opentelemetry.tracing.export.schedule-delay=8s, and configures that application; the hub reads its properties as
+    // it does outside the demo, such as SMD_MONITOR_HUB_UI_PORT=8083 from the environment.
     private static final List<String> APPLICATIONS = List.of("storefront", "inventory", "payments", "shipping");
 
     public static void main(String[] args) {
-        var hub = new SpringApplicationBuilder(MonitorHubApplication.class)
-            .profiles("hub")
-            .run(Arrays.stream(args).filter(arg -> APPLICATIONS.stream().noneMatch(application -> arg.startsWith(prefix(application)))).toArray(String[]::new));
-        var traces = "http://127.0.0.1:" + hub.getEnvironment().getProperty("local.smd.monitor.hub.otlp.port") + "/v1/traces";
+        var unknown = Arrays.stream(args).filter(arg -> APPLICATIONS.stream().noneMatch(application -> arg.startsWith(prefix(application)))).toList();
+        if (!unknown.isEmpty()) {
+            throw new IllegalArgumentException("Arguments name an application, such as --storefront.smd.demo.orders-per-second=50; got " + unknown);
+        }
+        var hub = MonitorHubServer.start(HubSettings.from(Config.asConfiguration()));
+        Runtime.getRuntime().addShutdownHook(new Thread(hub::close));
+        var traces = "http://127.0.0.1:" + hub.otlpServer().port() + "/v1/traces";
         // The readers subscribe before the applications that write to their topics start.
         start(Inventory.class, "inventory", "inventory-1", traces, args);
         start(Payments.class, "payments", "payments-1", traces, args);

@@ -21,38 +21,38 @@ payloads, exception messages and stack traces, and counts that account for sampl
 
 ### Functional
 
-| ID   | Requirement                                                                                                                   |
-|------|-------------------------------------------------------------------------------------------------------------------------------|
+| ID   | Requirement                                                                                                                  |
+|------|------------------------------------------------------------------------------------------------------------------------------|
 | FR1  | Ingest OTLP/HTTP protobuf, gzipped or not. Ignore spans that are not SMD's. Identify application, instance, and session.     |
 | FR2  | Learn the topology from span links: types, processing groups, edges within and across applications, entry points, and media. |
 | FR3  | Live figures per scope, type, group, edge, and instance over the window; totals over the history.                            |
 | FR4  | Cross-application traces from retained specimens, saying why a parent is missing.                                            |
 | FR5  | Failures by where they were raised, with exact counts and example traces.                                                    |
 | FR6  | A live stream of retained invocations, filtered, sorted, and paged by the hub.                                               |
-| FR7  | The hub's own health: what it retains, evicts, refuses, and drops, by reason, and its memory against its budget.              |
+| FR7  | The hub's own health: what it retains, evicts, refuses, and drops, by reason, and its memory against its budget.             |
 | FR8  | The scope is the system or one application. An instance is a filter.                                                         |
 | FR9  | Event delay per processing group and event type.                                                                             |
 | FR10 | Failure propagation chains, as a heuristic over retained specimens, computed when queried.                                   |
 
 ### Technical
 
-| ID   | Requirement                                                                                                         |
-|------|---------------------------------------------------------------------------------------------------------------------|
-| TR1  | Exactly once: a span is counted once, even if exported twice or arriving along two paths (within J3).              |
-| TR2  | Linking gives the same result in any arrival order, across instances and applications.                             |
-| TR3  | Counts never depend on specimen capacity, selection, or eviction.                                                   |
+| ID   | Requirement                                                                                                             |
+|------|-------------------------------------------------------------------------------------------------------------------------|
+| TR1  | Exactly once: a span is counted once, even if exported twice or arriving along two paths (within J3).                   |
+| TR2  | Linking gives the same result in any arrival order, across instances and applications.                                  |
+| TR3  | Counts never depend on specimen capacity, selection, or eviction.                                                       |
 | TR4  | The time base, late spans, and clock skew follow written rules. A shown second is final, or the hub says it may change. |
-| TR5  | A frame and the queries it triggers describe one epoch, named by session and sequence.                              |
-| TR6  | Every figure has a written definition; approximate ones say so.                                                    |
-| TR7  | One memory budget covers the hub. Every structure has a limit with a defined, reported behavior when reached.      |
-| TR8  | Ingest never waits for frames, queries, or browsers.                                                                |
-| TR9  | One application cannot evict another's specimens, cut its edges, or starve its ingest.                             |
-| TR10 | Degradation order: specimens first, then join state, counting last.                                                |
-| TR11 | Everything retires: an application with no instances for `retire-after` is removed with all its state.            |
-| TR12 | Building a frame costs in proportion to the keys, not keys × history seconds.                                      |
-| TR13 | A query reads an epoch without copying what the hub retains.                                                       |
-| TR14 | The core has no Spring or OpenTelemetry dependency, takes an injected clock, and is tested deterministically.       |
-| TR15 | The wire format is the only contract with the UI, and it is versioned.                                             |
+| TR5  | A frame and the queries it triggers describe one epoch, named by session and sequence.                                  |
+| TR6  | Every figure has a written definition; approximate ones say so.                                                         |
+| TR7  | One memory budget covers the hub. Every structure has a limit with a defined, reported behavior when reached.           |
+| TR8  | Ingest never waits for frames, queries, or browsers.                                                                    |
+| TR9  | One application cannot evict another's specimens, cut its edges, or starve its ingest.                                  |
+| TR10 | Degradation order: specimens first, then join state, counting last.                                                     |
+| TR11 | Everything retires: an application with no instances for `retire-after` is removed with all its state.                  |
+| TR12 | Building a frame costs in proportion to the keys, not keys × history seconds.                                           |
+| TR13 | A query reads an epoch without copying what the hub retains.                                                            |
+| TR14 | The core depends on no web framework or OpenTelemetry, takes an injected clock, and is tested deterministically.        |
+| TR15 | The wire format is the only contract with the UI, and it is versioned.                                                  |
 
 ## Envelope
 
@@ -71,132 +71,132 @@ What the hub is tested and benchmarked at (`LoadProfile.STANDALONE`), and what t
 
 ### Performance budgets
 
-| Measure                                   | Budget        |
-|-------------------------------------------|---------------|
-| Writer time per 512-span batch, decoded   | < 5 ms p99    |
-| Building an epoch                         | < 20 ms       |
-| Delta frame, uncompressed                 | < 100 KB      |
-| Query                                     | < 50 ms p99   |
-| Hub CPU                                   | < 1 core      |
+| Measure                                 | Budget      |
+|-----------------------------------------|-------------|
+| Writer time per 512-span batch, decoded | < 5 ms p99  |
+| Building an epoch                       | < 20 ms     |
+| Delta frame, uncompressed               | < 100 KB    |
+| Query                                   | < 50 ms p99 |
+| Hub CPU                                 | < 1 core    |
 
 ## Data products
 
 The hub keeps four kinds of state, each with its own lifetime and bound.
 
-| Product    | Holds                                                                                  | Lifetime                       | Bound                                              |
-|------------|----------------------------------------------------------------------------------------|--------------------------------|----------------------------------------------------|
-| Catalog    | Applications, instances, types, groups, edges, routes, failure causes, interned names  | While the application lives    | Caps per kind, with an `other` key beyond          |
-| Aggregates | Per-second counts, failures, and latency histograms per catalog key                     | History                        | 50% of the budget                                  |
-| Join state | Slim facts of recent spans, children awaiting their parent                              | Link horizon, or while retained | 25% of the budget, shared fairly                  |
-| Specimens  | Retained invocations, assembled into traces                                            | Reservoirs                     | The rest of the budget, shared fairly              |
+| Product    | Holds                                                                                 | Lifetime                        | Bound                                     |
+|------------|---------------------------------------------------------------------------------------|---------------------------------|-------------------------------------------|
+| Catalog    | Applications, instances, types, groups, edges, routes, failure causes, interned names | While the application lives     | Caps per kind, with an `other` key beyond |
+| Aggregates | Per-second counts, failures, and latency histograms per catalog key                   | History                         | 50% of the budget                         |
+| Join state | Slim facts of recent spans, children awaiting their parent                            | Link horizon, or while retained | 25% of the budget, shared fairly          |
+| Specimens  | Retained invocations, assembled into traces                                           | Reservoirs                      | The rest of the budget, shared fairly     |
 
 ## Decisions
 
 ### Time base
 
-| ID | Rule                                                                                                                                                       |
-|----|------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ID | Rule                                                                                                                                                                        |
+|----|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | T1 | Every count of a span lands in its start second: started, entry point, completed, failed, latency. A link lands in the child's start second, event delay in the handling's. |
-| T2 | The window ends `settle` seconds before the hub's clock.                                                                                                   |
-| T3 | A late span revises its own second; history is never shifted. Revisions are counted per application in health.                                           |
-| T4 | Per application the hub tracks the p99 of arrival minus start; the frame carries the resulting `provisionalFrom` second, which the UI shades.               |
-| T5 | A span that started before the history is linked and can be retained, but not counted in series; it is counted as beyond history.                          |
-| T6 | A span may start at most 30 s after the hub's clock; admission refuses it beyond that and flags the instance as clock-ahead.                                |
-| T7 | The hub does not correct clock skew. It reports export lag per instance (arrival minus end) apart from revisions.                                          |
+| T2 | The window ends `settle` seconds before the hub's clock.                                                                                                                    |
+| T3 | A late span revises its own second; history is never shifted. Revisions are counted per application in health.                                                              |
+| T4 | Per application the hub tracks the p99 of arrival minus start; the frame carries the resulting `provisionalFrom` second, which the UI shades.                               |
+| T5 | A span that started before the history is linked and can be retained, but not counted in series; it is counted as beyond history.                                           |
+| T6 | A span may start at most 30 s after the hub's clock; admission refuses it beyond that and flags the instance as clock-ahead.                                                |
+| T7 | The hub does not correct clock skew. It reports export lag per instance (arrival minus end) apart from revisions.                                                           |
 
 ### Concurrency
 
-| ID  | Rule                                                                                                                                                         |
-|-----|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| C1  | The core is a plain single-threaded object without locks. A writer thread and the intake queues wrap it.                                                   |
-| C2  | Admission is synchronous on the receiving thread: application and instance limits, clock skew, and liveness. It answers OTLP partial success exactly.      |
-| C3  | Processing is asynchronous. Spans dropped by shedding are reported in health, not in the OTLP response.                                                    |
-| C4  | Each application has a bounded intake queue, drained round-robin. Half an equal share of the capacity is reserved for each application; the rest is a pool an application borrows from beyond its reserved room, up to half the pool. A full queue answers 503 with `Retry-After` for that application only. |
+| ID  | Rule                                                                                                                                                                                                                                                                                                                |
+|-----|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| C1  | The core is a plain single-threaded object without locks. A writer thread and the intake queues wrap it.                                                                                                                                                                                                            |
+| C2  | Admission is synchronous on the receiving thread: application and instance limits, clock skew, and liveness. It answers OTLP partial success exactly.                                                                                                                                                               |
+| C3  | Processing is asynchronous. Spans dropped by shedding are reported in health, not in the OTLP response.                                                                                                                                                                                                             |
+| C4  | Each application has a bounded intake queue, drained round-robin. Half an equal share of the capacity is reserved for each application; the rest is a pool an application borrows from beyond its reserved room, up to half the pool. A full queue answers 503 with `Retry-After` for that application only.        |
 | C5  | Shedding only beyond an application's reserved room, by the fill of the pool or of the application's half of it behind the batch the writer takes, whichever is fuller: from 50% only failed and slow spans become specimens; from 80% spans are deduplicated but not indexed or joined. Counting is never skipped. |
-| C6  | One epoch per second: one immutable view of catalog, aggregates, specimens, and health, shared by the frame and the queries.                               |
-| C7  | Building an epoch costs in proportion to what changed: at most one copy of changed array chunks.                                                           |
-| C8  | JSON is serialized off the writer, once per epoch, and shared by every client.                                                                             |
-| C9  | At most 4 queries run at once; beyond that the hub answers 429.                                                                                             |
-| C10 | An exception in one batch drops that batch, reports it, and logs it once. The writer keeps running.                                                         |
-| C11 | Exports arrive on a port of their own, with its own Tomcat connector and threads; each port refuses the other's paths. The page can be published without the endpoint, and pages never take a thread from admission. |
+| C6  | One epoch per second: one immutable view of catalog, aggregates, specimens, and health, shared by the frame and the queries.                                                                                                                                                                                        |
+| C7  | Building an epoch costs in proportion to what changed: at most one copy of changed array chunks.                                                                                                                                                                                                                    |
+| C8  | JSON is serialized off the writer, once per epoch, and shared by every client.                                                                                                                                                                                                                                      |
+| C9  | At most 4 queries run at once; beyond that the hub answers 429.                                                                                                                                                                                                                                                     |
+| C10 | An exception in one batch drops that batch, reports it, and logs it once. The writer keeps running.                                                                                                                                                                                                                 |
+| C11 | Exports arrive on a port of their own, served by a Javalin server of its own with its own virtual threads, which serves nothing else; the page's port serves no exports. The page can be published without the endpoint, and pages never take a thread from admission.                                              |
 
 ### Memory and specimens
 
-| ID | Rule                                                                                                                                                         |
-|----|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| M1 | The budget is split by fixed ceilings: intake queues 10%, counting 50%, join state 25%, specimens the rest.                                                  |
-| M2 | Beyond the counting ceiling, new keys overflow into `other` keys. Beyond the join ceiling, the application's effective link horizon shrinks.                |
-| M3 | Max–min fair share per application, with borrowing. Under pressure the application furthest above its share gives way first. A trace that crosses applications is charged to each by its own spans. |
+| ID | Rule                                                                                                                                                                                                                                                                                                     |
+|----|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| M1 | The budget is split by fixed ceilings: intake queues 10%, counting 50%, join state 25%, specimens the rest.                                                                                                                                                                                              |
+| M2 | Beyond the counting ceiling, new keys overflow into `other` keys. Beyond the join ceiling, the application's effective link horizon shrinks.                                                                                                                                                             |
+| M3 | Max–min fair share per application, with borrowing. Under pressure the application furthest above its share gives way first. A trace that crosses applications is charged to each by its own spans.                                                                                                      |
 | M4 | Three reservoirs; a trace is retained while any holds it. **Recent** keeps every trace, first in first out. **Slowest** keeps the 5 slowest invocations per type in the window. **Failures** keeps the latest 20 traces per failure cause, never fewer than 1. Under pressure they shrink in that order. |
-| M5 | Every span enters Recent first; the other reservoirs judge a trace when Recent evicts it. A span for a trace already dropped starts a reported fragment.    |
-| M6 | A specimen is a compact record of primitive IDs and interned names, accounted by a fixed size per record kind (`Footprint`).                                |
-| M7 | Failure counts come from aggregates; specimens provide example traces and chains. The UI shows "complete since".                                           |
+| M5 | Every span enters Recent first; the other reservoirs judge a trace when Recent evicts it. A span for a trace already dropped starts a reported fragment.                                                                                                                                                 |
+| M6 | A specimen is a compact record of primitive IDs and interned names, accounted by a fixed size per record kind (`Footprint`).                                                                                                                                                                             |
+| M7 | Failure counts come from aggregates; specimens provide example traces and chains. The UI shows "complete since".                                                                                                                                                                                         |
 
 ### Join
 
-| ID | Rule                                                                                                                                                          |
-|----|---------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| J1 | One global span index keyed by trace ID and span ID as three longs. An entry is a slim fact or a specimen. Sends are slim entries.                           |
-| J2 | An entry lives within the link horizon or while retained. Each application has an arrival-ordered queue of its entries and a fair share of the join budget.  |
-| J3 | A span whose key the index holds is a duplicate. Guarantee: a span sent again within the horizon, or while retained, counts once.                            |
+| ID | Rule                                                                                                                                                                                                            |
+|----|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| J1 | One global span index keyed by trace ID and span ID as three longs. An entry is a slim fact or a specimen. Sends are slim entries.                                                                              |
+| J2 | An entry lives within the link horizon or while retained. Each application has an arrival-ordered queue of its entries and a fair share of the join budget.                                                     |
+| J3 | A span whose key the index holds is a duplicate. Guarantee: a span sent again within the horizon, or while retained, counts once.                                                                               |
 | J4 | A link is found when its second side arrives, in either order, and counted once per child. The child keeps a parent summary: application, kind, type, group, and whether the parent delivered the same message. |
-| J5 | A slim child that expires unlinked is counted per application by reason: parent never received, or parent arrived after the horizon.                        |
-| J6 | A trace is a connected component of retained specimens, merged by size as links arrive, of at most 10,000 invocations; beyond that a fragment starts. A guard handles link cycles. |
-| J7 | An epoch's specimen view holds immutable snapshots of the traces that changed, and copy-on-write chunks of 4,096 specimens in sequence order.               |
-| J8 | Edges of a parent arriving after its slim children expired are not counted; they are reported.                                                             |
+| J5 | A slim child that expires unlinked is counted per application by reason: parent never received, or parent arrived after the horizon.                                                                            |
+| J6 | A trace is a connected component of retained specimens, merged by size as links arrive, of at most 10,000 invocations; beyond that a fragment starts. A guard handles link cycles.                              |
+| J7 | An epoch's specimen view holds immutable snapshots of the traces that changed, and copy-on-write chunks of 4,096 specimens in sequence order.                                                                   |
+| J8 | Edges of a parent arriving after its slim children expired are not counted; they are reported.                                                                                                                  |
 
 ### Aggregates
 
-| ID | Rule                                                                                                                                                       |
-|----|------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| A1 | The catalog gives every key a dense int ID per application. Beyond a cap, counts go to the `other` key of that kind.                                      |
-| A2 | Window and history totals per key are kept incrementally: added as counts arrive, subtracted as their second leaves.                                     |
+| ID | Rule                                                                                                                                                                                                                                   |
+|----|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| A1 | The catalog gives every key a dense int ID per application. Beyond a cap, counts go to the `other` key of that kind.                                                                                                                   |
+| A2 | Window and history totals per key are kept incrementally: added as counts arrive, subtracted as their second leaves.                                                                                                                   |
 | A3 | Per-second detail is stored sparsely, one block per second of its active keys, over window + settle + 30 s; older seconds fold into 10 s buckets. A timed cell keeps up to two latency buckets inline and grows an array at the third. |
-| A4 | The Activity chart keeps 1 s over the whole history per application and kind.                                                                              |
-| A5 | Sparklines read a small dense ring per key over the window.                                                                                                |
-| A6 | Latency histograms have 19 buckets bounded at 0.1 ms to 60,000 ms; percentiles interpolate linearly within a bucket.                                      |
-| A7 | Counters are mutable primitive arrays owned by the writer; updates allocate nothing.                                                                       |
-| A8 | Counting is never shed: under pressure seconds fold sooner, then the effective history shortens. The window never shrinks.                                |
+| A4 | The Activity chart keeps 1 s over the whole history per application and kind.                                                                                                                                                          |
+| A5 | Sparklines read a small dense ring per key over the window.                                                                                                                                                                            |
+| A6 | Latency histograms have 19 buckets bounded at 0.1 ms to 60,000 ms; percentiles interpolate linearly within a bucket.                                                                                                                   |
+| A7 | Counters are mutable primitive arrays owned by the writer; updates allocate nothing.                                                                                                                                                   |
+| A8 | Counting is never shed: under pressure seconds fold sooner, then the effective history shortens. The window never shrinks.                                                                                                             |
 
 ### Wire
 
-| ID | Rule                                                                                                                                                        |
-|----|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| W1 | One system-wide frame per epoch over the WebSocket. Scope stays on the client.                                                                             |
-| W2 | Frames are deltas against the previous epoch, found by comparing two immutable snapshots. Each names its `epoch` and `base`.                               |
-| W3 | A snapshot goes to a client on connect and to any client that missed a delta. Each is serialized at most once per epoch.                                   |
-| W4 | JSON, compressed by `permessage-deflate`. Statistics travel as arrays of figures in a fixed order.                                                         |
-| W5 | Specimens are pulled over HTTP from the epoch. Identical queries of an epoch are answered once; traces and invocations carry an ETag of their content.      |
-| W6 | Frames and answers carry a protocol version and a build ID; the page reloads when either differs.                                                          |
-| W7 | The hub computes what is displayed; the page only sums applications for the system scope.                                                                  |
+| ID | Rule                                                                                                                                                   |
+|----|--------------------------------------------------------------------------------------------------------------------------------------------------------|
+| W1 | One system-wide frame per epoch over the WebSocket. Scope stays on the client.                                                                         |
+| W2 | Frames are deltas against the previous epoch, found by comparing two immutable snapshots. Each names its `epoch` and `base`.                           |
+| W3 | A snapshot goes to a client on connect and to any client that missed a delta. Each is serialized at most once per epoch.                               |
+| W4 | JSON, compressed by `permessage-deflate`. Statistics travel as arrays of figures in a fixed order.                                                     |
+| W5 | Specimens are pulled over HTTP from the epoch. Identical queries of an epoch are answered once; traces and invocations carry an ETag of their content. |
+| W6 | Frames and answers carry a protocol version and a build ID; the page reloads when either differs.                                                      |
+| W7 | The hub computes what is displayed; the page only sums applications for the system scope.                                                              |
 
 ### Failures
 
-| ID | Rule                                                                                                                                                          |
-|----|---------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ID | Rule                                                                                                                                                                                                                                            |
+|----|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | F1 | Every failed span counts under its own stage and exception class, once for every message it failed. Raised versus propagated is a heuristic on specimens, shown only in the chains. The Failures reservoir keys a trace by its deepest failure. |
-| F2 | Failure shares, occurrence strips, and "Failures, last minute" come from aggregates.                                                                         |
+| F2 | Failure shares, occurrence strips, and "Failures, last minute" come from aggregates.                                                                                                                                                            |
 
 ## Runtime
 
 ```
- OTLP/HTTP                                                              ┌─► MonitorFrameSocket: delta to clients in sync,
+ OTLP/HTTP                                                              ┌─► FramePublisher: delta to clients in sync,
  (own port)                                                             │   snapshot to clients that missed one
      └──────────► Admission ──► IntakeQueues ──► HubWriter ──► Epochs ──┤
                   limits,       per application,  drains round-robin,   │
-                  skew,         bounded,          ticks each second,    └─► MonitorHubQueries: at most 4 at once,
+                  skew,         bounded,          ticks each second,    └─► HubQueries: at most 4 at once,
                   liveness      shedding level    owns Hub                  per-epoch cache, ETag
                                                     │
                                 Hub (single-threaded core)
                                   Catalog · Counters · SpanIndex · Specimens · MemoryBudget · Health
 ```
 
-| Thread                          | Runs                                                   | Touches                                         |
-|---------------------------------|--------------------------------------------------------|-------------------------------------------------|
-| OTLP port threads (export)      | Decoding, `Admission`, `IntakeQueues.offer`            | Admission (own lock), the queues (thread-safe) |
-| `smd-monitor-hub` writer        | Receiving batches, ticking, building epochs           | All mutable state of `Hub`, exclusively         |
-| Frame publisher                 | Building, diffing, and serializing frames; async sends | The latest two epochs, immutable                |
-| Page port threads (queries)     | `Queries` over the latest epoch                        | The epoch, immutable                            |
+| Thread                      | Runs                                                   | Touches                                        |
+|-----------------------------|--------------------------------------------------------|------------------------------------------------|
+| OTLP port threads (export)  | Decoding, `Admission`, `IntakeQueues.offer`            | Admission (own lock), the queues (thread-safe) |
+| `smd-monitor-hub` writer    | Receiving batches, ticking, building epochs            | All mutable state of `Hub`, exclusively        |
+| Frame publisher             | Building, diffing, and serializing frames; async sends | The latest two epochs, immutable               |
+| Page port threads (queries) | `Queries` over the latest epoch                        | The epoch, immutable                           |
 
 Per span, on the writer, in arrival order within its application:
 
@@ -217,43 +217,46 @@ Per tick, after each second:
 
 ### Constants
 
-| Constant                       | Value                                  |
-|--------------------------------|----------------------------------------|
-| Maximum clock skew             | 30 s                                   |
-| Epoch                          | 1 s, just after each second            |
-| Coarse bucket                  | 10 s                                   |
-| Budget ceilings                | Queues 10%, counting 50%, join 25%     |
-| Shedding thresholds            | 50% and 80% of the pool or of its half |
-| Slowest and Failures K         | 5 per type, 20 per cause (minimum 1)   |
-| Invocations per trace          | 10,000                                 |
-| Concurrent queries             | 4                                      |
-| Cached answers per epoch       | 256                                    |
-| WebSocket clients              | 64, with a 5 s send timeout            |
-| Specimen chunk                 | 4,096                                  |
-| Request body                   | 16 MB, inflated or not                 |
-| `Retry-After`                  | 2 s                                    |
+| Constant                 | Value                                  |
+|--------------------------|----------------------------------------|
+| Maximum clock skew       | 30 s                                   |
+| Epoch                    | 1 s, just after each second            |
+| Coarse bucket            | 10 s                                   |
+| Budget ceilings          | Queues 10%, counting 50%, join 25%     |
+| Shedding thresholds      | 50% and 80% of the pool or of its half |
+| Slowest and Failures K   | 5 per type, 20 per cause (minimum 1)   |
+| Invocations per trace    | 10,000                                 |
+| Concurrent queries       | 4                                      |
+| Cached answers per epoch | 256                                    |
+| WebSocket clients        | 64, with a 5 s send timeout            |
+| Specimen chunk           | 4,096                                  |
+| Request body             | 16 MB, inflated or not                 |
+| `Retry-After`            | 2 s                                    |
 
 The configurable limits and their ranges are in [monitor.md](monitor.md#limits) and `HubConfig`.
 
 ## Packages
 
-Every package except `hub.otlp` and `hub.spring` is free of Spring and OpenTelemetry. Types are public only where another package needs them; the documented API
-is the configuration properties and the hub's endpoints.
+Every package except `hub.javalin` is free of Javalin and Jetty, and every package except `hub.otlp` of OpenTelemetry; `hub.web` answers the page's port
+without a web framework, so the server layer stays a thin assembly. Types are public only where another package needs them; the documented API
+is the configuration properties and the hub's endpoints. The servers are Javalin's, on virtual threads: on the same core, against Spring Boot, the hub starts
+in 0.8 s instead of 1.9 s, from 14.8 MB of jars instead of 25.7 MB, and loads half the classes, with ingest, queries, and frames within 10% of it.
 
-| Package          | Key types                                                                                                                          |
-|------------------|------------------------------------------------------------------------------------------------------------------------------------|
-| `hub`            | `MonitorHub` (the runtime facade: `submit` returns a sealed `Submission`), `HubConfig`, `Hub` (the core), `HubWriter`, `Epochs`, `Epoch`, `Queries` and its query and answer records |
-| `hub.span`       | `MessageSpan`, `SinkSend`, `SpanRef`, `Stage`, `MessageType`, and the names: the records the OTLP adapter builds                     |
-| `hub.intake`     | `SpanBatch`, `Admission` (limits, skew, liveness), `IntakeQueues`, `Shedding`, `Refusal`                                           |
-| `hub.catalog`    | `Catalog` (dense IDs with caps), `Interned`, and the edge keys `CausalLink`, `Crossing`, `GroupLink`, `EventRoute`, `SinkRoute`, `RaisedFailure` |
-| `hub.counting`   | `Counters` with its `Block`s, `Cell`s, and `Totals`; `ArrivalLag`                                                                    |
-| `hub.join`       | `SpanIndex`, `SpanKey`, `Fact`, `Link`, `Unlinked`                                                                                  |
-| `hub.specimen`   | `Specimens`, `Specimen`, `Reservoirs`, `TraceComponent`, `TraceSnapshot`, `SpecimenView` and its chunks, `Names`                   |
-| `hub.budget`     | `MemoryBudget`, `Footprint` (bytes per record kind), `FairShare`, `HeapCheck`                                                      |
-| `hub.health`     | `HealthReason`, `HealthView`, `ApplicationHealth`, `MemoryUse`, `ProductUse`                                                       |
-| `hub.otlp`       | `OtlpTraceController` (partial success, 503, 400) and the protobuf decoding                                                        |
-| `hub.spring`     | `MonitorHubApplication`, `MonitorHubProperties`, `MonitorHubPage`, `MonitorFrameSocket`, `MonitorFrames`, `MonitorHubQueries`, `QueryCache` |
-| `json`           | `Protocol`, `FrameView`, `FrameDelta`, `Frame`, and the query views; `frontend/src/lib/wire.ts` and `mirror.ts` mirror them         |
+| Package        | Key types                                                                                                                                                                                                 |
+|----------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `hub`          | `MonitorHub` (the runtime facade: `submit` returns a sealed `Submission`), `HubConfig`, `Hub` (the core), `HubWriter`, `Epochs`, `Epoch`, `Queries` and its query and answer records                      |
+| `hub.span`     | `MessageSpan`, `SinkSend`, `SpanRef`, `Stage`, `MessageType`, and the names: the records the OTLP adapter builds                                                                                          |
+| `hub.intake`   | `SpanBatch`, `Admission` (limits, skew, liveness), `IntakeQueues`, `Shedding`, `Refusal`                                                                                                                  |
+| `hub.catalog`  | `Catalog` (dense IDs with caps), `Interned`, and the edge keys `CausalLink`, `Crossing`, `GroupLink`, `EventRoute`, `SinkRoute`, `RaisedFailure`                                                          |
+| `hub.counting` | `Counters` with its `Block`s, `Cell`s, and `Totals`; `ArrivalLag`                                                                                                                                         |
+| `hub.join`     | `SpanIndex`, `SpanKey`, `Fact`, `Link`, `Unlinked`                                                                                                                                                        |
+| `hub.specimen` | `Specimens`, `Specimen`, `Reservoirs`, `TraceComponent`, `TraceSnapshot`, `SpecimenView` and its chunks, `Names`                                                                                          |
+| `hub.budget`   | `MemoryBudget`, `Footprint` (bytes per record kind), `FairShare`, `HeapCheck`                                                                                                                             |
+| `hub.health`   | `HealthReason`, `HealthView`, `ApplicationHealth`, `MemoryUse`, `ProductUse`                                                                                                                              |
+| `hub.otlp`     | `OtlpAdmission` (gzip, the size bound, and a sealed `OtlpAnswer`: partial success, 503, 400) and the protobuf decoding                                                                                    |
+| `hub.web`      | `HubQueries` and its `QueryAnswer`, `QueryAnswers`, `FramePublisher` with its `Sink`, `MonitorFrames`, `PublishedFrame`, `Origins`                                                                        |
+| `hub.javalin`  | `MonitorHubServer` (the entry point, which creates, starts, and stops the hub and both servers), `UiServer` (the page, the query routes, the WebSocket, and the publisher), `OtlpServer`, `HubSettings`   |
+| `json`         | `Protocol`, `FrameView`, `FrameDelta`, `Frame`, the query views, and `QueryNames`; `frontend/src/lib/wire.ts`, `mirror.ts`, and `format.ts` mirror them                                                   |
 
 ## Results
 
@@ -262,17 +265,17 @@ threads), 64 GB, Windows 11, OpenJDK 25, a 12 GB heap, and JMH in sample-time mo
 with the tests: a seeded, clock-driven load with cross-application links, event-store handlings delayed by 20 ms to 8 s, 2% failed handlings, and spans exported
 every 5 s in shuffled batches of up to 512. Each fork first fills the hub's whole history.
 
-| Budget            | Measure                                                       | Benchmark                   | Result                                                   |        |
-|-------------------|---------------------------------------------------------------|-----------------------------|----------------------------------------------------------|--------|
-| < 5 ms p99        | Writer time per 512-span batch, with admission                | `ReceiveBenchmark`          | 5.6 ms p99, 1.5 ms p50                                   | missed |
-| < 20 ms           | Building an epoch                                             | `FrameBenchmark.statistics` | 158 ms p99, 62 ms p50                                    | missed |
-| < 100 KB          | Delta frame, median and largest                               | `FrameBenchmark`            | 1,440 KB, 2,841 KB; 286 KB, 613 KB deflated              | missed |
-| < 50 ms p99       | Query: tape, traces, failures of 20 causes, timeline          | `QueryBenchmark`            | 20.6, 12.1, 96.6, 9.8 ms                                 | missed for failures |
-| < 50 ms p99       | First query of an epoch                                       | `RelinkBenchmark`           | 24.0 ms                                                  | met    |
-| < 1 core          | One second of writer work                                     | `WriterBenchmark`           | 105 ms p50, 203 ms p99                                   | met    |
-| < 1 s             | Writing an epoch's delta, on the publisher                    | `FrameBenchmark.delta`      | 211 ms p50, 323 ms p99                                   | met    |
-| Within the budget | Heap of the hub after a collection                            | `HeapBenchmark`             | 1,660 MB of 2,048 MB; 1,681 MB accounted                 | met    |
-| Below 50%         | An application's busiest second against its queue share       | `WriterBenchmark`           | 631 spans, 11% of 5,741                                  | met    |
+| Budget            | Measure                                                 | Benchmark                   | Result                                      |                     |
+|-------------------|---------------------------------------------------------|-----------------------------|---------------------------------------------|---------------------|
+| < 5 ms p99        | Writer time per 512-span batch, with admission          | `ReceiveBenchmark`          | 5.6 ms p99, 1.5 ms p50                      | missed              |
+| < 20 ms           | Building an epoch                                       | `FrameBenchmark.statistics` | 158 ms p99, 62 ms p50                       | missed              |
+| < 100 KB          | Delta frame, median and largest                         | `FrameBenchmark`            | 1,440 KB, 2,841 KB; 286 KB, 613 KB deflated | missed              |
+| < 50 ms p99       | Query: tape, traces, failures of 20 causes, timeline    | `QueryBenchmark`            | 20.6, 12.1, 96.6, 9.8 ms                    | missed for failures |
+| < 50 ms p99       | First query of an epoch                                 | `RelinkBenchmark`           | 24.0 ms                                     | met                 |
+| < 1 core          | One second of writer work                               | `WriterBenchmark`           | 105 ms p50, 203 ms p99                      | met                 |
+| < 1 s             | Writing an epoch's delta, on the publisher              | `FrameBenchmark.delta`      | 211 ms p50, 323 ms p99                      | met                 |
+| Within the budget | Heap of the hub after a collection                      | `HeapBenchmark`             | 1,660 MB of 2,048 MB; 1,681 MB accounted    | met                 |
+| Below 50%         | An application's busiest second against its queue share | `WriterBenchmark`           | 631 spans, 11% of 5,741                     | met                 |
 
 Before the rework, the same load took about 24 cores, 4.5 GB of heap without a bound, and 48 MB per frame. [Open items](#open-items) lists the levers for the
 budgets still missed.
@@ -284,7 +287,7 @@ duplicates), `CountingRecountTest` (every figure against T1 to T3, in any order 
 ## Saturation
 
 The JMH benchmarks drive the core on one thread. A saturation run drives `MonitorHub` as it runs, to find where it stops: eight submitting threads admit and
-queue batches as the servlet threads do, the writer drains and ticks, and a publisher writes each epoch's delta. Each scenario runs in a JVM of its own, fills its
+queue batches as the OTLP server's threads do, the writer drains and ticks, and a publisher writes each epoch's delta. Each scenario runs in a JVM of its own, fills its
 whole history at its first rate, then offers each rate of a ladder up to 300,000 spans per second for 30 seconds, open loop: every second's exports are offered
 whether or not the hub kept up, and a batch answered busy is not sent again. A step **keeps up** when nothing was refused or shed, the writer was busy less than
 90% of the time, and the queues drained; it **holds** when it only shed. `SaturationScenario` defines the scenarios in sweeps, each varying one dimension of the
@@ -306,8 +309,10 @@ them on one scale, so an improvement shows as a limit that moves right. A limit 
 apart, so the page also compares the writer's capacity: the spans processed per second of the writer on a core, at the rates both runs offered. It moves by
 a few percent between runs of one commit, so a change of a tenth shows plainly. Compare only runs of the same machine, and run on an idle one.
 
-With `-PsaturationClients=4 -PsaturationSlowClients=1`, the hub's own WebSocket publishes the frames in place of the run's publisher: `MonitorFrameSocket` on
-Tomcat, with `permessage-deflate`, to clients on the loopback address. Per step the run then also reports what the clients read of the frames published: the
+With `-PsaturationClients=4 -PsaturationSlowClients=1`, the hub's own WebSocket publishes the frames in place of the run's publisher: `FramePublisher`
+through `UiServer`'s WebSocket on Javalin's Jetty, with `permessage-deflate`, to clients on the loopback address. Jetty deflates a message on the
+thread that sends it, so each send runs on a virtual thread of its own; on the publisher's, five clients made it skip frames from 80,000 spans per second. Per step the run then also reports what the
+clients read of the frames published: the
 snapshots among them, the lag from the end of the second an epoch closes to the frame's last byte read, and the send from the message written to that byte.
 Clients that read frames as they come connect before the run's clock starts. Slow ones read 10 MB of JSON a second, about what a 16 Mbit/s link carries once
 deflated, or `-PsaturationSlowClientRate` characters, and connect as the clock starts, as a page that opens on a busy hub. The summary adds a table per
@@ -318,16 +323,16 @@ snapshot or never read. Picked runs get a panel each, on shared axes, as every s
 
 Run 1, 2026-10-20, on a Ryzen 7 5825U (16 threads, 32 GB, Linux) at the commit before the optimizations of pull requests #1 to #3, in spans per second:
 
-| Sweep        | Scenario                  | Keeps up | Holds   | Fails at          |
-|--------------|---------------------------|----------|---------|-------------------|
-| Reference    | 50 × 10                   | 150,000  | 200,000 | 250,000, behind   |
-| Profile      | 50 × 20, 500 types        | 100,000  | 200,000 | 250,000, refuses  |
-| Applications | 5                         | 200,000  | 200,000 | 250,000, behind   |
-|              | 100                       | 80,000   | 150,000 | 200,000, refuses  |
-|              | 500                       | 30,000   | 60,000  | 80,000, refuses   |
-| Instances    | 100                       | 150,000  | 150,000 | 200,000, behind   |
-| Types        | 1,000                     | 125,000  | 150,000 | 200,000, refuses  |
-| Budget       | 256 MB                    | 20,000   | 40,000  | 50,000, refuses   |
+| Sweep        | Scenario           | Keeps up | Holds   | Fails at         |
+|--------------|--------------------|----------|---------|------------------|
+| Reference    | 50 × 10            | 150,000  | 200,000 | 250,000, behind  |
+| Profile      | 50 × 20, 500 types | 100,000  | 200,000 | 250,000, refuses |
+| Applications | 5                  | 200,000  | 200,000 | 250,000, behind  |
+|              | 100                | 80,000   | 150,000 | 200,000, refuses |
+|              | 500                | 30,000   | 60,000  | 80,000, refuses  |
+| Instances    | 100                | 150,000  | 150,000 | 200,000, behind  |
+| Types        | 1,000              | 125,000  | 150,000 | 200,000, refuses |
+| Budget       | 256 MB             | 20,000   | 40,000  | 50,000, refuses  |
 
 How to read it:
 

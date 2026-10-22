@@ -1,29 +1,29 @@
-# The hub's defaults. Override any of them with arguments, environment variables such as SMD_MONITOR_HUB_MEMORY=2GB, or an application.yml beside the
-# jar; docs/monitor.md describes each.
-spring:
-  application:
-    name: smd-monitor-hub
-
-server:
-  port: 8080
-  # The forwarded headers of a proxy in front of the page name its origin to the WebSocket; Tomcat trusts them from private addresses only.
-  forward-headers-strategy: native
-
+# The hub's defaults. An application.yaml in the directory the hub starts in, an environment variable, or a system property overrides each of them;
+# docs/monitor.md describes them.
 smd:
   monitor:
     hub:
+      ui:
+        port: 8080
+        # address: 127.0.0.1   unset, the page's port listens on every address
+        # allowed-origins: https://monitor.example, https://ops.example
       otlp:
         port: 4318
-      memory: 256MB
-      window: 1m
-      history: 5m
-      settle: 5s
-      link-horizon: 60s
+        # address: 127.0.0.1   unset, the OTLP port listens on every address
+      memory: 268435456      # bytes, 256 MB
+      window: PT1M
+      history: PT5M
+      settle: PT5S
+      link-horizon: PT60S
       max-applications: 100
       max-instances: 256
       max-types: 1000
       max-groups: 200
       max-edges: 5000
-      silent-after: 10s
-      retire-after: 10m
-      allowed-origins: []
+      silent-after: PT10S
+      retire-after: PT10M
+
+# Each logger's level, as log.level.<logger>: trace, debug, info, warn, error, or off; others log at info.
+log:
+  level:
+    org.eclipse.jetty: warn

@@ -1,5 +1,0 @@
-# The demo's hub, which shares the JVM with the applications' OpenTelemetry SDK and records no spans of its own.
-management:
-  tracing:
-    sampling:
-      probability: 0.0

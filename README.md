@@ -5,7 +5,7 @@
 A live monitor for applications built with [Simple Message Dispatch](https://github.com/DavidOpDeBeeck/simple-message-dispatch) (SMD). It shows what causes what, where
 time goes, and what fails, across every application that sends it its commands, queries, and events.
 
-Applications record their messages as OpenTelemetry spans with SMD's `smd-opentelemetry` and export them to the **hub**, a standalone Spring Boot application. The hub
+Applications record their messages as OpenTelemetry spans with SMD's `smd-opentelemetry` and export them to the **hub**, a standalone Javalin application. The hub
 counts, links, and retains them in memory and serves the monitor page. The monitor is optional: SMD does not depend on it, and the same spans can go to any
 OpenTelemetry backend.
 
@@ -57,8 +57,8 @@ which storefront compensates by cancelling the order and inventory by releasing 
 ## Run the hub
 
 ```shell
-./gradlew bootJar
-java -jar build/libs/smd-monitor-hub-0.0.1.jar
+./gradlew installDist
+build/install/smd-monitor-hub/bin/smd-monitor-hub
 ```
 
 The hub serves the page at <http://127.0.0.1:8080/> and receives spans at <http://127.0.0.1:4318/v1/traces>, on a port of its own. It has no

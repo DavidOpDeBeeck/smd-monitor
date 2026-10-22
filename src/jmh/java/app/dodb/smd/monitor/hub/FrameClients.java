@@ -1,6 +1,6 @@
 package app.dodb.smd.monitor.hub;
 
-import app.dodb.smd.monitor.hub.spring.SaturationFrameServer;
+import app.dodb.smd.monitor.hub.javalin.SaturationFrameServer;
 import jakarta.websocket.ClientEndpointConfig;
 import jakarta.websocket.CloseReason;
 import jakarta.websocket.ContainerProvider;
@@ -11,6 +11,7 @@ import jakarta.websocket.Extension;
 import jakarta.websocket.MessageHandler;
 import jakarta.websocket.Session;
 import jakarta.websocket.WebSocketContainer;
+import org.eclipse.jetty.util.component.LifeCycle;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -99,6 +100,8 @@ final class FrameClients implements AutoCloseable {
             client.close();
         }
         server.close();
+        // Jetty's client container runs threads that are no daemons, which would keep the run's JVM alive.
+        LifeCycle.stop(container);
     }
 
     private static int number(String property, int fallback, int minimum) {

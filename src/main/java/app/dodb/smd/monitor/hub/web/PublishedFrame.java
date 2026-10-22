@@ -1,4 +1,4 @@
-package app.dodb.smd.monitor.hub.spring;
+package app.dodb.smd.monitor.hub.web;
 
 import app.dodb.smd.monitor.json.Frame;
 import tools.jackson.databind.ObjectMapper;
@@ -8,7 +8,7 @@ import static java.util.Objects.requireNonNull;
 // The frame of one published epoch as clients receive it (W3): the changes since the epoch published before it, for a client that received
 // that one, and the whole snapshot for any other. Each is written at most once, when a client first needs it, and shared by every client.
 // The publisher and the threads of connecting clients read it at once.
-final class PublishedFrame {
+public final class PublishedFrame {
 
     private final Frame frame;
     private final Frame base;
@@ -22,16 +22,16 @@ final class PublishedFrame {
         this.mapper = requireNonNull(mapper);
     }
 
-    Frame frame() {
+    public Frame frame() {
         return frame;
     }
 
-    long epoch() {
+    public long epoch() {
         return frame.epoch();
     }
 
     // The message for a client that last received the frame of the given epoch: the changes when that is the base, the snapshot otherwise.
-    String messageFor(long receivedEpoch) {
+    public String messageFor(long receivedEpoch) {
         return base != null && base.epoch() == receivedEpoch ? delta() : snapshot();
     }
 

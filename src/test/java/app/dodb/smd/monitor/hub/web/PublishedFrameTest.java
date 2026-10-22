@@ -1,4 +1,4 @@
-package app.dodb.smd.monitor.hub.spring;
+package app.dodb.smd.monitor.hub.web;
 
 import app.dodb.smd.monitor.hub.HubConfig;
 import app.dodb.smd.monitor.hub.SynchronousHub;

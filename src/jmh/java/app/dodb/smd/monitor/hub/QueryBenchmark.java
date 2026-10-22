@@ -14,7 +14,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 // The main queries of the page in the system scope, against the budget of 50 ms p99 per query, over one epoch. See RelinkBenchmark for the first
@@ -26,7 +25,7 @@ public class QueryBenchmark {
 
     static final int SHOWN_CAUSES = 20;
     static final TapeQuery TAPE = new TapeQuery(InvocationFilter.EVERY_INVOCATION, Duration.ZERO, Optional.empty(), 100);
-    static final TraceQuery TRACES = new TraceQuery(Optional.empty(), TypeSelection.EVERY_TYPE, Set.of(), Set.of(), false, "", TraceOrder.NEWEST, Optional.empty(), 100);
+    static final TraceQuery TRACES = new TraceQuery(InvocationFilter.EVERY_INVOCATION, false, TraceOrder.NEWEST, Optional.empty(), 100);
     static final TimelineQuery TIMELINE = new TimelineQuery(InvocationFilter.EVERY_INVOCATION, Duration.ZERO, Duration.ofMinutes(1), 2_000);
 
     private Epoch epoch;

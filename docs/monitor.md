@@ -13,10 +13,10 @@ and what fails. It is read-only, keeps everything in memory, and starts empty af
 
 ## Set up the monitor
 
-| What                                         | Where                                    | Does                                                                                |
-|----------------------------------------------|------------------------------------------|-------------------------------------------------------------------------------------|
-| The SMD starter and an OpenTelemetry SDK     | Every application you want to see        | Records the application's bus invocations as OpenTelemetry spans; serves nothing    |
-| The hub, `smd-monitor-hub`                   | Once, as an application of its own       | Receives the spans over OTLP/HTTP, combines them per application, serves the page   |
+| What                                     | Where                              | Does                                                                              |
+|------------------------------------------|------------------------------------|-----------------------------------------------------------------------------------|
+| The SMD starter and an OpenTelemetry SDK | Every application you want to see  | Records the application's bus invocations as OpenTelemetry spans; serves nothing  |
+| The hub, `smd-monitor-hub`               | Once, as an application of its own | Receives the spans over OTLP/HTTP, combines them per application, serves the page |
 
 The monitor needs SMD 0.0.12 or newer.
 
@@ -63,7 +63,7 @@ Each setting matters:
   `unnamed`. Copies of one application on one host need different host names.
 - **`service.instance.id`** tells each run of an instance apart, so a restart is recognized. Spring Boot sets neither attribute.
 - **`schedule-delay`** is optional. Spring Boot exports every 5 seconds, so a second's spans reach the hub up to 5 seconds late. Exporting every second completes the
-  newest seconds sooner; then set the hub's `settle` to `2s`.
+  newest seconds sooner; then set the hub's `settle` to `PT2S`.
 - **`otlp.metrics.export.enabled`** turns off the starter's OTLP metrics export, which otherwise sends metrics to `localhost:4318`. The hub receives spans only.
 
 The OpenTelemetry SDK exports on its own thread, so a slow or unavailable hub never delays a message. Gateways you create yourself need `MessageTracing` installed
@@ -79,13 +79,16 @@ describes, with a sampler that keeps every SMD span.
 ### Run the hub
 
 ```shell
-./gradlew bootJar
-java -jar build/libs/smd-monitor-hub-0.0.1.jar --smd.monitor.hub.memory=2GB
+./gradlew installDist
+SMD_MONITOR_HUB_MEMORY=2147483648 build/install/smd-monitor-hub/bin/smd-monitor-hub
 ```
 
-The hub needs Java 25. Its [`application.yml`](../src/main/resources/application.yml) lists its properties with their defaults. Override them like any Spring
-Boot application's: arguments, environment variables such as `SMD_MONITOR_HUB_MEMORY=2GB`, or an `application.yml` beside the jar with only the keys you change. It
-listens on two ports, on every address; read [Secure the hub](#secure-the-hub) before you expose them.
+The hub needs Java 25; `installDist` writes it to `build/install/smd-monitor-hub`, its jars in `lib` and the script that starts it in `bin`, and `distZip` the
+same as a zip. Set its properties, with only the keys you change, in an `application.yaml` or `application.properties` in the directory it starts in, as
+environment variables such as `SMD_MONITOR_HUB_MEMORY=2147483648`, or as system properties such as `JAVA_OPTS=-Dsmd.monitor.hub.memory=2147483648`; each outranks the
+ones before it, and the hub takes no arguments. An environment variable names a property in capitals with an underscore for each dot and without its dashes,
+such as `SMD_MONITOR_HUB_MAXTYPES`. The memory budget is in bytes, such as `2147483648` for 2 GB; durations are ISO-8601, such as `PT5S` or `PT1M`. The hub listens
+on two ports, on every address; read [Secure the hub](#secure-the-hub) before you expose them.
 
 | Port   | Path         | Serves                                              |
 |--------|--------------|-----------------------------------------------------|
@@ -94,18 +97,23 @@ listens on two ports, on every address; read [Secure the hub](#secure-the-hub) b
 | `8080` | `/api/...`   | The queries the page makes for retained invocations |
 | `4318` | `/v1/traces` | The OTLP/HTTP endpoint the applications export to   |
 
-Each port answers 404 for the other's paths, so a proxy can publish the page without the endpoint. The endpoint has Tomcat threads of its own, so pages never
-take a thread from the exports.
+The OTLP port serves the endpoint only, and the page's port serves no exports, so a proxy can publish the page without the endpoint. Each port has a server and
+virtual threads of its own, so pages never take a thread from the exports.
 
-| Property                          | Default       | Meaning                                                                                  |
-|-----------------------------------|---------------|------------------------------------------------------------------------------------------|
-| `server.port`                     | `8080`        | The page's port                                                                          |
-| `server.address`                  | Every address | The address the page's port listens on                                                   |
-| `smd.monitor.hub.otlp.port`       | `4318`        | The OTLP endpoint's port, the standard one of OTLP/HTTP; differs from the page's         |
-| `smd.monitor.hub.otlp.address`    | Every address | The address the OTLP port listens on                                                     |
-| `smd.monitor.hub.allowed-origins` | None          | Origins besides the page's own that may open `/live`, such as `https://monitor.example`  |
+| Property                             | Default       | Meaning                                                                                 |
+|--------------------------------------|---------------|-----------------------------------------------------------------------------------------|
+| `smd.monitor.hub.ui.port`            | `8080`        | The page's port                                                                         |
+| `smd.monitor.hub.ui.address`         | Every address | The address the page's port listens on                                                  |
+| `smd.monitor.hub.ui.allowed-origins` | None          | Origins besides the page's own that may open `/live`, such as `https://monitor.example` |
+| `smd.monitor.hub.otlp.port`          | `4318`        | The OTLP endpoint's port, the standard one of OTLP/HTTP; differs from the page's        |
+| `smd.monitor.hub.otlp.address`       | Every address | The address the OTLP port listens on                                                    |
 
-Set `server.servlet.context-path` to serve the paths under a prefix, such as `/ops/monitor`, on both ports.
+The page asks for its assets, `api/`, and `live` relative to its own address, so a proxy may publish it under a prefix, such as `/ops/monitor/`, that it strips
+before passing a request on.
+
+Earlier hubs ran on Spring Boot. Of its properties, the hub reads none: `smd.monitor.hub.ui.port` and `smd.monitor.hub.ui.address` replace `server.port`
+and `server.address`, a proxy that strips its prefix replaces `server.servlet.context-path`, and `smd.monitor.hub.ui.allowed-origins` replaces
+`server.forward-headers-strategy` and `server.tomcat.remoteip.*`.
 
 ### Run it in Docker
 
@@ -117,7 +125,7 @@ docker run -p 127.0.0.1:8080:8080 --memory=1536m --name smd-monitor-hub smd-moni
 ```
 
 Containers on the hub's network export to `http://smd-monitor-hub:4318/v1/traces` without the port being published. The JVM's heap is 75% of the container's
-memory, and the hub warns when the budget exceeds 25% of the heap: give the container about 5.5 times the budget, 1.5 GB for the default `256MB`.
+memory, and the hub warns when the budget exceeds 25% of the heap: give the container about 5.5 times the budget, 1.5 GB for the default 256 MB.
 
 ### Try the demo
 
@@ -134,8 +142,8 @@ topic that the processing groups of the next one read:
   declined, and storefront cancels their orders, which releases their stock.
 - `shipping` schedules a shipment for each captured payment, and storefront emails the customer; about 5% of the shipping labels fail, asynchronously.
 
-Pass `--args="--server.port=8083 --smd.monitor.hub.otlp.port=4319"` to change the ports, and prefix an argument with an application's name, such as
-`--storefront.smd.demo.orders-per-second=50`, to pass it to that application instead of the hub.
+Set `SMD_MONITOR_HUB_UI_PORT=8083` and `SMD_MONITOR_HUB_OTLP_PORT=4319` in the environment to change the ports, and pass an argument prefixed with an application's name,
+such as `--args="--storefront.smd.demo.orders-per-second=50"`, to configure that application.
 
 ## Configuration
 
@@ -143,20 +151,20 @@ Pass `--args="--server.port=8083 --smd.monitor.hub.otlp.port=4319"` to change th
 
 Everything the hub keeps is bounded by these properties; invalid values fail at startup.
 
-| Property                           | Default | Meaning                                                                                                                                                     |
-|------------------------------------|---------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `smd.monitor.hub.memory`           | `256MB` | The budget that bounds everything the hub keeps; see [Memory budget](#memory-budget). `32MB` to `8GB`, and at most 75% of the JVM's maximum heap.             |
-| `smd.monitor.hub.window`           | `1m`    | The window every live figure covers: rates, failures, percentiles, event delays, and sparklines. Whole seconds, from `10s` to the history.                  |
-| `smd.monitor.hub.history`          | `5m`    | How long counts are kept: the Activity chart and the totals of types, arrows, groups, and failures. Whole seconds, from the window to `15m`.                |
-| `smd.monitor.hub.settle`           | `5s`    | How long the hub waits for a second's spans before showing it. Matches a 5-second export; use `2s` with 1-second exports. `1s` to `10s`.                     |
-| `smd.monitor.hub.link-horizon`     | `60s`   | How long the hub remembers a span to link it to a parent or child arriving later, and to recognize it if it arrives again. `10s` to the history.          |
-| `smd.monitor.hub.max-applications` | `100`   | Applications the hub monitors; spans of further applications are refused until one retires.                                                                |
-| `smd.monitor.hub.max-instances`    | `256`   | Instances per application; a further instance replaces the longest silent one, or is refused when none is silent.                                          |
-| `smd.monitor.hub.max-types`        | `1000`  | Message types counted apart per application, up to 8,000; further types count together as **Other types**.                                                 |
-| `smd.monitor.hub.max-groups`       | `200`   | Processing groups counted apart per application, up to 2,000; further groups count together as **Other groups**.                                           |
-| `smd.monitor.hub.max-edges`        | `5000`  | Arrows, routes, and failure causes counted apart per application and kind, up to 80,000; further ones count together.                                      |
-| `smd.monitor.hub.silent-after`     | `10s`   | How long an instance may send nothing before it shows as silent.                                                                                           |
-| `smd.monitor.hub.retire-after`     | `10m`   | How long before a silent instance leaves the list; an application whose instances all left is dropped with everything the hub holds of it.                  |
+| Property                           | Default     | Meaning                                                                                                                                            |
+|------------------------------------|-------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
+| `smd.monitor.hub.memory`           | `268435456` | The budget that bounds everything the hub keeps; see [Memory budget](#memory-budget). 32 MB to 8 GB, and at most 75% of the JVM's maximum heap.    |
+| `smd.monitor.hub.window`           | `PT1M`      | The window every live figure covers: rates, failures, percentiles, event delays, and sparklines. Whole seconds, from `PT10S` to the history.       |
+| `smd.monitor.hub.history`          | `PT5M`      | How long counts are kept: the Activity chart and the totals of types, arrows, groups, and failures. Whole seconds, from the window to `PT15M`.     |
+| `smd.monitor.hub.settle`           | `PT5S`      | How long the hub waits for a second's spans before showing it. Matches a 5-second export; use `PT2S` with 1-second exports. `PT1S` to `PT10S`.     |
+| `smd.monitor.hub.link-horizon`     | `PT60S`     | How long the hub remembers a span to link it to a parent or child arriving later, and to recognize it if it arrives again. `PT10S` to the history. |
+| `smd.monitor.hub.max-applications` | `100`       | Applications the hub monitors; spans of further applications are refused until one retires.                                                        |
+| `smd.monitor.hub.max-instances`    | `256`       | Instances per application; a further instance replaces the longest silent one, or is refused when none is silent.                                  |
+| `smd.monitor.hub.max-types`        | `1000`      | Message types counted apart per application, up to 8,000; further types count together as **Other types**.                                         |
+| `smd.monitor.hub.max-groups`       | `200`       | Processing groups counted apart per application, up to 2,000; further groups count together as **Other groups**.                                   |
+| `smd.monitor.hub.max-edges`        | `5000`      | Arrows, routes, and failure causes counted apart per application and kind, up to 80,000; further ones count together.                              |
+| `smd.monitor.hub.silent-after`     | `PT10S`     | How long an instance may send nothing before it shows as silent.                                                                                   |
+| `smd.monitor.hub.retire-after`     | `PT10M`     | How long before a silent instance leaves the list; an application whose instances all left is dropped with everything the hub holds of it.         |
 
 Counts beyond the caps stay in each application's totals but are not shown apart. Raise the link horizon when arrows go missing because handlers run long after
 the publication, such as from an event store that falls behind. Seconds older than the window, the settle, and 30 seconds more are kept in 10-second buckets, so
@@ -186,24 +194,24 @@ and its health shows the overrun.
 What a budget keeps at the [design target](monitor-hub-design.md#design-target), 50 applications of 20 instances sending 10,000 spans per second over 500 message
 types each, with a 15-minute history, at its steady state:
 
-| Budget | Counts cover             | Link horizon | Retained invocations | Heap after a collection |
-|--------|--------------------------|--------------|----------------------|-------------------------|
-| `1GB`  | 680 s, folded sooner     | none         | 761,000              | 979 MB                  |
-| `2GB`  | The whole 15 minutes     | 60 s         | 1,652,000            | 1,660 MB                |
-| `4GB`  | The whole 15 minutes     | 60 s         | 4,554,000            | 3,612 MB                |
+| Budget | Counts cover         | Link horizon | Retained invocations | Heap after a collection |
+|--------|----------------------|--------------|----------------------|-------------------------|
+| 1 GB   | 680 s, folded sooner | none         | 761,000              | 979 MB                  |
+| 2 GB   | The whole 15 minutes | 60 s         | 1,652,000            | 1,660 MB                |
+| 4 GB   | The whole 15 minutes | 60 s         | 4,554,000            | 3,612 MB                |
 
-**Sizing:** the default `256MB` suits a few applications. Give a hub of the design target's size `2GB`, and the JVM at least four times the budget, which leaves room
+**Sizing:** the default 256 MB suits a few applications. Give a hub of the design target's size 2 GB, and the JVM at least four times the budget, which leaves room
 for requests and frames in flight and for the collector. The hub warns when the budget exceeds 25% of the maximum heap and fails to start above 75%.
 
 ### Throughput
 
 How many spans per second a hub keeps up with depends first on how many applications send to it, then on the machine. Measured on an Intel Core i5-12600K (16
 threads, 64 GB, Windows 11) with OpenJDK 25, a 12 GB heap, and G1. Each row fills the hub's whole history at its rate, then offers that rate for 30 seconds: the hub
-refused and shed nothing, its writer thread was busy less than 90% of the time, and its queues drained. Every row has a `2GB` budget and a 15-minute history;
+refused and shed nothing, its writer thread was busy less than 90% of the time, and its queues drained. Every row has a 2 GB budget and a 15-minute history;
 applications have 200 message types and 50 processing groups each, except the design target's 500 and 100. Traces cross applications, and 2% of handlings fail.
 
 | Applications × instances   | Keeps up with   |
-| -------------------------- | --------------- |
+|----------------------------|-----------------|
 | 5 × 10                     | 150,000 spans/s |
 | 50 × 10                    | 60,000 spans/s  |
 | 50 × 20, the design target | 80,000 spans/s  |
@@ -217,17 +225,32 @@ applications have 200 message types and 50 processing groups each, except the de
 To check these rates on another machine or after a change, run `./gradlew saturationCheck` on an otherwise idle machine (about 30 minutes); it fails naming each row
 that no longer keeps up. [Saturation](monitor-hub-design.md#saturation) describes the runs that find where each shape stops.
 
+### Logging
+
+The hub logs to standard output, one plain line per event, such as `2026-10-22 17:04:30.253 [main] INFO io.javalin.Javalin - Javalin started in 112ms`.
+Every logger logs at `info` except Jetty's, at `warn`. Set a logger's level, `trace`, `debug`, `info`, `warn`, `error`, or `off`, as `log.level.<logger>` in the
+`application.yaml` the hub starts with:
+
+```yaml
+log:
+  level:
+    io.javalin: warn
+    app.dodb.smd.monitor.hub: debug
+```
+
+An environment variable or a system property, such as `LOG_LEVEL_ORG_ECLIPSE_JETTY=info`, changes only a level the `application.yaml` or the hub's defaults
+name.
+
 ## Secure the hub
 
 The hub has no authentication: whoever reaches the page's port sees every application, and whoever reaches the OTLP port can send it spans. Keep each port to its
-own audience, or set `server.address` and `smd.monitor.hub.otlp.address` to `127.0.0.1` to reach the hub from its own host only:
+own audience, or set `smd.monitor.hub.ui.address` and `smd.monitor.hub.otlp.address` to `127.0.0.1` to reach the hub from its own host only:
 
 - **The page's port.** Put a reverse proxy in front of it, on the same host or on a network only the proxy reaches, that authenticates the operators who open `/`,
-  its assets, `/api`, and the WebSocket handshake at `/live`; all are read-only `GET`s. Forward WebSocket upgrades, keep the `Host` header, and send
-  `X-Forwarded-Proto`: the WebSocket only accepts handshakes from the page's own origin. The hub reads forwarded headers from proxies on private addresses only
-  (`server.forward-headers-strategy=native`); set `server.tomcat.remoteip.internal-proxies` for a proxy elsewhere. HTTPS pages use `wss:` automatically.
-  Traefik, Coolify's proxy, forwards the upgrade as `wss`, which hides that the page's origin is the hub's own: list it in `smd.monitor.hub.allowed-origins`,
-  such as `SMD_MONITOR_HUB_ALLOWED_ORIGINS=https://monitor.example.com`.
+  its assets, `/api`, and the WebSocket handshake at `/live`; all are read-only `GET`s. Forward WebSocket upgrades and keep the `Host` header: the WebSocket
+  accepts handshakes only from pages of the host and port the `Host` header names, from clients that name no origin, and from the origins listed in
+  `smd.monitor.hub.ui.allowed-origins`. The hub reads no forwarded headers, so list the page's origin when the proxy rewrites the `Host` header, such as
+  `SMD_MONITOR_HUB_UI_ALLOWEDORIGINS=https://monitor.example.com`. HTTPS pages use `wss:` automatically.
 - **The OTLP port.** Do not publish it. Exporters cannot log in, so let only the instances or a Collector reach it, on a private network or behind a firewall.
   Across networks, put a proxy in front of it that requires headers you configure on the exporter with `management.opentelemetry.tracing.export.otlp.headers`.
 
@@ -266,7 +289,8 @@ are counted as **+N**. Drag or scroll to move, **F** to recenter.
 **Traces** lists retained root messages with everything they caused, newest first, across applications. Filter by text or instance name, type, status, chains,
 or pins; sort by recency, duration, or size. The waterfall shows each invocation on the trace's time axis with its application, instance, thread, start, wait
 after its parent returned, and duration; every column header filters. A command's or query's row covers its handler, with what the handler dispatched nested
-below; under each event, a row per processing group shows it handling the event, with what its handlers dispatched nested below. **Pin** keeps a copy of a trace in the tab so it survives eviction; **Copy JSON** exports it.
+below; under each event, a row per processing group shows it handling the event, with what its handlers dispatched nested below. **Pin** keeps a copy of a trace in the tab so it survives eviction; *
+*Copy JSON** exports it.
 
 **Failures** lists every **cause** of the last five minutes, a stage (a type's dispatch or a group's handling) failing with one exception class, ranked by the
 last minute. Each shows its counts, share, and a strip of failures per second. For the causes shown, the page asks for their latest retained traces and failure
@@ -285,15 +309,15 @@ a list or chart it stops moving, so clicks land.
 
 ### Keyboard
 
-| Key              | Does                                                    |
-|------------------|---------------------------------------------------------|
-| **Ctrl K**, **/** | Palette: jump to a type, a message by ID prefix, a scope, or an action |
-| **A**            | Palette of scopes                                       |
-| **1**–**5**      | Overview, Flow, Traces, Failures, Live                  |
-| **Space**        | Pause the display; the page keeps receiving updates     |
-| **Esc**          | Close the inspector                                     |
-| **F**            | Bring Flow's lens into view                             |
-| **J**, **K**, **P**, **T** | On the tape: next, previous, parent, open trace |
+| Key                        | Does                                                                   |
+|----------------------------|------------------------------------------------------------------------|
+| **Ctrl K**, **/**          | Palette: jump to a type, a message by ID prefix, a scope, or an action |
+| **A**                      | Palette of scopes                                                      |
+| **1**–**5**                | Overview, Flow, Traces, Failures, Live                                 |
+| **Space**                  | Pause the display; the page keeps receiving updates                    |
+| **Esc**                    | Close the inspector                                                    |
+| **F**                      | Bring Flow's lens into view                                            |
+| **J**, **K**, **P**, **T** | On the tape: next, previous, parent, open trace                        |
 
 ### Hub health
 
@@ -321,7 +345,8 @@ reached every listener yet.
 Only events have handlings, one per processing group, and the handlings the figures count are theirs.
 
 **Lineage comes from span links alone.** A handling's parent is the dispatch of its event. A message dispatched by a command or query handler is a child of that
-command's or query's dispatch, and one dispatched by an event handler a child of its group's handling, on any thread or instance, and in any application. A dispatch without a link is an entry point. The hub links a child and its parent in whichever order they arrive, as long
+command's or query's dispatch, and one dispatched by an event handler a child of its group's handling, on any thread or instance, and in any application. A dispatch without a link is an entry point.
+The hub links a child and its parent in whichever order they arrive, as long
 as the second arrives within the link horizon of the first, or while the first is retained; otherwise the link, and its arrow in Flow, is not counted. A span that
 arrives twice within the horizon counts once. A message forwarded to another application with its message ID and metadata, such as by a broker, continues the same
 trace. When a parent is evicted, the child names its type and application; when it was never received, the child says **Parent not found**.
@@ -338,9 +363,9 @@ The monitor shows no running invocations: a span ends when its handlers return, 
 
 ## How the hub behaves
 
-**Threads.** The servlet threads decode requests and admit spans into one bounded queue per application. A single writer thread, `smd-monitor-hub`, drains the queues
+**Threads.** The OTLP port's virtual threads decode requests and admit spans into one bounded queue per application. A single writer thread, `smd-monitor-hub`, drains the queues
 in turn and owns everything the hub counts and retains; a flooding application fills only its own queue. Just after each second the writer publishes an immutable
-**epoch**. Frames and queries read the latest epoch and never hold up the writer. At the design target with a `2GB` budget, the writer needs about a tenth of a core.
+**epoch**. Frames and queries read the latest epoch and never hold up the writer. At the design target with a 2 GB budget, the writer needs about a tenth of a core.
 
 **Under load.** Each application has room reserved in the intake queues, and borrows beyond it from room the applications share, up to half of it. Beyond its
 reserved room, when the shared room or the application's half of it is half full, the writer retains only its failed spans and those slower than their type's p95;
@@ -349,12 +374,12 @@ the endpoint answers 503 to it.
 
 **The OTLP endpoint** answers once it admitted a request, before the writer processes it:
 
-| Request                                                                                  | Answer                                                                               |
-|------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
-| Accepted                                                                                 | An empty `ExportTraceServiceResponse`                                                |
+| Request                                                                                    | Answer                                                                                   |
+|--------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------|
+| Accepted                                                                                   | An empty `ExportTraceServiceResponse`                                                    |
 | Some spans unreadable, beyond the limits, or starting more than 30 s after the hub's clock | Partial success counting the rejected spans with the first reason; the rest are received |
-| An application's queue is full                                                           | 503 with `Retry-After: 2`; the exporter retries, and spans already received count once |
-| Not valid protobuf or gzip, or larger than 16 MB                                         | 400; nothing is received                                                             |
+| An application's queue is full                                                             | 503 with `Retry-After: 2`; the exporter retries, and spans already received count once   |
+| Not valid protobuf or gzip, or larger than 16 MB                                           | 400; nothing is received                                                                 |
 
 **Live updates.** A page receives the whole system on one WebSocket: a snapshot when it connects, then each second only what changed. At the design target the
 snapshot is about 41 MB of JSON and a delta about 1.4 MB, 290 KB compressed by `permessage-deflate`, so pages on a large hub need bandwidth to match. A client that
@@ -363,7 +388,7 @@ another build.
 
 **Queries.** The page asks for retained invocations under `/api` (`tape`, `traces`, `failures`, `timeline`, `invocations`, `types`) and asks again when the hub
 retains more. Identical queries of one epoch are answered once for every page. At most 4 queries run at once; a further one gets 429 and the page keeps its last
-answer. An evicted invocation or trace answers 404.
+answer. An evicted invocation or trace answers 404; a parameter the hub cannot read answers 400 with the reason.
 
 ## Develop the UI
 
@@ -378,10 +403,10 @@ For live reloading, run the demo and the Vite dev server, then open <http://loca
 cd frontend && npm run dev
 ```
 
-| Directory                                   | Contents                                                                                                                     |
-|---------------------------------------------|------------------------------------------------------------------------------------------------------------------------------|
+| Directory                                   | Contents                                                                                                                                                                               |
+|---------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `src/lib`                                   | Framework-free TypeScript: the wire contract (`wire.ts`, mirroring `app.dodb.smd.monitor.json`), the snapshot and delta mirror (`mirror.ts`), queries (`api.ts`), and the views' logic |
-| `src/store`                                 | The WebSocket connection, pause, the reactive state, and the queries that refresh as the hub retains more                   |
-| `src/app`                                   | Shell, navigation, selection, pins, and keyboard shortcuts                                                                   |
-| `src/views`, `src/inspector`, `src/palette` | One folder per view                                                                                                          |
-| `src/components`                            | Shared components and the class names per message kind                                                                       |
+| `src/store`                                 | The WebSocket connection, pause, the reactive state, and the queries that refresh as the hub retains more                                                                              |
+| `src/app`                                   | Shell, navigation, selection, pins, and keyboard shortcuts                                                                                                                             |
+| `src/views`, `src/inspector`, `src/palette` | One folder per view                                                                                                                                                                    |
+| `src/components`                            | Shared components and the class names per message kind                                                                                                                                 |

@@ -11,7 +11,6 @@ import app.dodb.smd.monitor.hub.TapeQuery;
 import app.dodb.smd.monitor.hub.TraceCursor;
 import app.dodb.smd.monitor.hub.TraceOrder;
 import app.dodb.smd.monitor.hub.TraceQuery;
-import app.dodb.smd.monitor.hub.TypeSelection;
 import app.dodb.smd.monitor.hub.intake.SpanBatch;
 import app.dodb.smd.monitor.hub.span.ApplicationName;
 import app.dodb.smd.monitor.hub.span.InstanceName;
@@ -31,7 +30,6 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -92,7 +90,7 @@ class QueryViewTest {
         receiveHandledEvent();
         hub.receive(new SpanBatch(TICKETS, new InstanceName("tickets-1"), new SessionId("session-1"), List.of(
             span("0000000000000009", Optional.empty(), MessageId.generate(), new Stage.Dispatch(OPEN), new Outcome.Completed(Duration.ZERO))), List.of()));
-        var query = new TraceQuery(Optional.empty(), TypeSelection.EVERY_TYPE, Set.of(), Set.of(), false, "", TraceOrder.SLOWEST, Optional.empty(), 1);
+        var query = new TraceQuery(InvocationFilter.EVERY_INVOCATION, false, TraceOrder.SLOWEST, Optional.empty(), 1);
 
         var page = json(TracePageView.from(hub.session(), hub.traces(query)));
 

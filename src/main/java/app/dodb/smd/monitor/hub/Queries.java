@@ -95,7 +95,7 @@ final class Queries {
         var page = new PriorityQueue<>(comparator.reversed());
         var tally = new int[3];
         view.forEachTrace(trace -> {
-            if (!touches(trace, query.scope())) {
+            if (!touches(trace, query.filter().scope())) {
                 return;
             }
             tally[0]++;
@@ -326,21 +326,22 @@ final class Queries {
     }
 
     private boolean matches(TraceQuery query, TraceSnapshot trace) {
-        if (!query.statuses().isEmpty() && !query.statuses().contains(trace.status())
+        var filter = query.filter();
+        if (!filter.statuses().isEmpty() && !filter.statuses().contains(trace.status())
             || query.chains() && trace.messages() < 2
-            || !query.applications().isEmpty() && trace.applications().stream().noneMatch(query.applications()::contains)) {
+            || !filter.applications().isEmpty() && trace.applications().stream().noneMatch(filter.applications()::contains)) {
             return false;
         }
-        if (query.types().everyType() && query.search().isEmpty()) {
+        if (filter.types().everyType() && filter.search().isEmpty()) {
             return true;
         }
-        var typed = query.types().everyType();
-        var found = query.search().isEmpty();
+        var typed = filter.types().everyType();
+        var found = filter.search().isEmpty();
         for (var index = 0; index < trace.size() && !(typed && found); index++) {
             var member = view.specimen(trace.member(index));
             if (member.isPresent()) {
-                typed = typed || query.types().matches(member.get());
-                found = found || InvocationFilter.found(member.get(), query.search());
+                typed = typed || filter.types().matches(member.get());
+                found = found || InvocationFilter.found(member.get(), filter.search());
             }
         }
         return typed && found;

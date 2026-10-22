@@ -4,8 +4,16 @@ smd = "0.0.12"
 
 # Core libraries
 jackson = "3.0.4"
+opentelemetry = "1.55.0"
 
-# Spring
+# Web
+javalin = "7.2.3"
+avaje-config = "5.2"
+avaje-simple-logger = "2.0"
+# The Jetty of Javalin, for the WebSocket client of the tests and benchmarks
+jetty = "12.1.12"
+
+# The monitored applications of the integration tests and the demo
 spring = "4.0.3"
 
 # Testing
@@ -25,16 +33,25 @@ smd-spring-boot-starter = { module = "app.dodb:smd-spring-boot-starter", version
 
 # Core libraries
 jackson-databind = { module = "tools.jackson.core:jackson-databind", version.ref = "jackson" }
+opentelemetry-bom = { module = "io.opentelemetry:opentelemetry-bom", version.ref = "opentelemetry" }
 opentelemetry-sdk-testing = { module = "io.opentelemetry:opentelemetry-sdk-testing" }
 opentelemetry-sdk-trace = { module = "io.opentelemetry:opentelemetry-sdk-trace" }
 opentelemetry-exporter-otlp = { module = "io.opentelemetry:opentelemetry-exporter-otlp" }
 opentelemetry-exporter-otlp-common = { module = "io.opentelemetry:opentelemetry-exporter-otlp-common" }
 
+# Web
+javalin = { module = "io.javalin:javalin", version.ref = "javalin" }
+avaje-config = { module = "io.avaje:avaje-config", version.ref = "avaje-config" }
+avaje-simple-logger = { module = "io.avaje:avaje-simple-logger", version.ref = "avaje-simple-logger" }
+# A WebSocket client of the jakarta.websocket API, for the tests and benchmarks
+jetty-websocket-jakarta-client = { module = "org.eclipse.jetty.ee10.websocket:jetty-ee10-websocket-jakarta-client", version.ref = "jetty" }
+
 # Spring Boot
 spring-boot-dependencies = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring" }
+spring-boot-autoconfigure = { module = "org.springframework.boot:spring-boot-autoconfigure" }
+snakeyaml = { module = "org.yaml:snakeyaml" }
 spring-boot-micrometer-tracing-opentelemetry = { module = "org.springframework.boot:spring-boot-micrometer-tracing-opentelemetry" }
 micrometer-tracing-bridge-otel = { module = "io.micrometer:micrometer-tracing-bridge-otel" }
-spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
 
 # Testing
 assertj = { module = "org.assertj:assertj-core", version.ref = "assertj" }
@@ -44,9 +61,8 @@ junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 
 [bundles]
-# Spring Boot's OpenTelemetry tracing with OTLP span export, without the OTLP metrics registry of spring-boot-starter-opentelemetry.
-spring-boot-opentelemetry-tracing = ["spring-boot-micrometer-tracing-opentelemetry", "micrometer-tracing-bridge-otel", "opentelemetry-exporter-otlp"]
+# A Spring Boot application configured in yml, logging through the hub's SLF4J provider, with OpenTelemetry tracing and OTLP span export, without the OTLP metrics registry of spring-boot-starter-opentelemetry.
+spring-boot-opentelemetry-tracing = ["spring-boot-autoconfigure", "snakeyaml", "spring-boot-micrometer-tracing-opentelemetry", "micrometer-tracing-bridge-otel", "opentelemetry-exporter-otlp"]
 
 [plugins]
 jmh = { id = "me.champeau.jmh", version.ref = "gradle-jmh-plugin" }
-spring-boot = { id = "org.springframework.boot", version.ref = "spring" }

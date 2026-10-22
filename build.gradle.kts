@@ -1,6 +1,6 @@
 plugins {
     java
-    alias(libs.plugins.spring.boot)
+    application
     alias(libs.plugins.jmh)
 }
 
@@ -15,8 +15,10 @@ java {
     sourceCompatibility = JavaVersion.VERSION_25
 }
 
-springBoot {
-    mainClass = "app.dodb.smd.monitor.hub.spring.MonitorHubApplication"
+// ./gradlew installDist writes the runnable hub to build/install/smd-monitor-hub: its jars in lib, and bin/smd-monitor-hub to start it.
+application {
+    applicationName = "smd-monitor-hub"
+    mainClass = "app.dodb.smd.monitor.hub.javalin.MonitorHubServer"
 }
 
 repositories {
@@ -33,12 +35,13 @@ configurations[integrationTest.implementationConfigurationName].extendsFrom(conf
 configurations[integrationTest.runtimeOnlyConfigurationName].extendsFrom(configurations.testRuntimeOnly.get())
 
 dependencies {
-    implementation(platform(libs.spring.boot.dependencies))
+    implementation(platform(libs.opentelemetry.bom))
     implementation(libs.smd.api)
     implementation(libs.smd.opentelemetry)
-    // Includes Spring MVC.
-    implementation("org.springframework.boot:spring-boot-starter-websocket")
+    implementation(libs.javalin)
+    implementation(libs.avaje.config)
     implementation(libs.jackson.databind)
+    runtimeOnly(libs.avaje.simple.logger)
     compileOnly(libs.opentelemetry.sdk.trace)
 
     testImplementation(platform(libs.junit.bom))
@@ -50,7 +53,10 @@ dependencies {
     // The OTLP exporter's own encoder, so decoding is tested against what exporters send.
     testImplementation(libs.opentelemetry.exporter.otlp.common)
 
-    "integrationTestImplementation"(libs.spring.boot.starter.test)
+    testImplementation(libs.jetty.websocket.jakarta.client)
+
+    // The monitored applications that export to the hub are Spring Boot applications, as SMD's are.
+    "integrationTestImplementation"(platform(libs.spring.boot.dependencies))
     "integrationTestImplementation"(libs.smd.spring.boot.starter)
     "integrationTestImplementation"(libs.bundles.spring.boot.opentelemetry.tracing)
 }
@@ -110,6 +116,7 @@ val demo = sourceSets.create("demo") {
 }
 
 dependencies {
+    "demoImplementation"(platform(libs.spring.boot.dependencies))
     "demoImplementation"(libs.smd.spring.boot.starter)
     "demoImplementation"(libs.bundles.spring.boot.opentelemetry.tracing)
 }
@@ -193,7 +200,7 @@ tasks.register<Exec>("saturationDashboard") {
     executable = python.get()
     argumentProviders.add(CommandLineArgumentProvider {
         listOf("-I", "docs/saturation/dashboard.py", "--add", results.get().asFile.path, "--only", only.get()) +
-            (name.orNull?.let { listOf("--name", it) } ?: emptyList())
+                (name.orNull?.let { listOf("--name", it) } ?: emptyList())
     })
 }
 

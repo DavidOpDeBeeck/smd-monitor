@@ -1,4 +1,4 @@
-package app.dodb.smd.monitor.hub.spring;
+package app.dodb.smd.monitor.hub.javalin;
 
 import app.dodb.smd.api.command.Command;
 import app.dodb.smd.api.command.CommandGateway;
@@ -9,6 +9,7 @@ import app.dodb.smd.api.event.EventMessage;
 import app.dodb.smd.api.event.EventPublisher;
 import app.dodb.smd.api.event.ProcessingGroup;
 import app.dodb.smd.api.metadata.Metadata;
+import app.dodb.smd.monitor.hub.HubConfig;
 import app.dodb.smd.monitor.hub.Invocation;
 import app.dodb.smd.monitor.hub.InvocationFilter;
 import app.dodb.smd.monitor.hub.MonitorHub;
@@ -32,11 +33,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.builder.SpringApplicationBuilder;
-import org.springframework.boot.web.server.context.WebServerApplicationContext;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.util.unit.DataSize;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -67,12 +66,13 @@ class MonitorHubIntegrationTest {
     private static final ApplicationName BILLING = new ApplicationName("billing");
     // Shut down rather than closed, which would wait for open WebSockets.
     private final HttpClient client = HttpClient.newHttpClient();
-    private ConfigurableApplicationContext hub;
+    private MonitorHubServer hub;
     private ConfigurableApplicationContext tickets;
 
+    // Free ports on the loopback address, and a page behind a proxy that rewrites the Host header.
     @BeforeEach
     void startHubAndTickets() {
-        hub = new SpringApplicationBuilder(MonitorHubApplication.class).profiles("hub").run();
+        hub = MonitorHubServer.start(new HubSettings(0, "127.0.0.1", 0, "127.0.0.1", List.of("https://monitor.example"), HubConfig.withDefaults().build()));
         tickets = exporting(TicketApplication.class, "tickets");
     }
 
@@ -118,11 +118,21 @@ class MonitorHubIntegrationTest {
         assertThat(new String(response.body(), StandardCharsets.UTF_8)).contains("declares 127 bytes");
     }
 
+    // Beyond the 1 MB Javalin bounds a body it reads whole; the endpoint reads the body as a stream, up to its own 16 MB.
     @Test
-    void traces_json_isAnUnsupportedMediaType() throws Exception {
-        var response = post(otlp("/v1/traces"), "application/json", "{}".getBytes(StandardCharsets.UTF_8));
+    void traces_exportOfTwoMegabytes_isAFullSuccess() throws Exception {
+        var size = 2_000_000;
+        var request = new byte[4 + size];
+        // A field the request does not define, 2,000,000 bytes long.
+        request[0] = 0x7A;
+        request[1] = (byte) (0x80 | (size & 0x7F));
+        request[2] = (byte) (0x80 | ((size >> 7) & 0x7F));
+        request[3] = (byte) (size >> 14);
 
-        assertThat(response.statusCode()).isEqualTo(415);
+        var response = post(otlp("/v1/traces"), "application/x-protobuf", request);
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).isEmpty();
     }
 
     @Test
@@ -133,19 +143,13 @@ class MonitorHubIntegrationTest {
     }
 
     @Test
-    void page_onTheOtlpPort_isNotFound() throws Exception {
-        var response = client.send(HttpRequest.newBuilder(URI.create(otlp("/"))).GET().build(), HttpResponse.BodyHandlers.ofString());
+    void main_arguments_failsNamingWhereThePropertiesGo() {
+        String[] arguments = {"--smd.monitor.hub.ui.port=18080"};
 
-        assertThat(response.statusCode()).isEqualTo(404);
-    }
-
-    @Test
-    void start_otlpPortIsTheServerPort_failsNamingBothProperties() {
-        var builder = new SpringApplicationBuilder(MonitorHubApplication.class);
-
-        assertThatThrownBy(() -> builder.run("--server.port=18080", "--smd.monitor.hub.otlp.port=18080"))
-            .rootCause()
-            .hasMessage("smd.monitor.hub.otlp.port must differ from server.port, which serves the page; both are 18080");
+        assertThatThrownBy(() -> MonitorHubServer.main(arguments))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("The hub takes no arguments; set its properties in an application.yaml, as environment variables, or as system properties; "
+                + "got [--smd.monitor.hub.ui.port=18080]");
     }
 
     @Test
@@ -184,7 +188,7 @@ class MonitorHubIntegrationTest {
         socket.abort();
     }
 
-    // W4: the servlet container negotiates permessage-deflate with a client that offers it, as browsers do.
+    // W4: Jetty negotiates permessage-deflate with a client that offers it, as browsers do.
     @Test
     void connect_clientOffersPermessageDeflate_negotiatesIt() throws Exception {
         var container = ContainerProvider.getWebSocketContainer();
@@ -225,6 +229,48 @@ class MonitorHubIntegrationTest {
     }
 
     @Test
+    void api_typeMissing_answersABadRequest() throws Exception {
+        var response = query("/api/types");
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(response.headers().firstValue("Content-Type")).hasValueSatisfying(type -> assertThat(type).startsWith("text/plain"));
+        assertThat(response.body()).isEqualTo("The query parameter type is required");
+    }
+
+    @Test
+    void api_limitNotANumber_answersABadRequestNamingIt() throws Exception {
+        var response = query("/api/tape?limit=many");
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(response.body()).isEqualTo("The query parameter limit must be a whole number; got 'many'");
+    }
+
+    // The hub serves no JSON mapper to Javalin, which would render its own errors in JSON for a client asking for it.
+    @Test
+    void api_unknownPathAskedForJson_answersNotFound() throws Exception {
+        var response = client.send(HttpRequest.newBuilder(URI.create(base("http") + "/api/unknown")).header("Accept", "application/json").GET().build(),
+            HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(404);
+    }
+
+    @Test
+    void api_invocationAskedAgainWithItsETag_answersNotModified() throws Exception {
+        openTicket();
+        var invocation = awaitInvocation(TICKETS, each -> true);
+        var path = "/api/invocations/" + invocation.id().value();
+        var first = query(path);
+
+        var again = client.send(HttpRequest.newBuilder(URI.create(base("http") + path)).header("If-None-Match", first.headers().firstValue("ETag").orElseThrow())
+            .GET().build(), HttpResponse.BodyHandlers.ofString());
+
+        assertThat(first.statusCode()).isEqualTo(200);
+        assertThat(first.headers().firstValue("X-Smd-Monitor-Protocol")).hasValue(String.valueOf(Protocol.VERSION));
+        assertThat(again.statusCode()).isEqualTo(304);
+        assertThat(again.body()).isEmpty();
+    }
+
+    @Test
     void api_invocationNoLongerRetained_answersNotFound() throws Exception {
         var response = query("/api/invocations/999999");
 
@@ -251,15 +297,24 @@ class MonitorHubIntegrationTest {
         assertThatThrownBy(() -> handshake.get(5, TimeUnit.SECONDS)).hasCauseInstanceOf(WebSocketHandshakeException.class);
     }
 
-    // A page served over HTTPS behind Traefik, which forwards the upgrade as wss, so the hub cannot tell the page's origin is its own.
     @Test
-    void connect_allowedOriginForwardedAsWss_acceptsTheHandshake() throws Exception {
+    void connect_thePagesOwnOrigin_acceptsTheHandshake() throws Exception {
+        var listener = new FrameListener();
+
+        var socket = client.newWebSocketBuilder().header("Origin", base("http")).buildAsync(URI.create(base("ws") + "/live"), listener).get(5, TimeUnit.SECONDS);
+
+        listener.awaitFrame(frame -> true);
+        assertThat(listener.messages.getFirst().get("type").asString()).isEqualTo("snapshot");
+        socket.abort();
+    }
+
+    // A page behind a proxy that rewrites the Host header, so the hub cannot tell the page's origin is its own.
+    @Test
+    void connect_allowedOrigin_acceptsTheHandshake() throws Exception {
         var listener = new FrameListener();
 
         var socket = client.newWebSocketBuilder()
             .header("Origin", "https://monitor.example")
-            .header("X-Forwarded-Host", "monitor.example")
-            .header("X-Forwarded-Proto", "wss")
             .buildAsync(URI.create(base("ws") + "/live"), listener)
             .get(5, TimeUnit.SECONDS);
 
@@ -278,9 +333,8 @@ class MonitorHubIntegrationTest {
         assertThat(page.statusCode()).isEqualTo(200);
         assertThat(page.headers().firstValue("Content-Type")).hasValueSatisfying(type -> assertThat(type).startsWith("text/html"));
         assertThat(stylesheet.headers().firstValue("Content-Type")).hasValueSatisfying(type -> assertThat(type).startsWith("text/css"));
-        assertThat(script.headers().firstValue("Content-Type")).hasValueSatisfying(type -> assertThat(type).startsWith("text/javascript"));
+        assertThat(script.headers().firstValue("Content-Type")).hasValueSatisfying(type -> assertThat(type).containsAnyOf("text/javascript", "application/javascript"));
         assertThat(missing.statusCode()).isEqualTo(404);
-        assertThat(hub.getBean(MonitorHubProperties.class).memory()).isEqualTo(DataSize.ofMegabytes(256));
     }
 
     private void openTicket() {
@@ -312,7 +366,7 @@ class MonitorHubIntegrationTest {
     }
 
     private MonitorHub hub() {
-        return hub.getBean(MonitorHub.class);
+        return hub.hub();
     }
 
     // Starts an application that records its SMD spans and exports them to the hub; its profile names it, and the hub's port is known only now.
@@ -323,16 +377,16 @@ class MonitorHubIntegrationTest {
     }
 
     private String base(String scheme) {
-        return scheme + "://127.0.0.1:" + ((WebServerApplicationContext) hub).getWebServer().getPort();
+        return scheme + "://127.0.0.1:" + hub.uiServer().port();
     }
 
     private String otlp(String path) {
-        return "http://127.0.0.1:" + hub.getEnvironment().getProperty("local.smd.monitor.hub.otlp.port") + path;
+        return "http://127.0.0.1:" + hub.otlpServer().port() + path;
     }
 
     @Configuration(proxyBeanMethods = false)
     @EnableAutoConfiguration
-    @EnableSMD(packages = "app.dodb.smd.monitor.hub.spring")
+    @EnableSMD(packages = "app.dodb.smd.monitor.hub.javalin")
     static class TicketApplication {
 
         @Bean
@@ -343,7 +397,7 @@ class MonitorHubIntegrationTest {
 
     @Configuration(proxyBeanMethods = false)
     @EnableAutoConfiguration
-    @EnableSMD(packages = "app.dodb.smd.monitor.hub.spring.billing")
+    @EnableSMD(packages = "app.dodb.smd.monitor.hub.javalin.billing")
     static class BillingApplication {
     }
 

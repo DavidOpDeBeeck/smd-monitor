@@ -1,13 +1,6 @@
 package app.dodb.smd.monitor.hub.otlp;
 
 import app.dodb.smd.monitor.hub.MonitorHub;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -15,40 +8,37 @@ import java.util.zip.GZIPInputStream;
 
 import static java.util.Objects.requireNonNull;
 
-@RestController
-class OtlpTraceController {
+// The OTLP/HTTP endpoint's requests, which the receiving thread decodes and admits.
+public final class OtlpAdmission {
 
-    static final String PATH = "/v1/traces";
+    public static final String PATH = "/v1/traces";
+    public static final String PROTOBUF = "application/x-protobuf";
     // Bounds every request as read, and once inflated when compressed: well above the default exporter batch of 512 spans, and read from the
     // request as a stream so a larger one never fills the heap.
     static final int MAX_BODY_BYTES = 16 * 1024 * 1024;
-    private static final String PROTOBUF = "application/x-protobuf";
-    private static final MediaType PROTOBUF_TYPE = MediaType.parseMediaType(PROTOBUF);
     private final MonitorHub hub;
 
-    OtlpTraceController(MonitorHub hub) {
+    public OtlpAdmission(MonitorHub hub) {
         this.hub = requireNonNull(hub);
     }
 
     // Answers once admission decided, before the hub's writer processes the spans. A full queue answers 503 for the whole request; the batches
-    // of other applications in it were taken, and the hub counts them once when they arrive again.
-    @PostMapping(value = PATH, consumes = PROTOBUF, produces = PROTOBUF)
-    ResponseEntity<byte[]> traces(InputStream body, @RequestHeader(name = "Content-Encoding", required = false) String encoding) {
+    // of other applications in it were taken, and the hub counts them once when they arrive again. The body is as sent, gzip or not; the content
+    // encoding is null when the request names none.
+    public OtlpAnswer admit(InputStream body, String contentEncoding) {
         SpanIntake intake;
         try {
-            intake = OtlpTraces.read(read(body, encoding));
+            intake = OtlpTraces.read(read(body, contentEncoding));
         } catch (IllegalArgumentException invalid) {
-            return ResponseEntity.badRequest().contentType(PROTOBUF_TYPE).body(OtlpTraces.invalidArgument(invalid.getMessage()));
+            return new OtlpAnswer.Invalid(OtlpTraces.invalidArgument(invalid.getMessage()));
         }
         var busy = intake.submit(hub::submit);
         if (busy.isPresent()) {
             var retryAfter = busy.get().retryAfter().toSeconds();
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                .header(HttpHeaders.RETRY_AFTER, String.valueOf(retryAfter))
-                .contentType(PROTOBUF_TYPE)
-                .body(OtlpTraces.unavailable("The intake queue of application '" + busy.get().application() + "' is full; retry after " + retryAfter + " seconds"));
+            return new OtlpAnswer.Busy(retryAfter,
+                OtlpTraces.unavailable("The intake queue of application '" + busy.get().application() + "' is full; retry after " + retryAfter + " seconds"));
         }
-        return ResponseEntity.ok().contentType(PROTOBUF_TYPE).body(OtlpTraces.response(intake.rejected()));
+        return new OtlpAnswer.Accepted(OtlpTraces.response(intake.rejected()));
     }
 
     private static byte[] read(InputStream body, String encoding) {

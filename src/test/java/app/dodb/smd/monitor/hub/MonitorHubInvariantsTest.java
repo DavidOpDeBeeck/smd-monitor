@@ -255,7 +255,7 @@ class MonitorHubInvariantsTest {
     }
 
     private static List<Trace> traces(SynchronousHub hub) {
-        return hub.traces(new TraceQuery(Optional.empty(), TypeSelection.EVERY_TYPE, Set.of(), Set.of(), false, "", TraceOrder.NEWEST, Optional.empty(), 10))
+        return hub.traces(new TraceQuery(InvocationFilter.EVERY_INVOCATION, false, TraceOrder.NEWEST, Optional.empty(), 10))
             .traces();
     }
 

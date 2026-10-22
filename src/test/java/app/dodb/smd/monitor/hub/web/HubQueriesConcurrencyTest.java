@@ -1,22 +1,20 @@
-package app.dodb.smd.monitor.hub.spring;
+package app.dodb.smd.monitor.hub.web;
 
 import app.dodb.smd.monitor.hub.HubConfig;
 import app.dodb.smd.monitor.hub.MonitorHub;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.ResponseEntity;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class MonitorHubQueriesConcurrencyTest {
+class HubQueriesConcurrencyTest {
 
     private final MonitorHub hub = new MonitorHub(HubConfig.withDefaults().build());
-    private final MonitorHubQueries queries = new MonitorHubQueries(hub);
+    private final HubQueries queries = new HubQueries(hub);
     private final CountDownLatch release = new CountDownLatch(1);
     private final ArrayList<Thread> running = new ArrayList<>();
 
@@ -30,22 +28,22 @@ class MonitorHubQueriesConcurrencyTest {
 
     @Test
     void tape_whileAsManyQueriesRunAsAllowed_answersTooManyRequests() throws InterruptedException {
-        runBlockedQueries(MonitorHubQueries.MAX_RUNNING);
+        runBlockedQueries(QueryAnswers.MAX_RUNNING);
 
         var response = tape();
 
-        assertThat(response.getStatusCode().value()).isEqualTo(429);
-        assertThat(response.getBody()).contains("at most 4 queries");
+        assertThat(response.status()).isEqualTo(429);
+        assertThat(response.body()).contains("at most 4 queries");
     }
 
     @Test
     void tape_whileFewerQueriesRunThanAllowed_answersFromTheLatestEpoch() throws InterruptedException {
-        runBlockedQueries(MonitorHubQueries.MAX_RUNNING - 1);
+        runBlockedQueries(QueryAnswers.MAX_RUNNING - 1);
 
         var response = tape();
 
-        assertThat(response.getStatusCode().value()).isEqualTo(200);
-        assertThat(response.getBody()).contains(hub.epoch().session().toString());
+        assertThat(response.status()).isEqualTo(200);
+        assertThat(response.body()).contains(hub.epoch().session().toString());
     }
 
     private void runBlockedQueries(int count) throws InterruptedException {
@@ -59,13 +57,13 @@ class MonitorHubQueriesConcurrencyTest {
                 } catch (InterruptedException interrupted) {
                     Thread.currentThread().interrupt();
                 }
-                return ResponseEntity.ok(epoch.session().toString());
+                return QueryAnswer.json(epoch.session().toString());
             })));
         }
         started.await();
     }
 
-    private ResponseEntity<String> tape() {
-        return queries.tape(Optional.empty(), null, null, null, null, "", 0, Optional.empty(), 100);
+    private QueryAnswer tape() {
+        return queries.tape(new QueryFilter(null, List.of(), List.of(), List.of(), List.of(), null), null, null, null);
     }
 }

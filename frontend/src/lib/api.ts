@@ -1,8 +1,8 @@
-import { KIND_LABEL, shortName, typeKey } from './format';
-import { outdated } from './protocol';
-import { selectionInScope, type TypeSelection } from './type-selection';
-import type { Activity, DispatchStatus, Linked, ParentRef } from './types';
-import type { WireInvocation, WireParent, WireRetainedInvocation } from './wire';
+import {KIND_LABEL, shortName, typeKey} from './format';
+import {outdated} from './protocol';
+import {selectionInScope, type TypeSelection} from './type-selection';
+import type {Activity, DispatchStatus, Linked, ParentRef} from './types';
+import type {WireInvocation, WireParent, WireRetainedInvocation} from './wire';
 
 // A query of the hub's retained invocations, relative to the page. Its key names the query, so two requests with one key ask the same.
 export interface HubRequest {
@@ -23,22 +23,23 @@ export function hubRequest(path: string, params: Record<string, string | number 
         if (Array.isArray(value)) for (const each of value) search.append(name, each);
         else search.append(name, String(value));
     }
-    return { path, params: search };
+    return {path, params: search};
 }
 
 export function withParams(request: HubRequest, params: Record<string, string | number>): HubRequest {
     const search = new URLSearchParams(request.params);
     for (const [name, value] of Object.entries(params)) search.set(name, String(value));
-    return { path: request.path, params: search };
+    return {path: request.path, params: search};
 }
 
-class QueryError extends Error {}
+class QueryError extends Error {
+}
 
 // The answer, or null when the hub retains nothing under the path, such as an evicted invocation.
 export async function fetchAnswer<T>(request: HubRequest, signal?: AbortSignal): Promise<T | null> {
     const url = new URL(`api/${request.path}`, document.baseURI);
     url.search = request.params.toString();
-    const response = await fetch(url, { signal, headers: { Accept: 'application/json' } });
+    const response = await fetch(url, {signal});
     if (outdated(response.headers.get(PROTOCOL_HEADER), response.headers.get(BUILD_HEADER))) {
         location.reload();
         return null;
