@@ -255,6 +255,19 @@ class MonitorHubIntegrationTest {
     }
 
     @Test
+    void api_typeFigures_answersTheSelectedTypesFigures() throws Exception {
+        openTicket();
+        awaitInvocation(TICKETS, invocation -> invocation.processingGroup().isEmpty());
+
+        var response = query("/api/type-figures?scope=tickets&kind=COMMAND&sort=rate");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        var answer = new ObjectMapper().readTree(response.body());
+        assertThat(answer.get("total").asInt()).isPositive();
+        assertThat(answer.get("types").get(0).get("kind").asString()).isEqualTo("COMMAND");
+    }
+
+    @Test
     void api_causesInAnUnknownOrder_answersABadRequestNamingTheOrders() throws Exception {
         var response = query("/api/causes?order=newest");
 

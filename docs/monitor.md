@@ -278,7 +278,8 @@ opens Flow on a type.
 - **Event delay**: how long after its publication returned a processing group started handling an event, p95. It grows when groups fall behind and names the slowest.
 - The **applications** (system scope) with their instances, rate, failures, and memory; or **upstream** and **downstream** applications (application scope).
 - The **Activity** chart: commands, queries, events, and failures per second over the history, each row on its own scale.
-- **Message types**: each type's rate, failed share, and a latency band (p50 to p95, a tick at p50, a ring at p99), sortable and filterable.
+- **Message types**: each type's rate, failed share, and a latency band (p50 to p95, a tick at p50, a ring at p99), sortable and filterable. It shows the
+  first 100 in its order, busiest first by default, and 100 more at a time.
 - **Failures, last minute**, **Processing groups** with their delivery (`sync`, `async await`, `fire and forget`, `event store`) and delay, and **Instances**.
 
 **Flow** follows one message type or processing group through the system. Pick it in the **Message** field; entry points come first. The lens shows what caused it
@@ -390,7 +391,7 @@ another build.
 
 **Queries.** The page asks for retained invocations under `/api` (`tape`, `traces`, `failures`, `timeline`, `invocations`, `types`), for how
 messages flow (`flow`) while the flow view or the live lanes show it, and for what each group's handlings counted (`handlings`) while a group is
-expanded or the failures or flow view shows them, and for the failure causes the overview or the failures view lists (`causes`), ranked by the hub,
+expanded or the failures or flow view shows them, for the failure causes the overview or the failures view lists (`causes`), and for the figures of the types the type table shows (`type-figures`), both ranked by the hub,
 and asks again with every
 frame while it is visible; a hidden tab asks nothing until it shows again. Every answer but the timeline's, which moves with the clock, carries an ETag of
 its content, which the page sends back, so an answer that did not change answers 304 and the page renders nothing again. The trace list and the tape ask again for their first 100 only: read from the top,

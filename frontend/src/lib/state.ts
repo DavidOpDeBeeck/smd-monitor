@@ -31,6 +31,7 @@ import type {
     WireHandlings,
     WireStatistics,
     WireType,
+    WireTypeFigures,
     WireTypeLink,
 } from './wire';
 
@@ -276,6 +277,23 @@ export function causes(answer: WireCauses | null): Causes {
                 windowPerSecond: cause.windowPerSecond,
             };
         }),
+    };
+}
+
+export interface TypeFigures {
+    // That the query selected, of which it answered the first.
+    total: number;
+    types: readonly TypeStatistics[];
+}
+
+export const NO_TYPE_FIGURES: TypeFigures = { total: 0, types: [] };
+
+// The figures of the types from the type figures query's answer, in its order, or none before it answered.
+export function typeFigures(answer: WireTypeFigures | null): TypeFigures {
+    if (!answer) return NO_TYPE_FIGURES;
+    return {
+        total: answer.total,
+        types: answer.types.map(type => typeStatistics(type.application, typeKey(type.application, type.kind, type.name), type)),
     };
 }
 

@@ -1,7 +1,7 @@
 import { Key } from '@solid-primitives/keyed';
-import { createMemo, For, Index, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, Index, on, Show } from 'solid-js';
 import { selectedTypeKey, useMonitorApp } from '../../app/monitor-app';
-import { LinkButton } from '../../components/controls';
+import { LinkButton, TextButton } from '../../components/controls';
 import { Glyph } from '../../components/Glyph';
 import { createHeldListing, createListHold } from '../../components/hold';
 import { animateReorder } from '../../components/reorder';
@@ -12,10 +12,17 @@ import { cx } from '../../lib/cx';
 import { typeRows, type TypeRow, type TypeSort } from '../../lib/dashboard';
 import { capitalized, count, duration, historySpan, KIND_LABEL, lastPeriod, perSecond, roundDuration, share, shortName } from '../../lib/format';
 import { latencyScale, scalePosition, scaleTicks, type LatencyScale, type LatencySpread } from '../../lib/latency-spread';
+import { hubRequest } from '../../lib/api';
+import { typeFigures } from '../../lib/state';
 import { selectionInScope } from '../../lib/type-selection';
 import { ratePerSecond } from '../../lib/throughput';
 import type { Brief, MessageKind } from '../../lib/types';
+import type { WireTypeFigures } from '../../lib/wire';
+import { createHubQuery } from '../../store/hub-query';
 import { HeaderCell, NameCell, NUMBER_CELL, Row, Table } from './table';
+
+// The table asks the hub for the first types in its order, a page more at a time.
+const PAGE = 100;
 
 const NUMBER = cx(NUMBER_CELL, 'transition-colors duration-500');
 const HIDDEN_BELOW_4XL = '@max-4xl:hidden';
@@ -267,16 +274,24 @@ export function TypeTable() {
     const system = () => app.scope() === null;
     const last = createMemo(() => lastPeriod(app.store.view().windowSeconds));
     const columns = createMemo(() => columnsOver(last()).filter(column => column.id !== 'application' || system()));
+    const selection = createMemo(() => selectionInScope(overview.types(), app.scope()));
+    const filters = createMemo(() => `${app.scope()}|${overview.sort()}|${selection().kinds.join(' ')}|${selection().types.join(' ')}`);
+    const [shown, setShown] = createSignal(PAGE);
+    createEffect(on(filters, () => setShown(PAGE), { defer: true }));
+    const query = createHubQuery<WireTypeFigures>(
+        app.store,
+        () => hubRequest('type-figures', { scope: app.scope(), kind: selection().kinds, type: selection().types, sort: overview.sort(), limit: shown() }),
+        { kept: true },
+    );
+    const figures = createMemo(() => typeFigures(query.answer()));
     const hold = createListHold();
     // A new scope applies at once, like a filter.
     const listing = createHeldListing(
         hold,
         (row: TypeRow) => row.statistics.key,
-        () => ({
-            items: typeRows(app.scoped().types.values(), overview.sort(), selectionInScope(overview.types(), app.scope()), app.store.view().windowSeconds),
-            filters: `${app.scope()}|${overview.sort()}|${overview.types().kinds.join(' ')}|${overview.types().types.join(' ')}`,
-        }),
+        () => ({ items: typeRows(figures().types, app.store.view().windowSeconds), filters: filters() }),
     );
+    const more = () => figures().total - figures().types.length;
     const scale = createMemo(() => Math.max(1, ...listing().items.flatMap(row => row.statistics.startedPerSecond)));
     const spreadScale = createMemo(() => latencyScale(listing().items.flatMap(row => row.latency ?? [])));
     let body!: HTMLTableSectionElement;
@@ -309,6 +324,11 @@ export function TypeTable() {
                     <OtherTypesRow columns={columns()} other={app.scoped().other.dispatchWindow} windowSeconds={app.store.view().windowSeconds} />
                 </Show>
             </Table>
+            <Show when={more() > 0}>
+                <TextButton wide class="mt-2" onClick={() => setShown(count => count + PAGE)}>
+                    Show {Math.min(PAGE, more()).toLocaleString()} more of {more().toLocaleString()} types
+                </TextButton>
+            </Show>
         </div>
     );
 }

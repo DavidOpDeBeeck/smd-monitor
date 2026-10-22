@@ -57,7 +57,7 @@ export function createMonitorApp(store: MonitorStore, stage: () => HTMLElement) 
     const [pins, setPins] = createSignal<ReadonlyMap<string, PinnedTrace>>(new Map());
     const [seenFailures, setSeenFailures] = createSignal<ReadonlyMap<string, number>>(new Map());
     const [palette, setPalette] = createSignal<PaletteScope | null>(null);
-    const [typeSort, setTypeSort] = createSignal<TypeSort>('name');
+    const [typeSort, setTypeSort] = createSignal<TypeSort>('rate');
     const [typeFilter, setTypeFilter] = createSignal<TypeSelection>(everyType());
     const [expandedGroups, setExpandedGroups] = createSignal<ReadonlySet<string>>(new Set());
     // The card the flow's lens is on, or null before one is chosen; the lens keeps it whatever the scope.

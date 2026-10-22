@@ -198,6 +198,12 @@ export interface WireType {
     startedPerSecond: number[];
 }
 
+// The figures of the message types a view shows, in the order it asked for, out of the total selected.
+export interface WireTypeFigures extends WireAnswer {
+    total: number;
+    types: (WireType & { application: string })[];
+}
+
 export interface WireGroup {
     processingGroup: string;
     // How the group receives its events, as its latest handling named it: sync, async-await, async-fire-and-forget, event-store, or the name

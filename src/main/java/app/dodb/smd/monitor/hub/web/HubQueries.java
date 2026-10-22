@@ -1,5 +1,6 @@
 package app.dodb.smd.monitor.hub.web;
 
+import app.dodb.smd.monitor.hub.ApplicationType;
 import app.dodb.smd.monitor.hub.Epoch;
 import app.dodb.smd.monitor.hub.InvocationFilter;
 import app.dodb.smd.monitor.hub.InvocationId;
@@ -10,6 +11,7 @@ import app.dodb.smd.monitor.hub.TimelineQuery;
 import app.dodb.smd.monitor.hub.TraceOrder;
 import app.dodb.smd.monitor.hub.TraceQuery;
 import app.dodb.smd.monitor.hub.TypeSelection;
+import app.dodb.smd.monitor.hub.TypeStatistics;
 import app.dodb.smd.monitor.hub.span.ApplicationName;
 import app.dodb.smd.monitor.json.CausesView;
 import app.dodb.smd.monitor.json.DurationsView;
@@ -24,6 +26,7 @@ import app.dodb.smd.monitor.json.TapePageView;
 import app.dodb.smd.monitor.json.TimelineWindowView;
 import app.dodb.smd.monitor.json.TraceDetailView;
 import app.dodb.smd.monitor.json.TracePageView;
+import app.dodb.smd.monitor.json.TypeFiguresView;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
@@ -36,6 +39,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
+import java.util.function.ToDoubleFunction;
 import java.util.stream.Collectors;
 
 import static java.util.Objects.requireNonNull;
@@ -123,6 +127,35 @@ public final class HubQueries {
             selected, epoch.statistics().applications())));
     }
 
+    // The figures of the message types of every application, or of the one the scope names, of the kinds and types selected, in the order a view
+    // shows them: rate, the most dispatches in the window first; failed, the highest failed share in the window; failures, the most failed over the
+    // history; p50, p95, or p99, the slowest in the window; name. Ties go by the simple name, then the type. The limit bounds the types answered,
+    // not the total selected.
+    public QueryAnswer typeFigures(String scope, List<String> kinds, List<String> types, String sort, String limit) {
+        var application = Optional.ofNullable(scope).map(ApplicationName::new);
+        var selection = new TypeSelection(kinds.stream().map(QueryNames::kind).collect(Collectors.toSet()),
+            types.stream().map(QueryNames::type).collect(Collectors.toSet()));
+        var order = typeOrder(required("sort", sort));
+        var count = limit(limit);
+        return answer(List.of("typeFigures", application, selection, sort, count), epoch -> {
+            var selected = epoch.statistics().applications().stream()
+                .filter(statistics -> application.isEmpty() || application.get().equals(statistics.application()))
+                .flatMap(statistics -> statistics.types().stream()
+                    .filter(type -> selection.everyType() || selection.kinds().contains(type.type().kind())
+                        || selection.types().contains(new ApplicationType(statistics.application(), type.type())))
+                    .map(type -> new RankedType(statistics.application(), type, order.rank().applyAsDouble(type))))
+                .sorted(Comparator.comparingDouble(RankedType::rank).reversed()
+                    .thenComparing(order.then())
+                    .thenComparing(ranked -> simpleName(ranked.type().type().name()), String.CASE_INSENSITIVE_ORDER)
+                    .thenComparing(ranked -> ranked.application().value())
+                    .thenComparing(ranked -> ranked.type().type().kind())
+                    .thenComparing(ranked -> ranked.type().type().name()))
+                .toList();
+            return versioned(new TypeFiguresView(epoch.session().toString(), epoch.sequence(), selected.size(),
+                selected.stream().limit(count).map(ranked -> TypeFiguresView.TypeFigureView.from(ranked.application(), ranked.type())).toList()));
+        });
+    }
+
     // The failure causes of every application, or of the one the scope names, ranked as a view shows them: recent, those that failed in the
     // window, the most first; ranked, those that failed over the history, the most in the window first, then over the history. The limit bounds the
     // causes answered, not the total counted.
@@ -196,6 +229,38 @@ public final class HubQueries {
         } catch (NoSuchAlgorithmException failure) {
             throw new IllegalStateException("The JVM offers no SHA-256 to name the version of an answer", failure);
         }
+    }
+
+    private record RankedType(ApplicationName application, TypeStatistics type, double rank) {
+    }
+
+    // What ranks a type first, the higher the earlier, and what breaks its ties before the name.
+    private record TypeOrder(ToDoubleFunction<TypeStatistics> rank, Comparator<RankedType> then) {
+    }
+
+    private static TypeOrder typeOrder(String sort) {
+        Comparator<RankedType> none = (a, b) -> 0;
+        return switch (sort) {
+            case "rate" -> new TypeOrder(type -> type.window().started(), Comparator.comparingLong((RankedType ranked) -> ranked.type().history().started()).reversed());
+            case "failed" -> new TypeOrder(type -> type.window().started() == 0 ? -1 : (double) type.window().failed() / type.window().started(),
+                Comparator.comparingLong((RankedType ranked) -> ranked.type().window().failed()).reversed());
+            case "failures" -> new TypeOrder(type -> type.history().failed(), none);
+            case "p50" -> new TypeOrder(type -> nanos(type.window().latency().percentile(0.5)), none);
+            case "p95" -> new TypeOrder(type -> nanos(type.window().latency().percentile(0.95)), none);
+            case "p99" -> new TypeOrder(type -> nanos(type.window().latency().percentile(0.99)), none);
+            case "name" -> new TypeOrder(type -> 0, none);
+            default -> throw new IllegalArgumentException("The query parameter sort must be rate, failed, failures, p50, p95, p99, or name; got '" + sort + "'");
+        };
+    }
+
+    // Nothing completed ranks below any latency.
+    private static double nanos(Optional<Duration> latency) {
+        return latency.map(Duration::toNanos).orElse(-1L);
+    }
+
+    // As the page names a type: the last part of its class name.
+    private static String simpleName(String name) {
+        return name.substring(Math.max(name.lastIndexOf('.'), name.lastIndexOf('$')) + 1);
     }
 
     private static InvocationFilter filter(QueryFilter filter) {

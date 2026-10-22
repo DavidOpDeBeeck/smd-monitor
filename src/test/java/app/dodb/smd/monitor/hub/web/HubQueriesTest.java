@@ -395,6 +395,60 @@ class HubQueriesTest {
             .hasMessageContaining("order");
     }
 
+    @Test
+    void typeFigures_rateWithALimit_answersTheBusiestFirstOutOfAllSelected() {
+        receive(dispatch("0000000000000001", "OpenTicket"));
+        receive(dispatch("0000000000000002", "CloseTicket"));
+        receive(dispatch("0000000000000003", "CloseTicket"));
+
+        var answer = mapper.readTree(queries.typeFigures(null, List.of(), List.of(), "rate", "1").body());
+
+        assertThat(answer.get("total").asInt()).isEqualTo(2);
+        assertThat(answer.get("types").size()).isEqualTo(1);
+        assertThat(answer.get("types").get(0).get("name").asString()).isEqualTo("CloseTicket");
+        assertThat(answer.get("types").get(0).get("window").get(0).asLong()).isEqualTo(2);
+    }
+
+    @Test
+    void typeFigures_anyType_hasTheFieldsOfTheWireContract() {
+        receive(dispatch("0000000000000001", "OpenTicket"));
+
+        var type = mapper.readTree(queries.typeFigures(null, List.of(), List.of(), "name", null).body()).get("types").get(0);
+
+        assertThat(type.propertyNames()).containsExactly("application", "kind", "name", "entryPoint", "window", "history", "retained", "startedPerSecond");
+    }
+
+    @Test
+    void typeFigures_kindSelected_answersTheTypesOfThatKindOnly() {
+        receive(dispatch("0000000000000001", new MessageType(MessageKind.COMMAND, "OpenTicket")));
+        receive(dispatch("0000000000000002", new MessageType(MessageKind.QUERY, "FindTicket")));
+
+        var types = mapper.readTree(queries.typeFigures("tickets", List.of("QUERY"), List.of(), "name", null).body()).get("types");
+
+        assertThat(types.size()).isEqualTo(1);
+        assertThat(types.get(0).get("kind").asString()).isEqualTo("QUERY");
+    }
+
+    @Test
+    void typeFigures_typeSelected_answersThatTypeOnly() {
+        receive(TICKETS, dispatch("0000000000000001", "OpenTicket"));
+        receive(BILLING, dispatch("0000000000000002", "OpenTicket"));
+
+        var types = mapper.readTree(queries.typeFigures(null, List.of(), List.of("billing::COMMAND:OpenTicket"), "rate", null).body()).get("types");
+
+        assertThat(types.size()).isEqualTo(1);
+        assertThat(types.get(0).get("application").asString()).isEqualTo("billing");
+    }
+
+    @Test
+    void typeFigures_unknownSort_failsNamingTheSorts() {
+        hub.epoch();
+
+        assertThatThrownBy(() -> queries.typeFigures(null, List.of(), List.of(), "busiest", null))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("The query parameter sort must be rate, failed, failures, p50, p95, p99, or name; got 'busiest'");
+    }
+
     private void receive(MessageSpan span) {
         receive(TICKETS, span);
     }
@@ -421,6 +475,15 @@ class HubQueriesTest {
         var delivery = stage instanceof Stage.Handling ? Optional.of(EventDelivery.SYNC) : Optional.<EventDelivery>empty();
         return new MessageSpan(SpanRef.of(TRACE, spanId), Optional.empty(), MessageId.generate(), stage, delivery, startedAt, "main",
             new Outcome.Failed(Duration.ofMillis(1), "java.lang.IllegalStateException"));
+    }
+
+    private static MessageSpan dispatch(String spanId, String command) {
+        return dispatch(spanId, new MessageType(MessageKind.COMMAND, command));
+    }
+
+    private static MessageSpan dispatch(String spanId, MessageType type) {
+        return new MessageSpan(SpanRef.of(TRACE, spanId), Optional.empty(), MessageId.generate(), new Stage.Dispatch(type), Optional.empty(), settled(), "main",
+            new Outcome.Completed(Duration.ofMillis(1)));
     }
 
     private static MessageSpan span(String spanId, Optional<String> continues) {
