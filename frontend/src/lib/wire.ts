@@ -139,16 +139,9 @@ export interface WireApplication {
     instances: WireInstance[];
     types: WireType[];
     groups: WireGroup[];
-    // Between this application's types.
-    links: WireLink[];
-    // Into this application's types from a parent type of another application.
+    // Into this application's types from a parent type of another application. Its links within, routes, sink routes, and group links come
+    // with the flow query (WireFlow).
     crossings: WireCrossing[];
-    // Events of any application reaching this application's processing groups.
-    routes: WireRoute[];
-    // This application's events sent to its sinks, by the delivery of each sink.
-    sinkRoutes: WireSinkRoute[];
-    // Messages this application's processing groups dispatched.
-    groupLinks: WireGroupLink[];
     dispatches: WireBrief;
     handlings: WireBrief;
     // The p95 over every handling of the window that started after its publication returned, or null when none did.
@@ -379,12 +372,41 @@ export interface WireMessageDetail extends WireAnswer {
     propagatedFrom: WireInvocation | null;
 }
 
-// The history holds every figure of the type, null when its application did not report it.
+// The history holds every figure of the type, null when its application did not report it. Its links in and out, across applications too,
+// most invocations first.
 export interface WireRetainedType extends WireAnswer {
     history: WireStatistics | null;
     retained: number;
     failureTypes: { failureType: string; count: number }[];
     latest: WireInvocation[];
+    incoming: WireTypeLink[];
+    outgoing: WireTypeLink[];
+}
+
+export interface WireTypeLink {
+    parentApplication: string;
+    parent: WireMessageType;
+    childApplication: string;
+    child: WireMessageType;
+    history: number;
+    lastSecond: number;
+}
+
+// How messages flow within the applications asked about: only the flow view and the live lanes draw it, so the frame leaves it out.
+export interface WireFlow extends WireAnswer {
+    applications: WireFlowApplication[];
+}
+
+export interface WireFlowApplication {
+    name: string;
+    // Between this application's types.
+    links: WireLink[];
+    // Events of any application reaching this application's processing groups.
+    routes: WireRoute[];
+    // This application's events sent to its sinks, by the delivery of each sink.
+    sinkRoutes: WireSinkRoute[];
+    // Messages this application's processing groups dispatched.
+    groupLinks: WireGroupLink[];
 }
 
 // Newest first.

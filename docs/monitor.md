@@ -388,7 +388,8 @@ snapshot is about 41 MB of JSON and a delta about 1.4 MB, 290 KB compressed by `
 falls behind by a frame or three receives the changes since the frame it holds, and one further behind the next snapshot. The hub accepts 128 pages at once, or `smd.monitor.hub.ui.max-viewers`. The page reconnects with backoff, keeping its last state visible, and reloads when the hub serves
 another build.
 
-**Queries.** The page asks for retained invocations under `/api` (`tape`, `traces`, `failures`, `timeline`, `invocations`, `types`) and asks again with every
+**Queries.** The page asks for retained invocations under `/api` (`tape`, `traces`, `failures`, `timeline`, `invocations`, `types`), and for how
+messages flow (`flow`) while the flow view or the live lanes show it, and asks again with every
 frame while it is visible; a hidden tab asks nothing until it shows again. Every answer but the timeline's, which moves with the clock, carries an ETag of
 its content, which the page sends back, so an answer that did not change answers 304 and the page renders nothing again. The trace list and the tape ask again for their first 100 only: read from the top,
 that is the list; scrolled further down, it replaces the top while the rest stays as loaded until the list is read from the top again. Identical queries of one epoch are answered once for every page. At most 16

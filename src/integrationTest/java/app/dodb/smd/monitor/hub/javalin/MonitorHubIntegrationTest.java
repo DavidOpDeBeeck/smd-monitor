@@ -221,6 +221,19 @@ class MonitorHubIntegrationTest {
     }
 
     @Test
+    void api_flow_answersTheRoutesOfTheApplicationInScope() throws Exception {
+        openTicket();
+        awaitInvocation(TICKETS, invocation -> invocation.processingGroup().isPresent());
+
+        var response = query("/api/flow?scope=tickets");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        var application = new ObjectMapper().readTree(response.body()).get("applications").get(0);
+        assertThat(application.get("name").asString()).isEqualTo("tickets");
+        assertThat(application.get("routes").isEmpty()).isFalse();
+    }
+
+    @Test
     void api_typeNotNamedAsAType_answersABadRequestWithContext() throws Exception {
         var response = query("/api/types?type=OpenTicket");
 

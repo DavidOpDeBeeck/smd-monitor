@@ -11,8 +11,6 @@ export interface ScopedState {
     types: ReadonlyMap<TypeKey, TypeStatistics>;
     groups: readonly GroupStatistics[];
     handlings: ReadonlyMap<HandlingKey, HandlingStatistics>;
-    // Within the application, or in the system within each application and across applications.
-    links: readonly Link[];
     instances: readonly InstanceState[];
     failures: readonly FailureCount[];
     other: OtherCounts;
@@ -32,7 +30,6 @@ export function scopedState(state: MonitorState, scope: string | null): ScopedSt
         types: new Map(applications.flatMap(application => [...application.types])),
         groups: applications.flatMap(application => application.groups),
         handlings: new Map(applications.flatMap(application => [...application.handlings])),
-        links: applications.flatMap(application => (scope === null ? [...application.links, ...application.crossings] : application.links)),
         instances: applications.flatMap(application => application.instances),
         failures: applications.flatMap(application => application.failures),
         other: combineOther(applications.map(application => application.other)),

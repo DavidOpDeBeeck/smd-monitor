@@ -12,6 +12,7 @@ import app.dodb.smd.monitor.hub.TypeSelection;
 import app.dodb.smd.monitor.hub.span.ApplicationName;
 import app.dodb.smd.monitor.json.DurationsView;
 import app.dodb.smd.monitor.json.FailureCausesView;
+import app.dodb.smd.monitor.json.FlowView;
 import app.dodb.smd.monitor.json.FoundView;
 import app.dodb.smd.monitor.json.MessageDetailView;
 import app.dodb.smd.monitor.json.QueryNames;
@@ -114,7 +115,16 @@ public final class HubQueries {
 
     public QueryAnswer type(String type) {
         var selected = QueryNames.type(required("type", type));
-        return answer(List.of("types", selected), epoch -> versioned(RetainedTypeView.from(epoch.session(), epoch.type(selected), epoch.history(selected))));
+        return answer(List.of("types", selected), epoch -> versioned(RetainedTypeView.from(epoch.session(), epoch.type(selected), epoch.history(selected),
+            selected, epoch.statistics().applications())));
+    }
+
+    // How messages flow within and between the applications, or within the one the scope names, for the flow view and the live lanes.
+    public QueryAnswer flow(String scope) {
+        var application = Optional.ofNullable(scope).map(ApplicationName::new);
+        return answer(List.of("flow", application), epoch -> versioned(FlowView.from(epoch.session(), epoch.sequence(), epoch.statistics().applications().stream()
+            .filter(statistics -> application.isEmpty() || application.get().equals(statistics.application()))
+            .toList())));
     }
 
     // Answers from the latest epoch; queries never wait for the hub's writer, nor it for them.

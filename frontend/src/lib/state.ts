@@ -25,8 +25,10 @@ import type {
     WireLink,
     WireMessageType,
     WireOther,
+    WireFlow,
     WireStatistics,
     WireType,
+    WireTypeLink,
 } from './wire';
 
 export interface Totals {
@@ -108,16 +110,8 @@ export interface ApplicationState {
     types: ReadonlyMap<TypeKey, TypeStatistics>;
     groups: readonly GroupStatistics[];
     handlings: ReadonlyMap<HandlingKey, HandlingStatistics>;
-    // Between this application's types.
-    links: readonly Link[];
     // Into this application's types from a parent type of another application.
     crossings: readonly Link[];
-    // Events of any application reaching this application's processing groups.
-    routes: readonly Route[];
-    // This application's events sent to its sinks.
-    sinkRoutes: readonly SinkRoute[];
-    // Messages this application's processing groups dispatched.
-    groupLinks: readonly GroupLink[];
     // Every failed invocation by its stage and exception type, once for every message it failed.
     failures: readonly FailureCount[];
     other: OtherCounts;
@@ -192,6 +186,65 @@ export function mergeFrame(frame: MonitorFrame, receivedAt: number): MonitorStat
     };
 }
 
+// How messages flow within an application, which the flow query answers: its links between its types, the routes of any application's events
+// to its processing groups, its events sent to its sinks, and the messages its groups dispatched.
+export interface FlowEdges {
+    links: readonly Link[];
+    routes: readonly Route[];
+    sinkRoutes: readonly SinkRoute[];
+    groupLinks: readonly GroupLink[];
+}
+
+export const NO_EDGES: FlowEdges = { links: [], routes: [], sinkRoutes: [], groupLinks: [] };
+
+// Each application's flow from the flow query's answer, or none before it answered.
+export function flowEdges(flow: WireFlow | null): ReadonlyMap<string, FlowEdges> {
+    return new Map(
+        (flow?.applications ?? []).map(application => {
+            const name = application.name;
+            const keyOf = (type: WireMessageType, owner = name) => typeKey(owner, type.kind, type.name);
+            return [
+                name,
+                {
+                    links: application.links.map(link => ({
+                        parent: keyOf(link.parent),
+                        child: keyOf(link.child),
+                        invocations: link.history,
+                        lastSecond: link.lastSecond,
+                    })),
+                    routes: application.routes.map(route => ({
+                        publisher: route.publisher,
+                        event: keyOf(route.event, route.publisher),
+                        group: groupKey(name, route.processingGroup),
+                        invocations: route.history,
+                        lastSecond: route.lastSecond,
+                    })),
+                    sinkRoutes: application.sinkRoutes.map(route => ({
+                        event: keyOf(route.event),
+                        delivery: route.delivery,
+                        invocations: route.history,
+                        lastSecond: route.lastSecond,
+                    })),
+                    groupLinks: application.groupLinks.map(link => ({
+                        group: groupKey(name, link.processingGroup),
+                        child: keyOf(link.child),
+                        invocations: link.history,
+                        lastSecond: link.lastSecond,
+                    })),
+                },
+            ];
+        }),
+    );
+}
+
+// A link into or out of a type, as the type query answers it, each end named with its application.
+export const typeLink = (link: WireTypeLink): Link => ({
+    parent: typeKey(link.parentApplication, link.parent.kind, link.parent.name),
+    child: typeKey(link.childApplication, link.child.kind, link.child.name),
+    invocations: link.history,
+    lastSecond: link.lastSecond,
+});
+
 function applicationState(application: WireApplication, health: WireApplicationHealth | null): ApplicationState {
     const name = application.name;
     const keyOf = (type: WireMessageType, owner = name) => typeKey(owner, type.kind, type.name);
@@ -242,27 +295,7 @@ function applicationState(application: WireApplication, health: WireApplicationH
         types: new Map(application.types.map(type => [keyOf(type), typeStatistics(name, keyOf(type), type)])),
         groups,
         handlings: new Map(groups.flatMap(group => group.handlings.map(handling => [handling.key, handling]))),
-        links: application.links.map(link => linkOf(link, name)),
         crossings: application.crossings.map(crossing => linkOf(crossing.link, crossing.parentApplication)),
-        routes: application.routes.map(route => ({
-            publisher: route.publisher,
-            event: keyOf(route.event, route.publisher),
-            group: groupKey(name, route.processingGroup),
-            invocations: route.history,
-            lastSecond: route.lastSecond,
-        })),
-        sinkRoutes: application.sinkRoutes.map(route => ({
-            event: keyOf(route.event),
-            delivery: route.delivery,
-            invocations: route.history,
-            lastSecond: route.lastSecond,
-        })),
-        groupLinks: application.groupLinks.map(link => ({
-            group: groupKey(name, link.processingGroup),
-            child: keyOf(link.child),
-            invocations: link.history,
-            lastSecond: link.lastSecond,
-        })),
         failures: application.failures.map(failure => {
             const type = typeKey(name, failure.kind, failure.type);
             return {

@@ -1,0 +1,44 @@
+package app.dodb.smd.monitor.json;
+
+import app.dodb.smd.monitor.hub.ApplicationStatistics;
+import app.dodb.smd.monitor.json.ApplicationView.GroupLinkView;
+import app.dodb.smd.monitor.json.ApplicationView.LinkView;
+import app.dodb.smd.monitor.json.ApplicationView.RouteView;
+import app.dodb.smd.monitor.json.ApplicationView.SinkRouteView;
+
+import java.util.List;
+import java.util.UUID;
+
+import static java.util.Objects.requireNonNull;
+
+// How messages flow within and between the applications asked about, which the frame leaves out as only the flow view and the live lanes draw
+// it: each application's links between its types, the routes of events to its processing groups, its events sent to its sinks, and the messages
+// its groups dispatched. The crossings between applications stay in the frame.
+public record FlowView(String hubSession, long sequence, List<FlowApplicationView> applications) {
+
+    public FlowView {
+        requireNonNull(hubSession);
+        requireNonNull(applications);
+    }
+
+    public static FlowView from(UUID hubSession, long sequence, List<ApplicationStatistics> applications) {
+        return new FlowView(hubSession.toString(), sequence, applications.stream().map(FlowApplicationView::from).toList());
+    }
+
+    public record FlowApplicationView(String name, List<LinkView> links, List<RouteView> routes, List<SinkRouteView> sinkRoutes, List<GroupLinkView> groupLinks) {
+
+        public FlowApplicationView {
+            requireNonNull(name);
+            requireNonNull(links);
+            requireNonNull(routes);
+            requireNonNull(sinkRoutes);
+            requireNonNull(groupLinks);
+        }
+
+        static FlowApplicationView from(ApplicationStatistics statistics) {
+            return new FlowApplicationView(statistics.application().value(), statistics.links().stream().map(LinkView::from).toList(),
+                statistics.routes().stream().map(RouteView::from).toList(), statistics.sinkRoutes().stream().map(SinkRouteView::from).toList(),
+                statistics.groupLinks().stream().map(GroupLinkView::from).toList());
+        }
+    }
+}

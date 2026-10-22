@@ -1,24 +1,52 @@
 package app.dodb.smd.monitor.json;
 
+import app.dodb.smd.monitor.hub.ApplicationStatistics;
+import app.dodb.smd.monitor.hub.ApplicationType;
 import app.dodb.smd.monitor.hub.Counts;
+import app.dodb.smd.monitor.hub.LinkStatistics;
 import app.dodb.smd.monitor.hub.RetainedType;
+import app.dodb.smd.monitor.hub.span.ApplicationName;
+import app.dodb.smd.monitor.json.FrameView.MessageTypeView;
 import app.dodb.smd.monitor.json.FrameView.StatisticsView;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 // The failure types most frequent first, and the latest dispatches newest first. The history holds every figure of the type over the history,
-// of which the frame carries only the counts and the p95; it is null when the application did not report the type.
+// of which the frame carries only the counts and the p95; it is null when the application did not report the type. The links into the type and
+// out of it are those of its application and the crossings of every application, most invocations first.
 public record RetainedTypeView(String hubSession, long sequence, StatisticsView history, int retained, List<FailureTypeView> failureTypes,
-                               List<InvocationView> latest) {
+                               List<InvocationView> latest, List<TypeLinkView> incoming, List<TypeLinkView> outgoing) {
 
-    public static RetainedTypeView from(UUID hubSession, RetainedType type, Optional<Counts> history) {
+    public static RetainedTypeView from(UUID hubSession, RetainedType type, Optional<Counts> history, ApplicationType selected,
+                                       List<ApplicationStatistics> applications) {
+        var links = applications.stream().flatMap(application -> Stream.concat(
+                application.links().stream().map(link -> TypeLinkView.from(application.application(), application.application(), link)),
+                application.crossings().stream().map(crossing -> TypeLinkView.from(crossing.parentApplication(), application.application(), crossing.link()))))
+            .sorted(Comparator.comparingLong(TypeLinkView::history).reversed())
+            .toList();
+        var application = selected.application().value();
+        var name = MessageTypeView.from(selected.type());
         return new RetainedTypeView(hubSession.toString(), type.sequence(), history.map(StatisticsView::from).orElse(null), type.retained(),
             type.failureTypes().stream().map(count -> new FailureTypeView(count.failureType(), count.count())).toList(),
-            type.latest().stream().map(InvocationView::from).toList());
+            type.latest().stream().map(InvocationView::from).toList(),
+            links.stream().filter(link -> link.childApplication().equals(application) && link.child().equals(name)).toList(),
+            links.stream().filter(link -> link.parentApplication().equals(application) && link.parent().equals(name)).toList());
     }
 
     public record FailureTypeView(String failureType, int count) {
+    }
+
+    // A link between two types, each named with its application.
+    public record TypeLinkView(String parentApplication, MessageTypeView parent, String childApplication, MessageTypeView child, long history,
+                               long lastSecond) {
+
+        static TypeLinkView from(ApplicationName parentApplication, ApplicationName childApplication, LinkStatistics link) {
+            return new TypeLinkView(parentApplication.value(), MessageTypeView.from(link.link().parent()), childApplication.value(),
+                MessageTypeView.from(link.link().child()), link.history(), link.lastSecond());
+        }
     }
 }

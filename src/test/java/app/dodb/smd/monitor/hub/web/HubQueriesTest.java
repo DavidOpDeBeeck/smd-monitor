@@ -16,6 +16,7 @@ import app.dodb.smd.monitor.hub.span.SpanRef;
 import app.dodb.smd.monitor.hub.span.Stage;
 import app.dodb.smd.monitor.json.Protocol;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -29,12 +30,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class HubQueriesTest {
 
     private static final ApplicationName TICKETS = new ApplicationName("tickets");
+    private static final ApplicationName BILLING = new ApplicationName("billing");
     private static final String TRACE = "0000000000000000000000000000000a";
 
     private final SynchronousHub hub = new SynchronousHub(HubConfig.withDefaults().build());
     private static final QueryFilter EVERY_INVOCATION = new QueryFilter(null, List.of(), List.of(), List.of(), List.of(), null);
 
     private final HubQueries queries = new HubQueries(hub.hub());
+    private final ObjectMapper mapper = new ObjectMapper();
 
     @Test
     void answer_sameQueryTwiceInOneEpoch_computesItOnce() {
@@ -246,6 +249,44 @@ class HubQueriesTest {
 
         assertThat(answer.status()).isEqualTo(200);
         assertThat(answer.eTag()).isNull();
+    }
+
+    @Test
+    void flow_scopeNamingAnApplication_answersThatApplicationsFlowOnly() {
+        receive(TICKETS, span("0000000000000001", Optional.empty()));
+        receive(BILLING, span("0000000000000002", Optional.empty()));
+
+        var flow = mapper.readTree(queries.flow("billing").body());
+
+        assertThat(flow.get("applications").valueStream().map(application -> application.get("name").asString())).containsExactly("billing");
+    }
+
+    @Test
+    void flow_noScope_answersEveryApplication() {
+        receive(TICKETS, span("0000000000000001", Optional.empty()));
+        receive(BILLING, span("0000000000000002", Optional.empty()));
+
+        var flow = mapper.readTree(queries.flow(null).body());
+
+        assertThat(flow.get("applications").valueStream().map(application -> application.get("name").asString())).containsExactlyInAnyOrder("billing", "tickets");
+    }
+
+    // The type inspector shows the links into the type and out of it, across applications too, which the frame no longer carries.
+    @Test
+    void type_commandContinuedInAnotherApplication_answersTheLinkOutOfItAndIntoTheOther() {
+        receive(TICKETS, span("0000000000000001", Optional.empty()));
+        receive(BILLING, new MessageSpan(SpanRef.of(TRACE, "0000000000000002"), Optional.of(SpanRef.of(TRACE, "0000000000000001")), MessageId.generate(),
+            new Stage.Dispatch(new MessageType(MessageKind.COMMAND, "CreateInvoice")), Optional.empty(), Instant.now(), "main",
+            new Outcome.Completed(Duration.ofMillis(1))));
+
+        var open = mapper.readTree(queries.type("tickets::COMMAND:OpenTicket").body());
+        var invoice = mapper.readTree(queries.type("billing::COMMAND:CreateInvoice").body());
+
+        assertThat(open.get("outgoing").get(0).get("childApplication").asString()).isEqualTo("billing");
+        assertThat(open.get("outgoing").get(0).get("child").get("name").asString()).isEqualTo("CreateInvoice");
+        assertThat(open.get("incoming").isEmpty()).isTrue();
+        assertThat(invoice.get("incoming").get(0).get("parentApplication").asString()).isEqualTo("tickets");
+        assertThat(invoice.get("incoming").get(0).get("parent").get("name").asString()).isEqualTo("OpenTicket");
     }
 
     private void receive(MessageSpan span) {

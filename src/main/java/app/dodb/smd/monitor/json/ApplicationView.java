@@ -23,9 +23,9 @@ import java.util.List;
 
 import static app.dodb.smd.monitor.json.FrameView.p95Millis;
 
-// The statistics of an application, whole. Its crossings are the links into it from a parent type of another application; its routes lead the
-// events of any application to its processing groups, its sink routes lead its own events to the deliveries of its sinks, and its group links lead
-// those groups to the messages they dispatched. The failed received
+// The statistics of an application in the frame. Its crossings are the links into it from a parent type of another application; its links
+// within, routes, sink routes, and group links are only the flow view's and the live lanes', so the flow query answers them (FlowView). The
+// failed received
 // counts every failed invocation the hub received since it started; the event delay is the p95 over every handling of the window, or null
 // when none ran asynchronously. Its failures count every failed invocation under its own stage and exception type, those of the history
 // listed; other sums what the application counted beyond its caps. The seconds of the window from provisional-from on may still grow, as the
@@ -35,11 +35,7 @@ public record ApplicationView(String name,
                               List<InstanceView> instances,
                               List<TypeView> types,
                               List<GroupView> groups,
-                              List<LinkView> links,
                               List<CrossingView> crossings,
-                              List<RouteView> routes,
-                              List<SinkRouteView> sinkRoutes,
-                              List<GroupLinkView> groupLinks,
                               BriefView dispatches,
                               BriefView handlings,
                               Double eventDelayP95Millis,
@@ -56,10 +52,8 @@ public record ApplicationView(String name,
             .toList();
         return new ApplicationView(statistics.application().value(), statistics.failedReceived(),
             statistics.instances().stream().map(InstanceView::from).toList(), statistics.types().stream().map(TypeView::from).toList(),
-            statistics.groups().stream().map(GroupView::from).toList(), statistics.links().stream().map(LinkView::from).toList(),
-            statistics.crossings().stream().map(CrossingView::from).toList(), statistics.routes().stream().map(RouteView::from).toList(),
-            statistics.sinkRoutes().stream().map(SinkRouteView::from).toList(),
-            statistics.groupLinks().stream().map(GroupLinkView::from).toList(), BriefView.from(statistics.dispatches()),
+            statistics.groups().stream().map(GroupView::from).toList(), statistics.crossings().stream().map(CrossingView::from).toList(),
+            BriefView.from(statistics.dispatches()),
             BriefView.from(statistics.handlings()), p95Millis(statistics.eventDelay()), kinds, statistics.enteredPerSecond(), statistics.failedPerSecond(),
             statistics.failures().stream().map(FailureView::from).toList(), OtherView.from(statistics.other()),
             statistics.provisionalFrom().getEpochSecond());

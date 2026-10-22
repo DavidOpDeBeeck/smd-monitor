@@ -11,7 +11,7 @@ import { cx } from '../lib/cx';
 import { HandlingGlyph } from '../components/Glyph';
 import { ago, count, duration, percent, rate, shortHistorySpan, shortName, STATUS_LABEL } from '../lib/format';
 import { activity, hubRequest } from '../lib/api';
-import { statistics } from '../lib/state';
+import { statistics, typeLink } from '../lib/state';
 import { ratePerSecond } from '../lib/throughput';
 import type { Activity, HandlingStatistics, TypeKey } from '../lib/types';
 import type { WireRetainedType } from '../lib/wire';
@@ -69,17 +69,9 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
     const query = createHubQuery<WireRetainedType>(store, () => hubRequest('types', { type: props.typeKey }));
     const retained = () => query.answer();
     const latest = createMemo(() => retained()?.latest.map(activity) ?? []);
-    // A type of any application, with the arrows within its application and across applications.
-    const incoming = () =>
-        app
-            .system()
-            .links.filter(link => link.child === props.typeKey)
-            .sort((a, b) => b.invocations - a.invocations);
-    const outgoing = () =>
-        app
-            .system()
-            .links.filter(link => link.parent === props.typeKey)
-            .sort((a, b) => b.invocations - a.invocations);
+    // A type of any application, with the arrows within its application and across applications, as its query answers them.
+    const incoming = createMemo(() => retained()?.incoming.map(typeLink) ?? []);
+    const outgoing = createMemo(() => retained()?.outgoing.map(typeLink) ?? []);
     const failureTypes = () => retained()?.failureTypes ?? [];
     // Every figure of the history, which the frame carries only the counts and p95 of.
     const history = createMemo(() => {

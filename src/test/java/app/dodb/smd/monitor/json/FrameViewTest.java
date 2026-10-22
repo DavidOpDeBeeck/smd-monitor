@@ -12,7 +12,6 @@ import app.dodb.smd.monitor.hub.span.MessageSpan;
 import app.dodb.smd.monitor.hub.span.MessageType;
 import app.dodb.smd.monitor.hub.span.Outcome;
 import app.dodb.smd.monitor.hub.span.SessionId;
-import app.dodb.smd.monitor.hub.span.SinkSend;
 import app.dodb.smd.monitor.hub.span.SpanRef;
 import app.dodb.smd.monitor.hub.span.Stage;
 import org.junit.jupiter.api.Test;
@@ -93,15 +92,7 @@ class FrameViewTest {
         assertThat(group.get("handlings").get(0).get("name").asString()).isEqualTo(EVENT.name());
         assertThat(group.get("handlings").get(0).get("asynchronous").asBoolean()).isFalse();
         assertThat(group.get("handlings").get(0).get("delayP95Millis").isNull()).isTrue();
-        assertThat(application.get("links").get(0).get("parent").get("name").asString()).isEqualTo(COMMAND.name());
-        assertThat(application.get("links").get(0).get("history").asLong()).isEqualTo(1);
         assertThat(application.get("crossings").isEmpty()).isTrue();
-        var route = application.get("routes").get(0);
-        assertThat(route.get("publisher").asString()).isEqualTo(TICKETS.value());
-        assertThat(route.get("event").get("name").asString()).isEqualTo(EVENT.name());
-        assertThat(route.get("processingGroup").asString()).isEqualTo("ticket-view");
-        assertThat(route.get("history").asLong()).isEqualTo(1);
-        assertThat(application.get("groupLinks").isEmpty()).isTrue();
         assertThat(application.get("kinds").valueStream().map(kind -> kind.get("kind").asString())).containsExactly("COMMAND", "QUERY", "EVENT");
         assertThat(application.get("kinds").get(0).get("startedPerSecond").size()).isEqualTo(90);
         assertThat(application.get("enteredPerSecond").size()).isEqualTo(30);
@@ -126,7 +117,7 @@ class FrameViewTest {
         assertThat(frame.get("health").get("applications").get(0).propertyNames()).containsExactly("name", "reasons", "shedding", "countingBytes", "join",
             "specimens", "retained", "completeSinceMillis", "oldestRetainedMillis", "effectiveHorizonSeconds", "slowestK", "failuresK");
         assertThat(frame.get("applications").get(0).propertyNames()).containsExactly("name", "failedReceived", "instances", "types", "groups",
-            "links", "crossings", "routes", "sinkRoutes", "groupLinks", "dispatches", "handlings", "eventDelayP95Millis", "kinds", "enteredPerSecond", "failedPerSecond",
+            "crossings", "dispatches", "handlings", "eventDelayP95Millis", "kinds", "enteredPerSecond", "failedPerSecond",
             "failures", "other", "provisionalFromEpochSecond");
         assertThat(frame.get("applications").get(0).get("instances").get(0).propertyNames()).containsExactly("name", "sessionId", "lastReportedAtMillis",
             "silent", "clockAhead", "exportLagMillis", "dispatches", "handlings");
@@ -135,20 +126,6 @@ class FrameViewTest {
         assertThat(frame.get("applications").get(0).get("types").get(0).propertyNames()).containsExactly("kind", "name", "entryPoint", "window", "history",
             "retained", "startedPerSecond", "failedPerSecond");
         assertThat(frame.get("applications").get(0).get("crossings").get(0).propertyNames()).containsExactly("parentApplication", "link");
-    }
-
-    @Test
-    void from_publicationSentToSinks_listsEachSinkRouteWithItsDelivery() {
-        hub.receive(new SpanBatch(TICKETS, new InstanceName("tickets-1"), new SessionId("session-1"), List.of(),
-            List.of(new SinkSend(SpanRef.of(TRACE, "0000000000000005"), EVENT, new EventDelivery("shared-log"), start))));
-
-        var route = json(OptionalLong.of(HEAP)).get("applications").get(0).get("sinkRoutes").get(0);
-
-        assertThat(route.propertyNames()).containsExactly("event", "delivery", "history", "lastSecond");
-        assertThat(route.get("event").get("kind").asString()).isEqualTo("EVENT");
-        assertThat(route.get("event").get("name").asString()).isEqualTo(EVENT.name());
-        assertThat(route.get("delivery").asString()).isEqualTo("shared-log");
-        assertThat(route.get("history").asLong()).isEqualTo(1);
     }
 
     @Test
