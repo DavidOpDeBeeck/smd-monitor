@@ -21,6 +21,7 @@ import app.dodb.smd.monitor.json.TimelineWindowView;
 import app.dodb.smd.monitor.json.TraceDetailView;
 import app.dodb.smd.monitor.json.TracePageView;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -37,8 +38,8 @@ import static java.util.Objects.requireNonNull;
 // The retained invocations a page asks for, each answered from the latest epoch, from its parameters as sent: null when absent. A scope names
 // one application; QueryNames reads the types, failure causes, kinds, statuses, and orders; durations are in milliseconds; a value the hub
 // cannot read fails with an IllegalArgumentException naming it, which the server answers as QueryAnswer.invalid. Identical queries of one epoch
-// are answered once (W5); beyond the queries running at once, the hub answers 429. A trace and an invocation answer with an ETag of their
-// content, so a page asking again for one that did not change receives 304.
+// are answered once (W5); beyond the queries running at once, the hub answers 429. Every answer but the timeline's carries an ETag of its content,
+// so a page asking again for one that did not change receives 304 (QueryAnswer.unlessHeld).
 public final class HubQueries {
 
     static final int DEFAULT_LIMIT = 100;
@@ -53,7 +54,7 @@ public final class HubQueries {
 
     public QueryAnswer tape(QueryFilter filter, String minDurationMillis, String after, String limit) {
         var query = new TapeQuery(filter(filter), minDuration(minDurationMillis), Optional.ofNullable(after).map(TapePageView::parseCursor), limit(limit));
-        return answer(List.of("tape", query), epoch -> json(TapePageView.from(epoch.session(), epoch.tape(query))));
+        return answer(List.of("tape", query), epoch -> versioned(TapePageView.from(epoch.session(), epoch.tape(query))));
     }
 
     public QueryAnswer durations(QueryFilter filter, String minDurationMillis, String buckets) {
@@ -61,43 +62,40 @@ public final class HubQueries {
         var threshold = minDuration(minDurationMillis);
         var count = number("buckets", required("buckets", buckets));
         return answer(List.of("durations", selected, threshold, count),
-            epoch -> json(DurationsView.from(epoch.session(), epoch.durations(selected, threshold, count))));
+            epoch -> versioned(DurationsView.from(epoch.session(), epoch.durations(selected, threshold, count))));
     }
 
     // Chains when true; the order is newest when absent.
     public QueryAnswer traces(QueryFilter filter, String chains, String order, String after, String limit) {
         var query = new TraceQuery(filter(filter), Boolean.parseBoolean(chains), order == null ? TraceOrder.NEWEST : QueryNames.order(order),
             Optional.ofNullable(after).map(TracePageView::parseCursor), limit(limit));
-        return answer(List.of("traces", query), epoch -> json(TracePageView.from(epoch.session(), epoch.traces(query))));
+        return answer(List.of("traces", query), epoch -> versioned(TracePageView.from(epoch.session(), epoch.traces(query))));
     }
 
-    // The ETag is of the trace and its members, not of the sequence the answer names, which moves with what else the hub retains.
-    public QueryAnswer trace(String sequence, String ifNoneMatch) {
+    public QueryAnswer trace(String sequence) {
         var id = invocationId(sequence);
         return answer(List.of("trace", id), epoch -> epoch.trace(id)
-            .map(detail -> TraceDetailView.from(epoch.session(), detail))
-            .map(view -> versioned(view, List.of(view.trace(), view.members())))
-            .orElseGet(QueryAnswer::notFound)).unlessHeld(ifNoneMatch);
+            .map(detail -> versioned(TraceDetailView.from(epoch.session(), detail)))
+            .orElseGet(QueryAnswer::notFound));
     }
 
     public QueryAnswer failures(List<String> causes) {
         var asked = causes.stream().map(QueryNames::failureCause).toList();
-        return answer(List.of("failures", asked), epoch -> json(FailureCausesView.from(epoch.session(), epoch.failures(asked))));
+        return answer(List.of("failures", asked), epoch -> versioned(FailureCausesView.from(epoch.session(), epoch.failures(asked))));
     }
 
     public QueryAnswer timeline(QueryFilter filter, String minDurationMillis, String spanMillis, String limit) {
         var query = new TimelineQuery(filter(filter), minDuration(minDurationMillis), millis("spanMillis", required("spanMillis", spanMillis)),
             number("limit", required("limit", limit)));
+        // The window ends at the hub's clock, so the answer changes every epoch: an ETag could never match, and would cost hashing the largest answer.
         return answer(List.of("timeline", query), epoch -> json(TimelineWindowView.from(epoch.session(), epoch.timeline(query))));
     }
 
-    // The ETag is of the invocation, its lineage, and its children, not of the sequence the answer names, which moves with what else the hub retains.
-    public QueryAnswer invocation(String sequence, String ifNoneMatch) {
+    public QueryAnswer invocation(String sequence) {
         var id = invocationId(sequence);
         return answer(List.of("invocation", id), epoch -> epoch.message(id)
-            .map(detail -> MessageDetailView.from(epoch.session(), detail))
-            .map(view -> versioned(view, List.of(view.invocation(), view.ancestors(), view.children(), view.childCount(), Optional.ofNullable(view.propagatedFrom()))))
-            .orElseGet(QueryAnswer::notFound)).unlessHeld(ifNoneMatch);
+            .map(detail -> versioned(MessageDetailView.from(epoch.session(), detail)))
+            .orElseGet(QueryAnswer::notFound));
     }
 
     public QueryAnswer invocations(String scope, String messageIdPrefix, String limit) {
@@ -105,12 +103,12 @@ public final class HubQueries {
         var prefix = required("messageIdPrefix", messageIdPrefix);
         var count = number("limit", required("limit", limit));
         return answer(List.of("invocations", application, prefix, count),
-            epoch -> json(FoundView.from(epoch.session(), epoch.withMessageIdPrefix(application, prefix, count))));
+            epoch -> versioned(FoundView.from(epoch.session(), epoch.withMessageIdPrefix(application, prefix, count))));
     }
 
     public QueryAnswer type(String type) {
         var selected = QueryNames.type(required("type", type));
-        return answer(List.of("types", selected), epoch -> json(RetainedTypeView.from(epoch.session(), epoch.type(selected), epoch.history(selected))));
+        return answer(List.of("types", selected), epoch -> versioned(RetainedTypeView.from(epoch.session(), epoch.type(selected), epoch.history(selected))));
     }
 
     // Answers from the latest epoch; queries never wait for the hub's writer, nor it for them.
@@ -123,9 +121,13 @@ public final class HubQueries {
         return QueryAnswer.json(mapper.writeValueAsString(view));
     }
 
-    // An answer the page may keep and ask again for with its ETag, which a hash of the given version of it names.
-    private QueryAnswer versioned(Object view, Object version) {
-        return QueryAnswer.versioned(mapper.writeValueAsString(view), hash(mapper.writeValueAsString(version)));
+    // An answer the page may keep and ask again for with its ETag: a hash of its content but the sequence it names, which moves whenever the hub
+    // retains anything, so an answer asked again names the same ETag while what it holds did not change.
+    private QueryAnswer versioned(Object view) {
+        ObjectNode content = mapper.valueToTree(view);
+        var body = mapper.writeValueAsString(content);
+        content.remove("sequence");
+        return QueryAnswer.versioned(body, hash(mapper.writeValueAsString(content)));
     }
 
     private static String hash(String version) {

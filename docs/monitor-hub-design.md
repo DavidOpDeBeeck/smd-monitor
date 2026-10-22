@@ -166,7 +166,7 @@ The hub keeps four kinds of state, each with its own lifetime and bound.
 | W2 | Frames are deltas against the previous epoch, found by comparing two immutable snapshots. Each names its `epoch` and `base`.                           |
 | W3 | A snapshot goes to a client on connect and to any client that missed a delta. Each is serialized at most once per epoch.                               |
 | W4 | JSON, compressed by `permessage-deflate`. Statistics travel as arrays of figures in a fixed order.                                                     |
-| W5 | Specimens are pulled over HTTP from the epoch. Identical queries of an epoch are answered once; traces and invocations carry an ETag of their content. |
+| W5 | Specimens are pulled over HTTP from the epoch, by a visible page as the retained sequence moves; a list asks again for its first page only. Identical queries of an epoch are answered once; every answer but the timeline's, which moves with the clock, carries an ETag of its content but the sequence, which the page sends back to receive 304. |
 | W6 | Frames and answers carry a protocol version and a build ID; the page reloads when either differs.                                                      |
 | W7 | The hub computes what is displayed; the page only sums applications for the system scope.                                                              |
 
@@ -276,6 +276,10 @@ every 5 s in shuffled batches of up to 512. Each fork first fills the hub's whol
 | < 1 s             | Writing an epoch's delta, on the publisher              | `FrameBenchmark.delta`      | 211 ms p50, 323 ms p99                      | met                 |
 | Within the budget | Heap of the hub after a collection                      | `HeapBenchmark`             | 1,660 MB of 2,048 MB; 1,681 MB accounted    | met                 |
 | Below 50%         | An application's busiest second against its queue share | `WriterBenchmark`           | 631 spans, 11% of 5,741                     | met                 |
+
+The traces figure predates passing over the traces that cannot make the page before allocating for them. On 2026-10-21, with the settings of
+`./gradlew jmh` on an AMD Ryzen 7 5825U (16 threads), 32 GB, Linux, OpenJDK 25, that took the traces query from 35.3 to 6.3 ms p99 (21.6 to 2.4 ms mean),
+while tape, failures, and timeline stayed within noise of each other, run back to back on the same machine.
 
 Before the rework, the same load took about 24 cores, 4.5 GB of heap without a bound, and 48 MB per frame. [Open items](#open-items) lists the levers for the
 budgets still missed.

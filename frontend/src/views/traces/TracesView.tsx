@@ -9,7 +9,8 @@ import { Loading } from '../../components/loading';
 import { StatusFilter } from '../../components/StatusFilter';
 import { TypeFilter } from '../../components/TypeFilter';
 import { hubRequest } from '../../lib/api';
-import { listPins, traceDetail, traceRequest, traceSummary, type TraceDetail as Detail, type TraceItem, type TraceSort } from '../../lib/traces';
+import { sameFields, shareUnchanged } from '../../lib/sharing';
+import { listPins, sharedDetail, traceDetail, traceRequest, traceSummary, type TraceDetail as Detail, type TraceItem, type TraceSort } from '../../lib/traces';
 import type { WireTraceDetail, WireTracePage } from '../../lib/wire';
 import { createHubQuery, createPagedList } from '../../store/hub-query';
 import { TraceDetail } from './TraceDetail';
@@ -44,17 +45,27 @@ export function TracesView() {
         summary => summary.key,
     );
     const pinned = createMemo(() => (traces.filters.pinned ? listPins(app.pins(), store.view().hubSession, traces.filters, app.scope()) : []));
+    // An item stays the same object while its trace and pin do, so its row renders nothing again.
+    const items = createMemo<TraceItem[]>(
+        previous =>
+            shareUnchanged(
+                previous,
+                traces.filters.pinned
+                    ? pinned().map(pin => ({ key: pin.key, summary: pin.detail.summary, pinned: true, evictedCopy: pin }))
+                    : paged.items().map(summary => ({ key: summary.key, summary, pinned: app.pins().has(summary.key), evictedCopy: null })),
+                item => item.key,
+                sameFields,
+            ),
+        [],
+    );
     const listing = createHeldListing(
         hold,
         (item: TraceItem) => item.key,
         () => {
-            const items: TraceItem[] = traces.filters.pinned
-                ? pinned().map(pin => ({ key: pin.key, summary: pin.detail.summary, pinned: true, evictedCopy: pin }))
-                : paged.items().map(summary => ({ key: summary.key, summary, pinned: app.pins().has(summary.key), evictedCopy: null }));
             const answer = paged.answer();
             return {
-                items,
-                matching: traces.filters.pinned ? items.length : (answer?.matching ?? 0),
+                items: items(),
+                matching: traces.filters.pinned ? items().length : (answer?.matching ?? 0),
                 total: traces.filters.pinned ? app.pins().size : (answer?.total ?? 0),
                 filters: `${app.scope()}|${filters()}`,
             };
@@ -91,17 +102,17 @@ export function TracesView() {
             if (answer && traces.opened()) traces.rootFound(answer.trace.root.sequence);
         }),
     );
-    const shown = createMemo<ShownTrace | null>(() => {
+    const shown = createMemo<ShownTrace | null>(previous => {
         const selected = traces.selected();
         if (selected === null) return null;
         const pin = [...app.pins().values()].find(candidate => candidate.detail.summary.root.sequence === selected);
         const answer = detail.answer();
         if (!detail.missing() && answer) {
-            const retained = traceDetail(answer);
+            const retained = sharedDetail(previous?.evictedCopy === false ? previous.detail : null, traceDetail(answer));
             return { key: retained.summary.key, detail: retained, pinned: app.pins().has(retained.summary.key), evictedCopy: false };
         }
         return pin && detail.missing() ? { key: pin.key, detail: pin.detail, pinned: true, evictedCopy: true } : null;
-    });
+    }, null);
 
     return (
         <section
@@ -142,6 +153,7 @@ export function TracesView() {
                         more={!traces.filters.pinned && paged.more()}
                         full={!traces.filters.pinned && paged.full()}
                         onNearEnd={paged.loadMore}
+                        onFollow={paged.follow}
                     />
                 </div>
             </div>

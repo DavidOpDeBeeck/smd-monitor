@@ -27,6 +27,8 @@ export interface MonitorStore {
     // The hub's time this instant, for what moves every animation frame rather than every clock tick.
     currentTime(): number;
     paused: Accessor<boolean>;
+    // Whether the page is visible; a hidden page asks the hub nothing.
+    visible: Accessor<boolean>;
     status: Accessor<ConnectionStatus>;
     togglePause(): void;
     connect(): void;
@@ -40,6 +42,7 @@ export function createMonitorStore(): MonitorStore {
     const [everConnected, setEverConnected] = createSignal(false);
     const [disconnectedAt, setDisconnectedAt] = createSignal<number | null>(null);
     const [clock, setClock] = createSignal(performance.now());
+    const [visible, setVisible] = createSignal(!document.hidden);
     let socket: WebSocket | null = null;
     // The frame the hub sent last on this connection, which its next delta changes.
     let mirror: Mirror | null = null;
@@ -143,7 +146,7 @@ export function createMonitorStore(): MonitorStore {
     }
 
     const ticking = setInterval(() => {
-        if (connected() && !frozen() && !document.hidden) setClock(performance.now());
+        if (connected() && !frozen() && visible()) setClock(performance.now());
     }, CLOCK_INTERVAL);
     const heartbeat = setInterval(() => {
         if (socket && connected() && Date.now() - lastReceived > HEARTBEAT_TIMEOUT) reconnect();
@@ -151,13 +154,16 @@ export function createMonitorStore(): MonitorStore {
     const pageShown = (event: PageTransitionEvent) => {
         if (event.persisted) connect();
     };
+    const visibilityChanged = () => setVisible(!document.hidden);
     window.addEventListener('pagehide', close);
     window.addEventListener('pageshow', pageShown);
+    document.addEventListener('visibilitychange', visibilityChanged);
     onCleanup(() => {
         clearInterval(ticking);
         clearInterval(heartbeat);
         window.removeEventListener('pagehide', close);
         window.removeEventListener('pageshow', pageShown);
+        document.removeEventListener('visibilitychange', visibilityChanged);
         close();
     });
 
@@ -169,6 +175,7 @@ export function createMonitorStore(): MonitorStore {
         end,
         currentTime: () => frozen()?.now ?? liveNow(),
         paused: () => frozen() !== null,
+        visible,
         status,
         togglePause,
         connect,

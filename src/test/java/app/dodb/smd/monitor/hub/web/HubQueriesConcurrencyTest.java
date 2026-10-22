@@ -57,7 +57,7 @@ class HubQueriesConcurrencyTest {
                 } catch (InterruptedException interrupted) {
                     Thread.currentThread().interrupt();
                 }
-                return QueryAnswer.json(epoch.session().toString());
+                return QueryAnswer.versioned(epoch.session().toString(), "version");
             })));
         }
         started.await();

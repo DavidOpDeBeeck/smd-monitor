@@ -7,7 +7,8 @@ import { createElementSize } from '../../components/size';
 import { cx } from '../../lib/cx';
 import { duration, shortName } from '../../lib/format';
 import { panWindow, wholeTrace, windowTicks, zoomed, zoomWindow, type TimeWindow } from '../../lib/timeline-zoom';
-import { traceRows, treeAction, visibleRows, type TraceDetail } from '../../lib/traces';
+import { sameFields, shareUnchanged } from '../../lib/sharing';
+import { traceRows, treeAction, visibleRows, type TraceDetail, type TraceRow } from '../../lib/traces';
 import { tableColumns, waterfallLayout } from '../../lib/waterfall-columns';
 import { filterRows, waterfallFiltered } from '../../lib/waterfall-filter';
 import { WaterfallHeader } from './WaterfallHeader';
@@ -32,7 +33,8 @@ export function Waterfall(props: { detail: TraceDetail }) {
     const columns = createMemo(() => tableColumns(table()));
     const layout = createMemo(() => waterfallLayout(table()));
     const filter = () => app.traces.waterfallFilter();
-    const allRows = createMemo(() => traceRows(props.detail.members));
+    // A row stays the same object while its member, depth, parent, and children do, so a trace that grows renders only what changed.
+    const allRows = createMemo<TraceRow[]>(previous => shareUnchanged(previous, traceRows(props.detail.members), row => row.message.sequence, sameFields), []);
     const filtered = createMemo(() => filterRows(allRows(), filter(), trace().start));
     const rows = createMemo(() => visibleRows(filtered().rows, app.traces.collapsed()));
     const shown = createMemo(() => rows().slice(0, ROW_LIMIT));

@@ -271,6 +271,20 @@ class MonitorHubIntegrationTest {
     }
 
     @Test
+    void api_tapeAskedAgainWithItsETagWhileNothingArrived_answersNotModified() throws Exception {
+        openTicket();
+        awaitInvocation(TICKETS, each -> true);
+        var first = query("/api/tape");
+
+        var again = client.send(HttpRequest.newBuilder(URI.create(base("http") + "/api/tape")).header("If-None-Match", first.headers().firstValue("ETag").orElseThrow())
+            .GET().build(), HttpResponse.BodyHandlers.ofString());
+
+        assertThat(first.statusCode()).isEqualTo(200);
+        assertThat(again.statusCode()).isEqualTo(304);
+        assertThat(again.body()).isEmpty();
+    }
+
+    @Test
     void api_invocationNoLongerRetained_answersNotFound() throws Exception {
         var response = query("/api/invocations/999999");
 
