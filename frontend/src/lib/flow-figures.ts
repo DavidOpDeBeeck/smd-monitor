@@ -1,5 +1,6 @@
+import { NO_FIGURES } from './state';
 import { ratePerSecond } from './throughput';
-import type { GroupStatistics, HandlingFigures, HandlingKey, TypeStatistics } from './types';
+import type { FlowTypeFigures, GroupStatistics, HandlingFigures, HandlingKey } from './types';
 
 // A card's figures: its rate over the window, and its p95 and failures over the history, like the steps between the cards.
 export interface CardFigures {
@@ -9,8 +10,11 @@ export interface CardFigures {
     started: number;
 }
 
-export const typeFigures = (type: TypeStatistics, windowSeconds: number): CardFigures => ({
-    perSecond: ratePerSecond(type.window.started, windowSeconds),
+// A type's card before the flow query answered.
+export const NO_FLOW_TYPE: FlowTypeFigures = { windowStarted: 0, history: NO_FIGURES.history };
+
+export const typeFigures = (type: FlowTypeFigures, windowSeconds: number): CardFigures => ({
+    perSecond: ratePerSecond(type.windowStarted, windowSeconds),
     p95Millis: type.history.p95Millis,
     failed: type.history.failed,
     started: type.history.started,

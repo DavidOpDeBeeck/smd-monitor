@@ -5,8 +5,15 @@ import { Glyph, HandlingGlyph } from '../../components/Glyph';
 import { Panel } from '../../components/Panel';
 import { SECTION_TITLE } from '../../components/text';
 import { cx } from '../../lib/cx';
+import { hubRequest } from '../../lib/api';
 import { count, historySpan, percent, shortName } from '../../lib/format';
+import { typeFigures } from '../../lib/state';
 import type { TypeKey } from '../../lib/types';
+import type { WireTypeFigures } from '../../lib/wire';
+import { createHubQuery } from '../../store/hub-query';
+
+// The types that failed most, as the hub ranks them.
+const MOST_FAILED = 20;
 
 function FailureRateRow(props: { typeKey: TypeKey; failures: number; completed: number; glyph: JSX.Element; title?: string; children: JSX.Element }) {
     const app = useMonitorApp();
@@ -37,9 +44,10 @@ export function FailureLeaderboard() {
     const app = useMonitorApp();
     // The system scope names the application of each row, since type and group names repeat across applications.
     const named = () => app.scope() === null && app.system().applications.length > 1;
-    const failedTypes = createMemo(() =>
-        [...app.scoped().types.values()].filter(type => type.history.failed > 0).sort((a, b) => b.history.failed - a.history.failed),
-    );
+    const ranked = createHubQuery<WireTypeFigures>(app.store, () => hubRequest('type-figures', { scope: app.scope(), sort: 'failures', limit: MOST_FAILED }), {
+        kept: true,
+    });
+    const failedTypes = createMemo(() => typeFigures(ranked.answer()).types.filter(type => type.history.failed > 0));
     // What each handling counted comes with the handlings query, which the failures view keeps asking while it is open.
     const failedHandlings = createMemo(() =>
         [...app.scoped().handlings.values()]

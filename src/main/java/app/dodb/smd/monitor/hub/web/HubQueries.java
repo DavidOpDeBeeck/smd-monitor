@@ -1,5 +1,6 @@
 package app.dodb.smd.monitor.hub.web;
 
+import app.dodb.smd.monitor.hub.ApplicationStatistics;
 import app.dodb.smd.monitor.hub.ApplicationType;
 import app.dodb.smd.monitor.hub.Epoch;
 import app.dodb.smd.monitor.hub.InvocationFilter;
@@ -168,15 +169,15 @@ public final class HubQueries {
         };
         var count = limit(limit);
         return answer(List.of("causes", application, recent, count), epoch -> {
-            record Counted(ApplicationName application, RaisedFailureStatistics failure) {
+            record Counted(ApplicationStatistics application, RaisedFailureStatistics failure) {
             }
             var counted = epoch.statistics().applications().stream()
                 .filter(statistics -> application.isEmpty() || application.get().equals(statistics.application()))
-                .flatMap(statistics -> statistics.failures().stream().map(failure -> new Counted(statistics.application(), failure)))
+                .flatMap(statistics -> statistics.failures().stream().map(failure -> new Counted(statistics, failure)))
                 .filter(each -> recent ? each.failure().window() > 0 : each.failure().history() > 0)
                 .sorted(Comparator.comparingLong((Counted each) -> each.failure().window()).reversed()
                     .thenComparing(Comparator.comparingLong((Counted each) -> each.failure().history()).reversed())
-                    .thenComparing(each -> each.application().value())
+                    .thenComparing(each -> each.application().application().value())
                     .thenComparing(each -> each.failure().failure().stage().type().name())
                     .thenComparing(each -> each.failure().failure().failureType()))
                 .toList();

@@ -73,13 +73,18 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
     const incoming = createMemo(() => retained()?.incoming.map(typeLink) ?? []);
     const outgoing = createMemo(() => retained()?.outgoing.map(typeLink) ?? []);
     const failureTypes = () => retained()?.failureTypes ?? [];
-    // Every figure of the history, which the frame carries only the counts and p95 of.
+    // Every figure of the window and the history, and its dispatches second by second, which the frame leaves out; none before its query answered.
+    const windowed = createMemo(() => {
+        const wire = retained()?.window;
+        return wire ? statistics(wire) : null;
+    });
     const history = createMemo(() => {
         const wire = retained()?.history;
         return wire ? statistics(wire) : null;
     });
+    const startedPerSecond = () => retained()?.startedPerSecond ?? [];
     const provisionalFrom = () => store.view().applications.get(type()?.application ?? '')?.provisionalFrom;
-    const completed = () => type()?.history.completed ?? 0;
+    const completed = () => history()?.completed ?? 0;
     const handlings = () => [...app.system().handlings.values()].filter(handling => handling.typeKey === props.typeKey);
     // Its failures second by second, which its query answers as only the inspector draws them.
     const failedPerSecond = () => retained()?.failedPerSecond ?? [];
@@ -106,19 +111,19 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
                     >
                         <Stats
                             stats={[
-                                { label: 'Calls', value: count(type().history.started) },
-                                { label: 'Rate', value: rate(ratePerSecond(type().window.started, store.view().windowSeconds)) },
+                                { label: 'Calls', value: count(history()?.started ?? 0) },
+                                { label: 'Rate', value: rate(ratePerSecond(windowed()?.started ?? 0, store.view().windowSeconds)) },
                                 {
                                     label: 'Failed',
-                                    value: count(type().history.failed),
-                                    detail: type().history.failed ? percent(type().history.failed, completed()) : undefined,
-                                    tone: type().history.failed ? 'text-failed' : '',
+                                    value: count(history()?.failed ?? 0),
+                                    detail: history()?.failed ? percent(history()!.failed, completed()) : undefined,
+                                    tone: history()?.failed ? 'text-failed' : '',
                                 },
                             ]}
                         />
                         <div class="relative h-10">
                             <Sparkline
-                                values={type().startedPerSecond}
+                                values={startedPerSecond()}
                                 endsAt={store.end()}
                                 provisionalFrom={provisionalFrom()}
                                 width={320}
@@ -158,7 +163,7 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
                         <Stats
                             stats={[
                                 { label: 'p50', value: duration(history()?.p50Millis) },
-                                { label: 'p95', value: duration(history()?.p95Millis ?? type().history.p95Millis) },
+                                { label: 'p95', value: duration(history()?.p95Millis) },
                                 { label: 'p99', value: duration(history()?.p99Millis) },
                                 { label: 'Max', value: duration(history()?.maxMillis) },
                             ]}
@@ -167,7 +172,7 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
                     <InspectorSection title="Caused by" note={`last ${shortHistorySpan(store.view().historySeconds)}`}>
                         <div class="grid gap-[5px]">
                             <Show when={type().entryPoint}>
-                                <StaticRelation mark="→" label="Entry point (no parent)" invocations={type().history.entered} />
+                                <StaticRelation mark="→" label="Entry point (no parent)" invocations={history()?.entered ?? 0} />
                             </Show>
                             <Key each={incoming()} by="parent">
                                 {link => <TypeRelation typeKey={link().parent} invocations={link().invocations} from={type().application} />}

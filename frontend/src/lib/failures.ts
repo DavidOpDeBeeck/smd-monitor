@@ -1,7 +1,6 @@
 import { activity } from './api';
 import { failureKey, typeKey } from './format';
-import type { ScopedState } from './scope';
-import type { Activity, FailureCount, HandlingFigures, HandlingKey, MessageKind, TypeKey } from './types';
+import type { Activity, FailureCount, MessageKind, TypeKey } from './types';
 import type { WireFailureCause, WireFailureStep } from './wire';
 
 interface ChainStep {
@@ -79,16 +78,6 @@ export function causesByApplication(causes: readonly FailureCount[], scope: stri
     return [...byApplication]
         .map(([application, causes]) => ({ application, causes }))
         .sort((a, b) => Number(b.application === scope) - Number(a.application === scope) || a.application.localeCompare(b.application));
-}
-
-// How many invocations of the cause's stage started over the history: its processing group's handlings, as far as their figures arrived, or the
-// dispatches of its type.
-export function stageStarted(cause: FailureCount, scoped: ScopedState, figures: ReadonlyMap<HandlingKey, HandlingFigures>): number {
-    if (cause.handling) {
-        const handling = [...scoped.handlings.values()].find(each => each.typeKey === cause.typeKey && each.processingGroup === cause.processingGroup);
-        return handling ? (figures.get(handling.key)?.history.started ?? 0) : 0;
-    }
-    return scoped.types.get(cause.typeKey)?.history.started ?? 0;
 }
 
 // When the latest second of the window with an occurrence started, or null when none did; the series ends at the end.

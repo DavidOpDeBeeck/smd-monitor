@@ -333,8 +333,9 @@ class HubQueriesTest {
         var cause = answer.get("causes").get(0);
         assertThat(answer.get("total").asInt()).isEqualTo(1);
         assertThat(cause.propertyNames()).containsExactly("application", "kind", "type", "handling", "processingGroup", "failureType", "window", "history",
-            "windowPerSecond");
+            "windowPerSecond", "started");
         assertThat(cause.get("application").asString()).isEqualTo("tickets");
+        assertThat(cause.get("started").asLong()).isEqualTo(1);
         assertThat(cause.get("processingGroup").asString()).isEqualTo("ticket-view");
         assertThat(cause.get("window").asLong()).isEqualTo(1);
         assertThat(cause.get("windowPerSecond").valueStream().mapToLong(JsonNode::asLong).sum()).isEqualTo(1);

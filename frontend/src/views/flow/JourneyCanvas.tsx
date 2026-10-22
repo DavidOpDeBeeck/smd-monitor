@@ -179,6 +179,7 @@ export function JourneyCanvas(props: { lens: Lens; journey: Journey; graph: Lens
                                     <Match when={isTypeKey(key()) && (key() as TypeKey)}>
                                         {typeKey => {
                                             const type = () => app.system().types.get(typeKey());
+                                            const figures = () => app.flow.types().get(typeKey());
                                             const parsed = () => parseTypeKey(typeKey());
                                             return (
                                                 <MessageCard
@@ -187,7 +188,7 @@ export function JourneyCanvas(props: { lens: Lens; journey: Journey; graph: Lens
                                                     name={parsed().messageType}
                                                     application={parsed().application}
                                                     entryPoint={type()?.entryPoint ?? false}
-                                                    figures={type() ? typeFigures(type()!, windowSeconds()) : null}
+                                                    figures={figures() ? typeFigures(figures()!, windowSeconds()) : null}
                                                     failedPerSecond={app.flow.failing().get(typeKey()) ?? NO_FAILURES}
                                                     onSelect={() => {
                                                         app.flow.focusOn(typeKey());

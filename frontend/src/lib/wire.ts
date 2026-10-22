@@ -173,6 +173,8 @@ export interface WireCause {
     window: number;
     history: number;
     windowPerSecond: number[];
+    // The invocations of its stage over the history: its type's dispatches or its group's handlings of the event.
+    started: number;
 }
 
 // What the application counted beyond the hub's caps: the dispatches and handlings of the types and processing groups it did not keep apart, and
@@ -386,7 +388,9 @@ export interface WireMessageDetail extends WireAnswer {
 
 // The history holds every figure of the type, null when its application did not report it. Its links in and out, across applications too,
 // most invocations first.
+// Its window and history are null, and its seconds empty, when its application did not report the type.
 export interface WireRetainedType extends WireAnswer {
+    window: WireStatistics | null;
     history: WireStatistics | null;
     retained: number;
     failureTypes: { failureType: string; count: number }[];
@@ -395,7 +399,8 @@ export interface WireRetainedType extends WireAnswer {
     outgoing: WireTypeLink[];
     // An event's handlings by its application's processing groups.
     handlings: { processingGroup: string; window: WireBrief; history: WireBrief }[];
-    // Its failures second by second over the window.
+    // Its dispatches and its failures second by second over the window.
+    startedPerSecond: number[];
     failedPerSecond: number[];
 }
 
@@ -429,6 +434,8 @@ export interface WireFlowApplication {
     sinkRoutes: WireSinkRoute[];
     // Messages this application's processing groups dispatched.
     groupLinks: WireGroupLink[];
+    // What a card shows of each type: the dispatches of the window, and the counts and p95 of the history.
+    types: { type: WireMessageType; windowStarted: number; history: WireBrief }[];
     // The types that failed in the window, with their failures second by second.
     failingTypes: { type: WireMessageType; failedPerSecond: number[] }[];
 }

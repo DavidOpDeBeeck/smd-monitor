@@ -5,7 +5,7 @@ import { LinkButton, TextButton } from '../../components/controls';
 import { Empty } from '../../components/empty';
 import { RetentionBoundary } from '../../components/RetentionBoundary';
 import { hubRequest } from '../../lib/api';
-import { causeExamples, causesByApplication, stageStarted } from '../../lib/failures';
+import { causeExamples, causesByApplication } from '../../lib/failures';
 import { ago, historySpan, plural, shortHistorySpan } from '../../lib/format';
 import type { FailureCount } from '../../lib/types';
 import { causes } from '../../lib/state';
@@ -105,7 +105,7 @@ export function FailuresView() {
                                                 <FailureCauseCard
                                                     cause={cause()}
                                                     examples={examples().get(cause().key)}
-                                                    started={stageStarted(cause(), app.scoped(), app.handlingFigures())}
+                                                    started={cause().started}
                                                     end={store.end()}
                                                     windowSeconds={store.view().windowSeconds}
                                                     historySeconds={history()}

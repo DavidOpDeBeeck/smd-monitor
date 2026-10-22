@@ -2,6 +2,7 @@ import { failureKey, groupKey, handlingKey, keyedApplication, perKind, typeKey }
 import type {
     Brief,
     FailureCount,
+    FlowTypeFigures,
     GroupLink,
     GroupStatistics,
     HandlingFigures,
@@ -239,6 +240,18 @@ export function flowEdges(flow: WireFlow | null): ReadonlyMap<string, FlowEdges>
     );
 }
 
+// What each type's card shows, from the flow query's answer.
+export function flowTypes(flow: WireFlow | null): ReadonlyMap<TypeKey, FlowTypeFigures> {
+    return new Map(
+        (flow?.applications ?? []).flatMap(application =>
+            application.types.map(
+                each =>
+                    [typeKey(application.name, each.type.kind, each.type.name), { windowStarted: each.windowStarted, history: brief(each.history) }] as const,
+            ),
+        ),
+    );
+}
+
 // The failures second by second of each type that failed in the window, from the flow query's answer.
 export function flowFailures(flow: WireFlow | null): ReadonlyMap<TypeKey, readonly number[]> {
     return new Map(
@@ -275,6 +288,7 @@ export function causes(answer: WireCauses | null): Causes {
                 window: cause.window,
                 history: cause.history,
                 windowPerSecond: cause.windowPerSecond,
+                started: cause.started,
             };
         }),
     };

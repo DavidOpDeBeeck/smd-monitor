@@ -81,6 +81,12 @@ export interface TypeStatistics {
     startedPerSecond: readonly number[];
 }
 
+// What a flow card shows of a message type, which the flow query answers.
+export interface FlowTypeFigures {
+    windowStarted: number;
+    history: Brief;
+}
+
 // What a processing group's handling of an event counted, which the handlings query answers.
 export interface HandlingFigures {
     window: Brief;
@@ -157,6 +163,8 @@ export interface FailureCount {
     window: number;
     history: number;
     windowPerSecond: readonly number[];
+    // The invocations of its stage over the history, of which the history failed.
+    started: number;
 }
 
 // What an application counted beyond the hub's caps.

@@ -79,7 +79,21 @@ class FlowViewTest {
         var flow = json();
 
         assertThat(flow.propertyNames()).containsExactly("hubSession", "sequence", "applications");
-        assertThat(flow.get("applications").get(0).propertyNames()).containsExactly("name", "links", "routes", "sinkRoutes", "groupLinks", "failingTypes");
+        assertThat(flow.get("applications").get(0).propertyNames()).containsExactly("name", "links", "routes", "sinkRoutes", "groupLinks", "types",
+            "failingTypes");
+    }
+
+    @Test
+    void from_dispatchedType_listsWhatItsCardShows() {
+        hub.receive(new SpanBatch(TICKETS, new InstanceName("tickets-1"), new SessionId("session-1"),
+            List.of(span("0000000000000001", Optional.empty(), MessageId.generate(), new Stage.Dispatch(COMMAND))), List.of()));
+
+        var type = json().get("applications").get(0).get("types").get(0);
+
+        assertThat(type.propertyNames()).containsExactly("type", "windowStarted", "history");
+        assertThat(type.get("type").get("name").asString()).isEqualTo(COMMAND.name());
+        assertThat(type.get("windowStarted").asLong()).isEqualTo(1);
+        assertThat(type.get("history").get(0).asLong()).isEqualTo(1);
     }
 
     // A flow card rings as its type fails, so the flow carries the failures of the types that failed in the window, and of those only.
