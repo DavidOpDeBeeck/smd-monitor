@@ -149,6 +149,7 @@ export function LiveView() {
                             more={tape.more()}
                             full={tape.full()}
                             onNearEnd={tape.loadMore}
+                            onFollow={tape.follow}
                             hold={hold}
                         />
                     </Match>

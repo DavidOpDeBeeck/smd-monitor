@@ -54,8 +54,8 @@ public record QueryAnswer(int status, String contentType, String cacheControl, S
         return new QueryAnswer(429, TEXT, NO_STORE, null, reason);
     }
 
-    // 304 when the page holds this answer with the same ETag already.
-    QueryAnswer unlessHeld(String ifNoneMatch) {
+    // 304 when the page holds this answer with the same ETag already; the If-None-Match header names it, null when absent.
+    public QueryAnswer unlessHeld(String ifNoneMatch) {
         return eTag != null && eTag.equals(ifNoneMatch) ? new QueryAnswer(304, null, cacheControl, eTag, null) : this;
     }
 }

@@ -1,5 +1,6 @@
 import { activity, hubRequest, invocationParams, linked, type HubRequest } from './api';
 import { failureTypeOf, parentMessageIdOf } from './model';
+import { sameData, shareUnchanged } from './sharing';
 import { selectionInScope, selectionMatches, selectsEveryType, type TypeSelection } from './type-selection';
 import type { Activity, DispatchStatus, Linked, MessageKind } from './types';
 import type { WireTrace, WireTraceDetail } from './wire';
@@ -46,7 +47,7 @@ export interface TraceSummary {
 // The members in ascending sequence, each with its parent.
 export interface TraceDetail {
     summary: TraceSummary;
-    members: readonly Linked[];
+    members: Linked[];
 }
 
 export interface PinnedTrace {
@@ -95,6 +96,14 @@ export function traceSummary(trace: WireTrace): TraceSummary {
 }
 
 export const traceDetail = (detail: WireTraceDetail): TraceDetail => ({ summary: traceSummary(detail.trace), members: detail.members.map(linked) });
+
+// The detail, keeping the summary and every member of the previous detail of the same trace that did not change.
+export function sharedDetail(previous: TraceDetail | null, next: TraceDetail): TraceDetail {
+    if (previous === null || previous.summary.key !== next.summary.key) return next;
+    const summary = sameData(previous.summary, next.summary) ? previous.summary : next.summary;
+    const members = shareUnchanged(previous.members, next.members, member => member.sequence);
+    return summary === previous.summary && members === previous.members ? previous : { summary, members };
+}
 
 // The parent of a member within its trace: the hub links a member to its parent only while it retains both, and then both are in one trace.
 export const parentInTrace = (message: Linked) => (message.parent?.retained ? message.parent.sequence : null);

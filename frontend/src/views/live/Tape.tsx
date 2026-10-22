@@ -26,6 +26,8 @@ export function Tape(props: {
     more: boolean;
     full: boolean;
     onNearEnd: () => void;
+    // Whether the tape is read from its top, as it scrolls.
+    onFollow: (following: boolean) => void;
     hold: ListHold;
 }) {
     const app = useMonitorApp();
@@ -115,6 +117,7 @@ export function Tape(props: {
     const scrolled = () => {
         setScrollTop(viewport.scrollTop);
         if (following()) setUnseen(0);
+        props.onFollow(following());
     };
 
     return (

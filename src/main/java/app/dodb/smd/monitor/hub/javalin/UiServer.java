@@ -43,11 +43,11 @@ public class UiServer implements AutoCloseable {
                 .get("/api/tape/durations", ctx -> answer(ctx, queries.durations(filter(ctx), ctx.queryParam("minDurationMillis"), ctx.queryParam("buckets"))))
                 .get("/api/traces", ctx -> answer(ctx, queries.traces(filter(ctx), ctx.queryParam("chains"), ctx.queryParam("order"), ctx.queryParam("after"),
                     ctx.queryParam("limit"))))
-                .get("/api/traces/{sequence}", ctx -> answer(ctx, queries.trace(ctx.pathParam("sequence"), ctx.header("If-None-Match"))))
+                .get("/api/traces/{sequence}", ctx -> answer(ctx, queries.trace(ctx.pathParam("sequence"))))
                 .get("/api/failures", ctx -> answer(ctx, queries.failures(ctx.queryParams("cause"))))
                 .get("/api/timeline", ctx -> answer(ctx, queries.timeline(filter(ctx), ctx.queryParam("minDurationMillis"), ctx.queryParam("spanMillis"),
                     ctx.queryParam("limit"))))
-                .get("/api/invocations/{sequence}", ctx -> answer(ctx, queries.invocation(ctx.pathParam("sequence"), ctx.header("If-None-Match"))))
+                .get("/api/invocations/{sequence}", ctx -> answer(ctx, queries.invocation(ctx.pathParam("sequence"))))
                 .get("/api/invocations", ctx -> answer(ctx, queries.invocations(ctx.queryParam("scope"), ctx.queryParam("messageIdPrefix"), ctx.queryParam("limit"))))
                 .get("/api/types", ctx -> answer(ctx, queries.type(ctx.queryParam("type"))));
             config.routes.wsBeforeUpgrade(LIVE, ctx -> {
@@ -87,7 +87,9 @@ public class UiServer implements AutoCloseable {
             ctx.queryParams("status"), ctx.queryParam("search"));
     }
 
-    private static void answer(Context ctx, QueryAnswer answer) {
+    // 304 instead when the page holds the answer already, as the ETag it sends names.
+    private static void answer(Context ctx, QueryAnswer full) {
+        var answer = full.unlessHeld(ctx.header("If-None-Match"));
         answer.headers().forEach(ctx::header);
         ctx.status(answer.status());
         if (answer.body() != null) {

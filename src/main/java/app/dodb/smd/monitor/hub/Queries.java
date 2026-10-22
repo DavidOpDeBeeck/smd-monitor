@@ -88,11 +88,12 @@ final class Queries {
         return new DurationHistogram(sequence, tally[0], tally[1], Arrays.stream(counts).boxed().toList());
     }
 
-    // The page holds the first traces after the cursor in the order asked; only those are built.
+    // The page holds the first traces after the cursor in the order asked, by their value and then their root, both descending; only those are
+    // built. A trace that would not make the page is passed over before anything is allocated for it.
     TracePage traces(TraceQuery query) {
-        var comparator = Comparator.comparingLong((Candidate candidate) -> candidate.value).thenComparingLong(candidate -> candidate.root).reversed();
-        var after = query.after().map(cursor -> new Candidate(cursor.value(), cursor.root().value(), null));
-        var page = new PriorityQueue<>(comparator.reversed());
+        var after = query.after();
+        // The last trace of the page at its head.
+        var page = new PriorityQueue<Candidate>(query.limit() + 1);
         var tally = new int[3];
         view.forEachTrace(trace -> {
             if (!touches(trace, query.filter().scope())) {
@@ -103,23 +104,33 @@ final class Queries {
                 return;
             }
             tally[1]++;
-            var candidate = new Candidate(valueOf(query.order(), trace), trace.root(), trace);
-            if (after.isPresent() && comparator.compare(candidate, after.get()) <= 0) {
+            var value = valueOf(query.order(), trace);
+            var root = trace.root();
+            if (after.isPresent() && !below(value, root, after.get().value(), after.get().root().value())) {
                 return;
             }
             tally[2]++;
-            page.add(candidate);
-            if (page.size() > query.limit()) {
+            if (page.size() == query.limit()) {
+                var last = page.peek();
+                if (below(value, root, last.value, last.root)) {
+                    return;
+                }
                 page.poll();
             }
+            page.add(new Candidate(value, root, trace));
         });
         var ordered = new ArrayList<>(page);
-        ordered.sort(comparator);
+        ordered.sort(Comparator.reverseOrder());
         var traces = ordered.stream().map(candidate -> trace(candidate.trace)).flatMap(Optional::stream).toList();
         var next = tally[2] > ordered.size() && !ordered.isEmpty()
             ? Optional.of(new TraceCursor(ordered.getLast().value, new InvocationId(ordered.getLast().root)))
             : Optional.<TraceCursor>empty();
         return new TracePage(sequence, traces, tally[0], tally[1], next);
+    }
+
+    // Whether the trace of the value and root sorts below the other: after it in the order of a page.
+    private static boolean below(long value, long root, long otherValue, long otherRoot) {
+        return value < otherValue || value == otherValue && root < otherRoot;
     }
 
     Optional<TraceDetail> trace(InvocationId member) {
@@ -363,7 +374,12 @@ final class Queries {
         return instant.getEpochSecond() * 1_000_000_000L + instant.getNano();
     }
 
-    private record Candidate(long value, long root, TraceSnapshot trace) {
+    private record Candidate(long value, long root, TraceSnapshot trace) implements Comparable<Candidate> {
+
+        @Override
+        public int compareTo(Candidate other) {
+            return below(value, root, other.value, other.root) ? -1 : below(other.value, other.root, value, root) ? 1 : 0;
+        }
     }
 
     // One instance of each step a failures query finds, looked up by the stage and failure type its specimens share, so a chain compares its steps by

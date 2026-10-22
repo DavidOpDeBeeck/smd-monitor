@@ -34,18 +34,32 @@ export function withParams(request: HubRequest, params: Record<string, string | 
 
 class QueryError extends Error {}
 
-// The answer, or null when the hub retains nothing under the path, such as an evicted invocation.
-export async function fetchAnswer<T>(request: HubRequest, signal?: AbortSignal): Promise<T | null> {
+// What the hub answered: an answer with the ETag of its content, when it names one; that the answer whose ETag the page holds did not change; or
+// that the hub retains nothing under the path, such as an evicted invocation.
+export type Answered<T> = { type: 'answer'; answer: T; eTag: string | null } | { type: 'unchanged' } | { type: 'missing' };
+
+// Asks the hub, which answers unchanged instead when the page holds the answer the ETag names. The page keeps the answers itself, so the
+// browser's cache never answers in the hub's place.
+export async function askHub<T>(request: HubRequest, options: { signal?: AbortSignal; eTag?: string | null } = {}): Promise<Answered<T>> {
     const url = new URL(`api/${request.path}`, document.baseURI);
     url.search = request.params.toString();
-    const response = await fetch(url, { signal });
+    const headers: Record<string, string> = {};
+    if (options.eTag) headers['If-None-Match'] = options.eTag;
+    const response = await fetch(url, { signal: options.signal, headers, cache: 'no-store' });
     if (outdated(response.headers.get(PROTOCOL_HEADER), response.headers.get(BUILD_HEADER))) {
         location.reload();
-        return null;
+        return { type: 'missing' };
     }
-    if (response.status === 404) return null;
+    if (response.status === 304) return { type: 'unchanged' };
+    if (response.status === 404) return { type: 'missing' };
     if (!response.ok) throw new QueryError(`Monitor query ${request.path} failed with ${response.status}: ${await response.text()}`);
-    return (await response.json()) as T;
+    return { type: 'answer', answer: (await response.json()) as T, eTag: response.headers.get('ETag') };
+}
+
+// The answer, or null when the hub retains nothing under the path.
+export async function fetchAnswer<T>(request: HubRequest, signal?: AbortSignal): Promise<T | null> {
+    const answered = await askHub<T>(request, { signal });
+    return answered.type === 'answer' ? answered.answer : null;
 }
 
 // The filters every invocation query shares: the scope, the applications of the system scope, the types and statuses, and the search.

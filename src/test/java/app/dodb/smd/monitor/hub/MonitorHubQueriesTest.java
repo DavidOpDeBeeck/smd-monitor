@@ -175,6 +175,23 @@ class MonitorHubQueriesTest {
     }
 
     @Test
+    void traces_largestPageSmallerThanTheTraces_holdsTheLargestInOrderWithTheirCounts() {
+        var small = tickets.dispatch(OPEN);
+        var large = tickets.dispatch(OPEN);
+        var medium = tickets.dispatch(OPEN);
+        tickets.reportTo(hub, tickets.dispatch(ASSIGN), small, tickets.dispatch(OPENED, small), tickets.dispatch(ASSIGN), large, tickets.dispatch(OPENED, large),
+            tickets.dispatch(ASSIGN, large), tickets.dispatch(ASSIGN, large), medium, tickets.dispatch(OPENED, medium), tickets.dispatch(ASSIGN, medium),
+            tickets.dispatch(ASSIGN));
+
+        var page = hub.traces(traceQuery(TraceOrder.LARGEST, Optional.empty(), 3));
+
+        assertThat(page.traces()).extracting(Trace::messages).containsExactly(4, 3, 2);
+        assertThat(page.total()).isEqualTo(6);
+        assertThat(page.matching()).isEqualTo(6);
+        assertThat(page.next()).map(TraceCursor::value).contains(2L);
+    }
+
+    @Test
     void traces_chainsWithAFailedMemberInAnotherApplication_matchTheCrossingTraceOnlyInEitherScope() {
         var open = tickets.dispatch(OPEN);
         tickets.reportTo(hub, open, tickets.dispatch(OPEN));

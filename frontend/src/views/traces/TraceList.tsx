@@ -37,6 +37,8 @@ export function TraceList(props: {
     more: boolean;
     full: boolean;
     onNearEnd: () => void;
+    // Whether the list is read from its top, as it scrolls.
+    onFollow: (following: boolean) => void;
 }) {
     const app = useMonitorApp();
     const traces = app.traces;
@@ -100,6 +102,7 @@ export function TraceList(props: {
         loadWhenNearEnd();
         setAway(!following());
         if (following()) setUnseen(0);
+        props.onFollow(following());
         anchorRows();
     };
 

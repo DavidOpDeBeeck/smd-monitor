@@ -41,8 +41,8 @@ class HubQueriesTest {
         hub.epoch();
         var computed = new AtomicInteger();
 
-        var first = queries.answer(List.of("query"), epoch -> QueryAnswer.json(String.valueOf(computed.incrementAndGet())));
-        var second = queries.answer(List.of("query"), epoch -> QueryAnswer.json(String.valueOf(computed.incrementAndGet())));
+        var first = queries.answer(List.of("query"), epoch -> QueryAnswer.versioned(String.valueOf(computed.incrementAndGet()), "version"));
+        var second = queries.answer(List.of("query"), epoch -> QueryAnswer.versioned(String.valueOf(computed.incrementAndGet()), "version"));
 
         assertThat(computed).hasValue(1);
         assertThat(second).isSameAs(first);
@@ -52,10 +52,10 @@ class HubQueriesTest {
     void answer_sameQueryInALaterEpoch_computesItAgain() {
         hub.epoch();
         var computed = new AtomicInteger();
-        queries.answer(List.of("query"), epoch -> QueryAnswer.json(String.valueOf(computed.incrementAndGet())));
+        queries.answer(List.of("query"), epoch -> QueryAnswer.versioned(String.valueOf(computed.incrementAndGet()), "version"));
         hub.epoch();
 
-        var later = queries.answer(List.of("query"), epoch -> QueryAnswer.json(String.valueOf(computed.incrementAndGet())));
+        var later = queries.answer(List.of("query"), epoch -> QueryAnswer.versioned(String.valueOf(computed.incrementAndGet()), "version"));
 
         assertThat(computed).hasValue(2);
         assertThat(later.body()).isEqualTo("2");
@@ -102,7 +102,7 @@ class HubQueriesTest {
     void trace_sequenceNotANumber_failsNamingTheExpectedForm() {
         hub.epoch();
 
-        assertThatThrownBy(() -> queries.trace("latest", null))
+        assertThatThrownBy(() -> queries.trace("latest"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessage("An invocation or a trace is named by its sequence number; got 'latest'");
     }
@@ -119,11 +119,11 @@ class HubQueriesTest {
     @Test
     void trace_askedAgainWithItsETagAfterTheHubRetainedMore_answersNotModified() {
         receive(span("0000000000000001", Optional.empty()));
-        var first = queries.trace("1", null);
+        var first = queries.trace("1");
         receive(span("0000000000000002", Optional.empty()));
         hub.epoch();
 
-        var again = queries.trace("1", first.eTag());
+        var again = queries.trace("1").unlessHeld(first.eTag());
 
         assertThat(first.status()).isEqualTo(200);
         assertThat(first.eTag()).isNotBlank();
@@ -134,11 +134,11 @@ class HubQueriesTest {
     @Test
     void trace_askedAgainAfterItGrew_answersTheTraceWithAnotherETag() {
         receive(span("0000000000000001", Optional.empty()));
-        var first = queries.trace("1", null);
+        var first = queries.trace("1");
         receive(span("0000000000000002", Optional.of("0000000000000001")));
         hub.epoch();
 
-        var again = queries.trace("1", first.eTag());
+        var again = queries.trace("1").unlessHeld(first.eTag());
 
         assertThat(again.status()).isEqualTo(200);
         assertThat(again.eTag()).isNotEqualTo(first.eTag());
@@ -147,11 +147,11 @@ class HubQueriesTest {
     @Test
     void invocation_askedAgainWithItsETagUnchanged_answersNotModified() {
         receive(span("0000000000000001", Optional.empty()));
-        var first = queries.invocation("1", null);
+        var first = queries.invocation("1");
         receive(span("0000000000000005", Optional.empty()));
         hub.epoch();
 
-        var again = queries.invocation("1", first.eTag());
+        var again = queries.invocation("1").unlessHeld(first.eTag());
 
         assertThat(again.status()).isEqualTo(304);
     }
@@ -194,6 +194,58 @@ class HubQueriesTest {
         assertThatThrownBy(() -> queries.failures(List.of("Order%2::COMMAND:OpenTicket|java.lang.IllegalStateException|dispatch")))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContainingAll("percent-encoded", "'Order%2::COMMAND:OpenTicket'");
+    }
+
+    @Test
+    void tape_askedAgainWithItsETagWhileTheHubRetainedOnlyInAnotherScope_answersNotModified() {
+        var tickets = new QueryFilter(TICKETS.value(), List.of(), List.of(), List.of(), List.of(), null);
+        receive(span("0000000000000001", Optional.empty()));
+        var first = queries.tape(tickets, null, null, null);
+        receive(new ApplicationName("billing"), span("0000000000000002", Optional.empty()));
+
+        var answered = queries.tape(tickets, null, null, null);
+        var again = answered.unlessHeld(first.eTag());
+
+        assertThat(answered.body()).isNotEqualTo(first.body());
+        assertThat(answered.eTag()).isEqualTo(first.eTag());
+        assertThat(again.status()).isEqualTo(304);
+        assertThat(again.body()).isNull();
+    }
+
+    @Test
+    void tape_askedAgainAfterAnInvocationInItsScope_answersTheTapeWithAnotherETag() {
+        receive(span("0000000000000001", Optional.empty()));
+        var first = queries.tape(EVERY_INVOCATION, null, null, null);
+        receive(span("0000000000000002", Optional.empty()));
+
+        var again = queries.tape(EVERY_INVOCATION, null, null, null).unlessHeld(first.eTag());
+
+        assertThat(again.status()).isEqualTo(200);
+        assertThat(again.eTag()).isNotEqualTo(first.eTag());
+    }
+
+    @Test
+    void failures_askedAgainWhileTheCauseDidNotFailAgain_answersNotModified() {
+        var cause = List.of("tickets::EVENT:TicketOpened|java.lang.IllegalStateException|handling:ticket-view");
+        receive(new MessageSpan(SpanRef.of(TRACE, "0000000000000001"), Optional.empty(), MessageId.generate(),
+            new Stage.Handling(new MessageType(MessageKind.EVENT, "TicketOpened"), "ticket-view"), Optional.of(EventDelivery.SYNC), Instant.now(), "main",
+            new Outcome.Failed(Duration.ofMillis(1), "java.lang.IllegalStateException")));
+        var first = queries.failures(cause);
+        receive(span("0000000000000002", Optional.empty()));
+
+        var again = queries.failures(cause).unlessHeld(first.eTag());
+
+        assertThat(again.status()).isEqualTo(304);
+    }
+
+    @Test
+    void timeline_anyAnswer_carriesNoETag() {
+        receive(span("0000000000000001", Optional.empty()));
+
+        var answer = queries.timeline(EVERY_INVOCATION, null, "60000", "100");
+
+        assertThat(answer.status()).isEqualTo(200);
+        assertThat(answer.eTag()).isNull();
     }
 
     private void receive(MessageSpan span) {
