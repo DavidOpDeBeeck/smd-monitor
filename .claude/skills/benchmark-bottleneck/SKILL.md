@@ -16,7 +16,7 @@ dependency that does not resolve, a push or pull request that is refused).
 | 1. Analyse | Nothing: reads the results that exist | Bottlenecks are ranked, each with a probe to measure it |
 | 2. Probe before | The target scenario and one or two check scenarios, on the base commit | The probe shows the bottleneck, and the profile agrees |
 | 3. Try a change | `./gradlew test`, then the same probes | A change improves the target and worsens no check, or the candidates run out |
-| 4. Prove it | `./gradlew saturation` before and after, about 35 minutes each | Both runs are in `docs/saturation` and the screenshots show the gain |
+| 4. Prove it | `./gradlew saturation` before and after, about 13 minutes each | Both runs are in `docs/saturation` and the screenshots show the gain |
 | 5. Pull request | `git push`, `gh pr create` | The pull request is open and the user is told |
 
 **Stop** after one pull request, or after five changes that did not improve anything, unless the arguments ask for more; then report what the journal holds.
@@ -115,7 +115,7 @@ python3 -I .claude/skills/benchmark-bottleneck/writer_profile.py build/saturatio
 
 It lists the hub's methods by the share of the writer's samples that include them, and the methods running by self time. Use `--thread
 saturation-publisher` for the publisher, or `jfr view gc-pauses <recording>` and `jfr view hot-methods <recording>` for the process as a whole. When the path
-has a JMH benchmark (`ReceiveBenchmark`, `WriterBenchmark`, `RelinkBenchmark`, `FrameBenchmark`, `QueryBenchmark`, `HeapBenchmark`), run it narrowly too:
+has a JMH benchmark (`WriterBenchmark`, `FrameBenchmark`, `QueryBenchmark`, `HeapBenchmark`), run it narrowly too:
 `flock /tmp/smd-monitor-bench.lock ./gradlew jmh -PjmhIncludes=<Benchmark>`, copying `build/results/jmh/results.json` to the probe's directory.
 
 When the probe does not show the bottleneck, or the profile shows another cost, record that and go back to step 1 with the new evidence.
@@ -145,7 +145,10 @@ otherwise the next bottleneck of step 1.
 Commit the change on the branch, with its tests and the docs `AGENTS.md` asks for (`docs/monitor-hub-design.md` when a decision or budget changes,
 `docs/monitor.md` when public behavior changes). Do not change the throughput `docs/monitor.md` documents.
 
-The proof is two full runs on this machine: **before** on the base commit and **after** on the branch's commit, each with every scenario.
+The proof is two full runs on this machine: **before** on the base commit and **after** on the branch's commit, each with the core scenarios, the
+default; add `-PsaturationScenarios=all` when the change targets a scenario outside them. When the change touches frames, queries, or the WebSocket, also run
+the viewer ladder (`./gradlew saturationViewers`) before and after, add both with `saturationDashboard -PsaturationViewers`, and screenshot
+`view=viewers&vpick=cap-16`.
 
 - Name the machine as the earlier runs of this machine in `docs/saturation/runs.json` did; when there are none, name it by processor, threads, memory, and
   operating system, such as `Ryzen 7 5825U, 16 threads, 32 GB, Linux`, and use that name for both runs.

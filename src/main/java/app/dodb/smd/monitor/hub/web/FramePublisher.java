@@ -24,6 +24,7 @@ public final class FramePublisher implements AutoCloseable {
     private static final long NONE = -1;
     private final MonitorHub hub;
     private final MonitorFrames frames;
+    private final int maxClients;
     private final Map<Sink, Client> clients = new ConcurrentHashMap<>();
     private final Thread publisher = Thread.ofPlatform().daemon().name("smd-monitor-frames").unstarted(this::publishEpochs);
     private volatile PublishedFrame latest;
@@ -34,8 +35,14 @@ public final class FramePublisher implements AutoCloseable {
     }
 
     public FramePublisher(MonitorHub hub, MonitorFrames frames) {
+        this(hub, frames, MAX_CLIENTS);
+    }
+
+    // A benchmark tunes how many clients it takes.
+    public FramePublisher(MonitorHub hub, MonitorFrames frames, int maxClients) {
         this.hub = requireNonNull(hub);
         this.frames = requireNonNull(frames);
+        this.maxClients = maxClients;
     }
 
     public void start() {
@@ -45,7 +52,7 @@ public final class FramePublisher implements AutoCloseable {
     // Takes a client to send the frames to, from the latest one on, and reports whether it did: not once as many are connected as the publisher
     // takes, or once it closed.
     public synchronized boolean connect(Sink sink) {
-        if (closed || clients.size() >= MAX_CLIENTS) {
+        if (closed || clients.size() >= maxClients) {
             return false;
         }
         var client = new Client(sink);

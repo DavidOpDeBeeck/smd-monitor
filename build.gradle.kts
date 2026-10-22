@@ -129,7 +129,7 @@ tasks.register<JavaExec>("demo") {
 }
 
 // Benchmarks of ingest, frames, and queries at the design targets of docs/monitor-hub-design.md; they share the load generator of the tests.
-// Narrow them with -PjmhIncludes=<regex>, for example -PjmhIncludes=ReceiveBenchmark.
+// Narrow them with -PjmhIncludes=<regex>, for example -PjmhIncludes=WriterBenchmark.
 jmh {
     jmhVersion = libs.versions.jmh
     includeTests = true
@@ -162,12 +162,22 @@ fun JavaExec.saturationJvm(output: Provider<Directory>) {
     providers.gradleProperty("saturationClients").orNull?.let { jvmArgs("-Dsaturation.clients=$it") }
     providers.gradleProperty("saturationSlowClients").orNull?.let { jvmArgs("-Dsaturation.slowClients=$it") }
     providers.gradleProperty("saturationSlowClientRate").orNull?.let { jvmArgs("-Dsaturation.slowClientRate=$it") }
+    // For example -PsaturationTransport=otlp, or otlp-gzip, to export the batches to the hub's OTLP server over HTTP as exporters do instead of
+    // submitting them, and measure how long it takes to answer (SaturationExporters).
+    providers.gradleProperty("saturationTransport").orNull?.let { jvmArgs("-Dsaturation.transport=$it") }
+    // For example -PsaturationViewers=64, to have that many open pages in a JVM of their own read the frames from the hub's WebSocket and ask its query
+    // API for their views, and measure what they read and how long the hub takes to answer (SaturationViewers); their JVM's heap is
+    // -PsaturationViewerHeap, 4g by default.
+    providers.gradleProperty("saturationViewers").orNull?.let { jvmArgs("-Dsaturation.viewers=$it") }
+    providers.gradleProperty("saturationViewerHeap").orNull?.let { jvmArgs("-Dsaturation.viewerHeap=$it") }
+    // For example -PsaturationQueryCap=16, to let the hub run that many queries at once instead of its own limit, to tune it.
+    providers.gradleProperty("saturationQueryCap").orNull?.let { jvmArgs("-Dsaturation.queryCap=$it") }
     doFirst { output.get().asFile.mkdirs() }
 }
 
 // Open-loop saturation runs of the hub with its writer thread, which raise the span rate step by step until it sheds, falls behind, or refuses;
-// see SaturationScenario. Narrow them with -PsaturationScenarios=quick (the reference and the profiles), a sweep such as applications, or IDs such as
-// applications-500, and shorten the history filled first with -PsaturationFill=PT2M. Offer only some rates instead of the ladder with
+// see SaturationScenario. By default it runs the core scenarios (the reference, 500 applications, and the 256 MB budget); choose others with
+// -PsaturationScenarios=all, quick (the reference and the profiles), a sweep such as applications, or IDs such as applications-500, and shorten the history filled first with -PsaturationFill=PT2M. Offer only some rates instead of the ladder with
 // -PsaturationRates=40000,50000,60000, and write into another directory of build than saturation with -PsaturationOutput=saturation-probe, so a
 // probe leaves the full run's results alone. Each run prints a line per rate after where the run stands and about how long it still takes, keeps
 // the latest in <output>/progress.txt, appends a table per scenario to <output>/summary.md, and writes every second to <output>/<scenario>.csv.
@@ -176,7 +186,7 @@ tasks.register<JavaExec>("saturation") {
     val output = layout.buildDirectory.dir(providers.gradleProperty("saturationOutput").orElse("saturation"))
     saturationJvm(output)
     mainClass.set("app.dodb.smd.monitor.hub.SaturationRun")
-    val scenarios = providers.gradleProperty("saturationScenarios").orElse("all")
+    val scenarios = providers.gradleProperty("saturationScenarios").orElse("core")
     val fill = providers.gradleProperty("saturationFill").orElse("-")
     val rates = providers.gradleProperty("saturationRates")
     argumentProviders.add(CommandLineArgumentProvider {
@@ -184,7 +194,8 @@ tasks.register<JavaExec>("saturation") {
     })
 }
 
-// Adds the run in build/saturation to the runs kept in docs/saturation and writes build/saturation/dashboard.html (docs/saturation/dashboard.py).
+// Adds the run in build/saturation to the runs kept in docs/saturation and writes build/saturation/dashboard.html (docs/saturation/dashboard.py); with
+// -PsaturationViewers, adds the viewer ladder in build/saturation-viewers instead.
 // Take some scenarios of the results only with -PsaturationOnly=reference,applications-500, and name the run on the page with
 // -PsaturationName="Reserved queue room" instead of Run N. Runs Python with the py launcher on Windows, where
 // python often opens the Microsoft Store instead, and python3 elsewhere; choose another with -PsaturationPython=/path/to/python.
@@ -195,13 +206,30 @@ tasks.register<Exec>("saturationDashboard") {
     val python = providers.gradleProperty("saturationPython").orElse(if (windows) "py" else "python3")
     val only = providers.gradleProperty("saturationOnly").orElse("")
     val name = providers.gradleProperty("saturationName")
-    val results = layout.buildDirectory.dir("saturation")
+    val viewers = providers.gradleProperty("saturationViewers").isPresent
+    val results = layout.buildDirectory.dir(if (viewers) "saturation-viewers" else "saturation")
     workingDir = layout.projectDirectory.asFile
     executable = python.get()
     argumentProviders.add(CommandLineArgumentProvider {
-        listOf("-I", "docs/saturation/dashboard.py", "--add", results.get().asFile.path, "--only", only.get()) +
+        listOf("-I", "docs/saturation/dashboard.py") +
+                (if (viewers) listOf("--add-viewers", results.get().asFile.path) else listOf("--add", results.get().asFile.path, "--only", only.get())) +
                 (name.orNull?.let { listOf("--name", it) } ?: emptyList())
     })
+}
+
+// How many open UIs the hub serves while it ingests, and at what cost (SaturationViewerLadder): a run without viewers, then one per number of viewers
+// and query cap, each filling a minute of the reference scenario and offering one rate, into build/saturation-viewers; about 25 minutes. Narrow it
+// with -PsaturationViewerCounts=1,16,64 and -PsaturationQueryCaps=4,64, and offer another rate with -PsaturationViewerRate=80000. Then
+// ./gradlew saturationDashboard -PsaturationViewers adds it to the saturation page.
+tasks.register<JavaExec>("saturationViewers") {
+    description = "Runs the viewer ladder: open UIs against what they get and what they cost the hub"
+    val output = layout.buildDirectory.dir("saturation-viewers")
+    saturationJvm(output)
+    mainClass.set("app.dodb.smd.monitor.hub.SaturationViewerLadder")
+    val counts = providers.gradleProperty("saturationViewerCounts").orElse("")
+    val caps = providers.gradleProperty("saturationQueryCaps").orElse("")
+    val rate = providers.gradleProperty("saturationViewerRate").orElse("")
+    argumentProviders.add(CommandLineArgumentProvider { listOf(output.get().asFile.path, counts.get(), caps.get(), rate.get()) })
 }
 
 // Checks the throughput docs/monitor.md documents for the reference machine, scenario by scenario (SaturationCheck); about 40 minutes on a quiet

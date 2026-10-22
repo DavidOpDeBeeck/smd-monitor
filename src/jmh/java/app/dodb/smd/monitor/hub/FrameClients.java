@@ -1,6 +1,5 @@
 package app.dodb.smd.monitor.hub;
 
-import app.dodb.smd.monitor.hub.javalin.SaturationFrameServer;
 import jakarta.websocket.ClientEndpointConfig;
 import jakarta.websocket.CloseReason;
 import jakarta.websocket.ContainerProvider;
@@ -14,6 +13,7 @@ import jakarta.websocket.WebSocketContainer;
 import org.eclipse.jetty.util.component.LifeCycle;
 
 import java.io.IOException;
+import java.net.URI;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -28,7 +28,7 @@ import java.util.regex.Pattern;
 
 import static java.util.Objects.requireNonNull;
 
-// The pages of a saturation run that measures frame delivery: the hub's WebSocket served as it runs, and clients connected to it over the loopback
+// The pages of a saturation run that measures frame delivery: clients connected to the hub's WebSocket, served as it runs, over the loopback
 // address, offering permessage-deflate as browsers do. Each client records when it read the last part of each frame, and the frame's type and epoch
 // from the head of the message; it parses nothing more, as parsing is the page's work, not the hub's. A slow client reads at most its rate of
 // characters of JSON a second: it blocks the container's thread that reads its socket, so the hub's send backs up as it does behind a slow link or
@@ -41,12 +41,13 @@ final class FrameClients implements AutoCloseable {
     private static final String SLOW_CLIENTS_PROPERTY = "saturation.slowClients";
     private static final String SLOW_CLIENT_RATE_PROPERTY = "saturation.slowClientRate";
     private static final Duration RECONNECT = Duration.ofMillis(500);
-    private static final Duration FIRST_FRAME = Duration.ofMinutes(1);
+    // Hundreds of clients each read the filled hub's snapshot first.
+    private static final Duration FIRST_FRAME = Duration.ofMinutes(10);
     private static final Pattern HEAD = Pattern.compile("\"type\":\"(snapshot|delta)\",\"epoch\":(\\d+)");
     private static final int HEAD_CHARS = 512;
     private static final ClientEndpointConfig CONFIG = ClientEndpointConfig.Builder.create().extensions(List.of(new PermessageDeflate())).build();
 
-    private final SaturationFrameServer server;
+    private final URI live;
     private final long slowCharsPerSecond;
     private final Consumer<FrameReceipt> receipts;
     private final WebSocketContainer container = ContainerProvider.getWebSocketContainer();
@@ -55,8 +56,8 @@ final class FrameClients implements AutoCloseable {
     private final List<Client> clients = new CopyOnWriteArrayList<>();
     private volatile boolean closed;
 
-    private FrameClients(SaturationFrameServer server, long slowCharsPerSecond, Consumer<FrameReceipt> receipts) {
-        this.server = requireNonNull(server);
+    private FrameClients(URI live, long slowCharsPerSecond, Consumer<FrameReceipt> receipts) {
+        this.live = requireNonNull(live);
         this.slowCharsPerSecond = slowCharsPerSecond;
         this.receipts = requireNonNull(receipts);
     }
@@ -67,8 +68,9 @@ final class FrameClients implements AutoCloseable {
         return new Audience(number(CLIENTS_PROPERTY, 0, 0), number(SLOW_CLIENTS_PROPERTY, 0, 0), number(SLOW_CLIENT_RATE_PROPERTY, SLOW_CHARS_PER_SECOND, 1));
     }
 
-    static FrameClients serve(MonitorHub hub, Audience audience, SaturationFrameServer.FrameWritten written, Consumer<FrameReceipt> receipts) {
-        return new FrameClients(SaturationFrameServer.start(hub, written), audience.slowCharsPerSecond(), receipts);
+    // Connects to the hub's WebSocket at the given address, whose server the run closes after the clients.
+    static FrameClients of(URI live, long slowCharsPerSecond, Consumer<FrameReceipt> receipts) {
+        return new FrameClients(live, slowCharsPerSecond, receipts);
     }
 
     void connect(int count, boolean slow) {
@@ -83,7 +85,7 @@ final class FrameClients implements AutoCloseable {
     void awaitFirstFrames() throws InterruptedException {
         for (var client : clients) {
             if (!client.firstFrame.await(FIRST_FRAME.toSeconds(), TimeUnit.SECONDS)) {
-                throw new IllegalStateException("Saturation client " + client.index + " read no frame of " + server.live() + " within " + FIRST_FRAME);
+                throw new IllegalStateException("Saturation client " + client.index + " read no frame of " + live + " within " + FIRST_FRAME);
             }
         }
     }
@@ -99,7 +101,6 @@ final class FrameClients implements AutoCloseable {
         for (var client : clients) {
             client.close();
         }
-        server.close();
         // Jetty's client container runs threads that are no daemons, which would keep the run's JVM alive.
         LifeCycle.stop(container);
     }
@@ -144,10 +145,10 @@ final class FrameClients implements AutoCloseable {
 
         private void connect() {
             try {
-                container.connectToServer(this, CONFIG, server.live());
+                container.connectToServer(this, CONFIG, live);
             } catch (DeploymentException | IOException failure) {
                 if (firstFrame.getCount() > 0 && disconnects.get() == 0) {
-                    throw new IllegalStateException("Saturation client " + index + " could not connect to " + server.live(), failure);
+                    throw new IllegalStateException("Saturation client " + index + " could not connect to " + live, failure);
                 }
                 reconnectLater();
             }

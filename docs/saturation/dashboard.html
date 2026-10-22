@@ -163,6 +163,13 @@
   .swatch { width: 14px; height: 3px; border-radius: 2px; display: inline-block; flex: none; }
   .swatch.block { height: 11px; width: 11px; border-radius: 3px; }
   .swatch.dashed { background: none; border-top: 2px dashed var(--reference); height: 0; }
+  /* The viewer ladder: a panel per measure, in two groups. */
+  .viewer-groups { display: grid; gap: 18px; }
+  .viewer-group-title { font-size: 13px; font-weight: 600; color: var(--fg); margin: 0 0 8px; }
+  .viewer-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+  .viewer-panel { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px 4px; min-width: 0; position: relative; }
+  .viewer-panel h4 { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--fg); }
+  .viewer-panel p { margin: 2px 0 4px; font-size: 11.5px; color: var(--muted); line-height: 1.35; min-height: 31px; }
   /* Small multiples: one panel per run, sharing their scales. */
   .multiples { display: grid; gap: 14px; }
   .multiple { display: grid; gap: 2px; min-width: 0; }
@@ -210,6 +217,7 @@
   .key-ok { background: color-mix(in srgb, var(--ok) 35%, transparent); }
   .key-warn { background: color-mix(in srgb, var(--warn) 40%, transparent); }
   .key-bad { background: color-mix(in srgb, var(--bad) 38%, transparent); }
+  .key-hollow { background: var(--panel); border: 2px solid var(--muted); border-radius: 50%; box-sizing: border-box; }
   .key-muted { background: color-mix(in srgb, var(--reference) 45%, transparent); }
 
   .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
@@ -321,6 +329,7 @@
         <label class="control" id="ctl-sweep">Sweep <select class="select" id="sweep-select"></select></label>
         <label class="control" id="ctl-run">Run <select class="select" id="run-select"></select></label>
         <label class="control" id="ctl-measure">Measure <select class="select" id="measure-select"></select></label>
+        <label class="control" id="ctl-vpick">Lines <select class="select" id="vpick-select"></select></label>
         <span class="control" id="ctl-seconds"><label for="seconds-select">Measure</label> <select class="select" id="seconds-select"></select>
           <button type="button" class="btn" id="all-steps">‹ Every step</button>
         </span>
@@ -510,7 +519,36 @@
       what: 'How long the publisher took to write a frame’s delta. Past one second a page misses frames.' },
     frameMaxMs: { group: 'Publishing', label: 'Frame, slowest', format: millis, what: 'The slowest frame of the step.' },
     deltaKb: { group: 'Publishing', label: 'Frame delta, median', format: kilobytes, what: 'The size of a frame’s delta.' },
+    exportP50Ms: { group: 'End to end', label: 'OTLP answer, median', format: millis,
+      what: 'How long the OTLP server took to answer an export: reading, decoding, and admitting its spans. Only runs over OTLP/HTTP (-PsaturationTransport) have it.' },
+    exportP99Ms: { group: 'End to end', label: 'OTLP answer, p99', format: millis,
+      what: 'The slowest hundredth of the OTLP server’s answers. Only runs over OTLP/HTTP (-PsaturationTransport) have it.' },
   };
+  // The viewer ladder (SaturationViewerLadder): one rate offered while open UIs read the frames and ask their views, at each number of viewers and
+  // query cap. Each point is a run of its own; the baseline has no viewers.
+  const VIEWER_MEASURES = [
+    { key: 'answered', group: 'What the viewers get', label: 'Queries answered', format: share, max: 1,
+      what: 'Share of the viewers’ refreshes the hub answered; the rest it refused (429) or let time out.' },
+    { key: 'freshWorst', group: 'What the viewers get', label: 'Worst viewer, seconds fresh', format: share, max: 1,
+      what: 'For the least lucky viewer, the share of seconds its view refreshed.' },
+    { key: 'freshMedian', group: 'What the viewers get', label: 'Median viewer, seconds fresh', format: share, max: 1,
+      what: 'For the viewer in the middle, the share of seconds its view refreshed.' },
+    { key: 'answerP99Ms', group: 'What the viewers get', label: 'Query answer, p99', format: millis, references: [{ y: 50, label: '50 ms budget' }],
+      what: 'Answered queries only, from asking to the last byte read.' },
+    { key: 'framesReceived', group: 'What the viewers get', label: 'Live frames received', format: share, max: 1,
+      what: 'Share of the frames the viewers read; a viewer that missed one reads a full snapshot next.' },
+    { key: 'frameLagP99Ms', group: 'What the viewers get', label: 'Live frame lag, p99', format: (value) => lagFormat(value), references: [{ y: 1000, label: 'one second' }],
+      what: 'From the end of a second to a viewer reading its frame.' },
+    { key: 'capacityShare', group: 'What it costs the hub', label: 'Writer capacity against no viewers', format: share,
+      references: [{ y: 1, label: 'no viewers' }], what: 'Spans the writer processes per second on a core, against the run without viewers.' },
+    { key: 'processCores', group: 'What it costs the hub', label: 'Hub cores', format: cores, baseline: true,
+      what: 'Cores the hub’s JVM used: ingest, the writer, frames and their compression, and queries.' },
+    { key: 'heapMb', group: 'What it costs the hub', label: 'Heap, most used', format: megabytes, baseline: true, what: 'The most heap in use during the step.' },
+    { key: 'gcMsPerS', group: 'What it costs the hub', label: 'Collection time per second', format: millis, baseline: true,
+      what: 'Milliseconds of each second spent in garbage collection.' },
+    { key: 'viewerCores', group: 'What it costs the hub', label: 'Viewers’ cores', format: cores,
+      what: 'Cores the viewers’ own JVM used on the same machine, taken from the hub’s; viewers on machines of their own would leave them to the hub.' },
+  ];
   // Every measure of a second, as the seconds file names it.
   const SECONDS = {
     processed: { label: 'Processed per second', format: count, also: { field: 'offered', label: 'Offered per second' },
@@ -597,6 +635,13 @@
       .sort((a, b) => (field ? a[field] - b[field] : (a.sweep === 'reference' ? -1 : 0) - (b.sweep === 'reference' ? -1 : 0)));
   };
 
+  const viewerRows = DATA.viewers || [];
+  const viewerRuns = groupsInOrder([...viewerRows].sort((a, b) => a.order - b.order), (row) => row.run).map(([run, rows]) => ({ run, order: rows[0].order,
+    name: rows[0].name || `Viewers ${rows[0].order}`, label: rows[0].label, machine: rows[0].machine, rows }));
+  const viewerCaps = [...new Set(viewerRows.filter((row) => row.viewers > 0).map((row) => row.cap))].sort((a, b) => a - b);
+  const viewerPicks = [...[...viewerRuns].reverse().map((run) => [`run-${run.order}`, `${run.name}: every query cap`]),
+    ...viewerCaps.map((cap) => [`cap-${cap}`, `Query cap ${cap}: every viewer run`])];
+
   // A sweep earns a view of its own when it has several points besides the reference; the overview shows the others.
   const VIEWS = [
     { id: 'change', group: 'Compare runs', title: 'What changed', controls: [] },
@@ -605,6 +650,7 @@
       .map(([sweep, { title }]) => ({ id: `sweep-${sweep}`, group: 'Compare runs', title: `${title} sweep`, sweep, controls: ['limit', 'scale'] })),
     { id: 'steps', group: 'One scenario', title: 'Rate by rate', controls: ['scenario', 'measure', 'series', 'sweep', 'run', 'scale'] },
     { id: 'seconds', group: 'One scenario', title: 'Second by second', controls: ['scenario', 'seconds'] },
+    { id: 'viewers', group: 'End to end', title: 'Open UIs', controls: ['vpick'] },
     { id: 'about', group: 'About', title: 'How it was measured', controls: [] },
   ];
   const viewOf = (id) => VIEWS.find((view) => view.id === id);
@@ -627,6 +673,7 @@
     seconds: { allowed: Object.keys(SECONDS), fallback: 'processed' },
     clients: { allowed: Object.keys(CLIENTS), fallback: 'fast' },
     scenario: { allowed: scenarios.map((scenario) => scenario.scenario), fallback: 'reference' },
+    vpick: { allowed: viewerPicks.map(([key]) => key), fallback: viewerPicks.length ? viewerPicks[0][0] : '' },
   };
   const query = new URLSearchParams(location.search);
   // The verdict ladder became the strips under the rate-by-rate chart; a link to it opens that chart.
@@ -1386,6 +1433,9 @@
   runSelect.addEventListener('change', () => setState({ run: Number(runSelect.value) }));
   measureSelect.addEventListener('change', () => setState({ measure: measureSelect.value }));
   secondsSelect.addEventListener('change', () => setState({ seconds: secondsSelect.value }));
+  const vpickSelect = document.getElementById('vpick-select');
+  vpickSelect.replaceChildren(...viewerPicks.map(([key, label]) => new Option(label, key)));
+  vpickSelect.addEventListener('change', () => setState({ vpick: vpickSelect.value }));
   document.getElementById('all-steps').addEventListener('click', () => setState({ step: null }));
   for (const button of document.querySelectorAll('[data-param]')) {
     button.addEventListener('click', () => setState({ [button.dataset.param]: button.dataset.value }));
@@ -1659,6 +1709,11 @@
     } else {
       const series = withSteps.map((item) => ({ key: item.key, name: item.name, color: item.color,
         values: item.steps.map((row) => ({ x: row.rate, y: value(row), raw: row })) }));
+      if (!series.some((each) => each.values.some((point) => present(point.y)))) {
+        emptyLine(stage.chart, `None of the picked runs measured ${measure.label.toLowerCase()} on this scenario.`);
+        fillTable(stage.table, stepColumns, stepRows(withSteps), (row) => row.item.key);
+        return;
+      }
       const configured = measure.configured ? [...new Set(withSteps.map((item) => measure.configured(item.scenario)))] : [];
       const references = [...(measure.references || []), ...(configured.length === 1 ? [{ y: configured[0], label: `configured: ${measure.format(configured[0])}` }] : [])];
       const top = Math.max(maxOf(series.flatMap((each) => each.values).filter((point) => present(point.y)), (point) => point.y), ...references.map((reference) => reference.y));
@@ -1747,6 +1802,108 @@
     fillTable(stage.table, stepColumns, stepRows(items.filter((item) => item.steps.length)), (row) => row.item.key);
   };
 
+  // The lines the pick draws: the query caps of one viewer run, or one cap in every viewer run; each point a number of viewers, its baseline
+  // the run without viewers.
+  const viewerSeries = () => {
+    const [kind, value] = state.vpick.split('-');
+    if (kind === 'run') {
+      const run = viewerRuns.find((each) => each.order === Number(value));
+      return { runs: [run], series: viewerCaps.map((cap, index) => ({ key: `cap-${cap}`, name: `Query cap ${cap}`, color: `var(${SERIES[index % SERIES.length]})`,
+        baseline: run.rows.find((row) => row.viewers === 0), rows: run.rows.filter((row) => row.viewers > 0 && row.cap === cap) })).filter((each) => each.rows.length) };
+    }
+    return { runs: viewerRuns, series: viewerRuns.map((run, index) => ({ key: run.run, name: run.name, color: `var(${SERIES[index % SERIES.length]})`,
+      baseline: run.rows.find((row) => row.viewers === 0), rows: run.rows.filter((row) => row.viewers > 0 && row.cap === Number(value)) })).filter((each) => each.rows.length) };
+  };
+
+  // One measure against the viewers, on a log axis; a hollow point where ingest did not keep up at that load.
+  const viewerChart = (container, measure, series) => {
+    const height = 200;
+    const { svg, width } = svgIn(container, height);
+    const points = series.flatMap((each) => each.rows.map((row) => ({ each, row, x: row.viewers, y: row[measure.key] }))).filter((point) => present(point.y));
+    const baselines = measure.baseline ? [...new Set(series.map((each) => each.baseline && each.baseline[measure.key]).filter(present))] : [];
+    const references = [...(measure.references || []), ...(baselines.length === 1 ? [{ y: baselines[0], label: 'no viewers' }] : [])];
+    const top = Math.max(maxOf(points, (point) => point.y), ...references.map((reference) => reference.y), 0);
+    // The axis ends on the first round step above the highest value, so no point is cut off.
+    const step = (niceTicks(0, top * 1.1 || 1, 4)[1] || 1);
+    const yMax = measure.max !== undefined && top <= measure.max ? measure.max : Math.ceil((top * 1.1 || 1) / step) * step;
+    const yTicks = niceTicks(0, yMax, 4);
+    const yTick = tickFormat(measure.format);
+    const left = Math.ceil(maxOf(yTicks, (tick) => textWidth(svg, yTick(tick)))) + 10;
+    const margin = { top: 12, right: 12, bottom: 34, left };
+    // Every panel spans every number of viewers, also where a measure has no value, such as answer times when nothing was answered.
+    const xs = [...new Set(series.flatMap((each) => each.rows.map((row) => row.viewers)))].sort((a, b) => a - b);
+    const x = logScale([Math.max(1, xs[0] || 1) / 1.3, (xs[xs.length - 1] || 2) * 1.3], [margin.left, width - margin.right]);
+    const y = linearScale([0, yMax], [height - margin.bottom, margin.top]);
+    gridLines(svg, yTicks, (tick) => ({ x1: margin.left, x2: width - margin.right, y1: y(tick), y2: y(tick) }));
+    axisBottom(svg, x, x.range(), xs, count, height - margin.bottom);
+    axisLeft(svg, y, yTicks, yTick, margin.left);
+    axisTitle(svg, width - margin.right, height - 2, 'viewers, log scale');
+    for (const reference of references) {
+      el(svg, 'line', { class: 'reference', x1: margin.left, x2: width - margin.right, y1: y(reference.y), y2: y(reference.y) });
+      el(svg, 'text', { x: margin.left + 4, y: y(reference.y) - 4 }, reference.label);
+    }
+    // Lines that coincide stay apart by a few pixels, so none hides another.
+    const dodge = (index) => (index - (series.length - 1) / 2) * 4;
+    series.forEach((each, index) => {
+      const mine = points.filter((point) => point.each === each).sort((a, b) => a.x - b.x);
+      const at = (point) => x(point.x) + dodge(index);
+      el(svg, 'path', { d: linePath(mine, at, (point) => y(Math.min(point.y, yMax))), fill: 'none', stroke: each.color, 'stroke-width': 2, 'stroke-linecap': 'round',
+        'stroke-linejoin': 'round', 'data-key': each.key });
+      for (const point of mine) {
+        const kept = point.row.verdict === 'KEEPS_UP';
+        const mark = el(svg, 'circle', { cx: at(point), cy: y(Math.min(point.y, yMax)), r: kept ? 4.5 : 4, fill: kept ? each.color : 'var(--panel)',
+          stroke: kept ? 'var(--panel)' : each.color, 'stroke-width': 2, 'data-key': each.key });
+        el(mark, 'title', {}, `${each.name}, ${count(point.x)} viewers: ${measure.format(point.y)}; ingest ${verdict(point.row.verdict).label.toLowerCase()}`);
+      }
+    });
+  };
+
+  const renderViewersView = () => {
+    stage.title.textContent = 'Open UIs · what the viewers get and what it costs';
+    if (!viewerRuns.length) {
+      stage.how.textContent = 'No viewer ladder was added yet: run ./gradlew saturationViewers, then ./gradlew saturationDashboard -PsaturationViewers.';
+      emptyLine(stage.chart, 'No viewer ladder kept.');
+      return;
+    }
+    const { runs: shownRuns, series } = viewerSeries();
+    const rate = shownRuns[0].rows[0].rate;
+    stage.how.textContent = `Each point is a run offering ${count(rate)} spans/s while that many open UIs, in a JVM of their own, read the live frames and ask `
+      + 'their view’s query whenever a newer frame arrives. A hollow point is a load at which ingest fell behind or shed.';
+    facts(series.map((each) => {
+      const kept = each.rows.filter((row) => row.verdict === 'KEEPS_UP').map((row) => row.viewers);
+      return { key: each.key, name: each.name, color: each.color, text: kept.length ? ` ingest keeps up with up to ${count(Math.max(...kept))} viewers` : ' ingest never keeps up' };
+    }));
+    legend(stage.legend, [{ name: 'Filled: ingest keeps up', color: 'var(--muted)' }, { name: 'Hollow: ingest falls behind or sheds', block: 'key-hollow' }]);
+    stage.chart.replaceChildren();
+    const groups = Object.assign(document.createElement('div'), { className: 'viewer-groups' });
+    for (const [group, measures] of groupsInOrder(VIEWER_MEASURES, (measure) => measure.group)) {
+      const box = document.createElement('section');
+      box.append(Object.assign(document.createElement('h3'), { className: 'viewer-group-title', textContent: group }));
+      const grid = Object.assign(document.createElement('div'), { className: 'viewer-grid' });
+      box.append(grid);
+      groups.append(box);
+      for (const measure of measures) {
+        const panel = Object.assign(document.createElement('div'), { className: 'viewer-panel' });
+        const chart = Object.assign(document.createElement('div'), { className: 'chart' });
+        panel.append(Object.assign(document.createElement('h4'), { textContent: measure.label }), Object.assign(document.createElement('p'), { textContent: measure.what }), chart);
+        grid.append(panel);
+        measure.panel = chart;
+      }
+    }
+    stage.chart.append(groups);
+    for (const measure of VIEWER_MEASURES) {
+      if (series.some((each) => each.rows.some((row) => present(row[measure.key])))) viewerChart(measure.panel, measure, series);
+      else measure.panel.closest('.viewer-panel').hidden = true;
+    }
+    const rows = series.flatMap((each) => each.rows.map((row) => ({ ...row, line: each })));
+    fillTable(stage.table, [
+      { label: 'Lines', text: true, value: (row) => row.line.name, color: (row) => row.line.color },
+      { label: 'Viewers', value: (row) => count(row.viewers) },
+      ...VIEWER_MEASURES.map((measure) => ({ label: measure.label, value: (row) => orNone(row[measure.key], measure.format) })),
+      { label: 'Ingest', text: true, value: (row) => verdict(row.verdict).label, tone: (row) => verdict(row.verdict).tone },
+    ], rows, (row) => row.line.key);
+  };
+
   function render() {
     for (const button of document.querySelectorAll('[data-param]')) {
       button.setAttribute('aria-pressed', String(state[button.dataset.param] === button.dataset.value));
@@ -1760,7 +1917,8 @@
     const scenario = scenarioById.get(state.scenario);
     const bySweep = view.controls.includes('series') && state.series === 'scenarios';
     const shown = (name) => view.controls.includes(name) && !(bySweep && name === 'scenario') && !(!bySweep && ['sweep', 'run'].includes(name));
-    for (const name of ['scenario', 'sweep', 'run', 'measure', 'series', 'seconds', 'limit', 'scale']) document.getElementById(`ctl-${name}`).hidden = !shown(name);
+    for (const name of ['scenario', 'sweep', 'run', 'measure', 'series', 'seconds', 'limit', 'scale', 'vpick']) document.getElementById(`ctl-${name}`).hidden = !shown(name);
+    vpickSelect.value = state.vpick;
     document.getElementById('ctl-clients').hidden = !(shown('seconds') && SECONDS[state.seconds].delivery);
     stage.strip.hidden = !view.controls.length;
     stage.keys.hidden = !view.controls.includes('scenario');
@@ -1822,6 +1980,8 @@
         ? `${listOf(referenceOnly.map((run) => run.name))} ran only the reference of this sweep, so ${referenceOnly.length > 1 ? 'they show' : 'it shows'} one point.` : '';
       drawSweep(stage.chart, view.sweep, picked, state.limit, chartHeight());
       fillTable(stage.table, limitColumns, comparedRows(picked, members), (row) => row.scenario);
+    } else if (view.id === 'viewers') {
+      renderViewersView();
     } else if (view.id === 'seconds') {
       renderSecondsView(picked, scenario);
     } else {

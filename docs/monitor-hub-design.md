@@ -73,7 +73,6 @@ What the hub is tested and benchmarked at (`LoadProfile.STANDALONE`), and what t
 
 | Measure                                 | Budget      |
 |-----------------------------------------|-------------|
-| Writer time per 512-span batch, decoded | < 5 ms p99  |
 | Building an epoch                       | < 20 ms     |
 | Delta frame, uncompressed               | < 100 KB    |
 | Query                                   | < 50 ms p99 |
@@ -267,11 +266,9 @@ every 5 s in shuffled batches of up to 512. Each fork first fills the hub's whol
 
 | Budget            | Measure                                                 | Benchmark                   | Result                                      |                     |
 |-------------------|---------------------------------------------------------|-----------------------------|---------------------------------------------|---------------------|
-| < 5 ms p99        | Writer time per 512-span batch, with admission          | `ReceiveBenchmark`          | 5.6 ms p99, 1.5 ms p50                      | missed              |
 | < 20 ms           | Building an epoch                                       | `FrameBenchmark.statistics` | 158 ms p99, 62 ms p50                       | missed              |
 | < 100 KB          | Delta frame, median and largest                         | `FrameBenchmark`            | 1,440 KB, 2,841 KB; 286 KB, 613 KB deflated | missed              |
 | < 50 ms p99       | Query: tape, traces, failures of 20 causes, timeline    | `QueryBenchmark`            | 20.6, 12.1, 96.6, 9.8 ms                    | missed for failures |
-| < 50 ms p99       | First query of an epoch                                 | `RelinkBenchmark`           | 24.0 ms                                     | met                 |
 | < 1 core          | One second of writer work                               | `WriterBenchmark`           | 105 ms p50, 203 ms p99                      | met                 |
 | < 1 s             | Writing an epoch's delta, on the publisher              | `FrameBenchmark.delta`      | 211 ms p50, 323 ms p99                      | met                 |
 | Within the budget | Heap of the hub after a collection                      | `HeapBenchmark`             | 1,660 MB of 2,048 MB; 1,681 MB accounted    | met                 |
@@ -283,6 +280,12 @@ while tape, failures, and timeline stayed within noise of each other, run back t
 
 Before the rework, the same load took about 24 cores, 4.5 GB of heap without a bound, and 48 MB per frame. [Open items](#open-items) lists the levers for the
 budgets still missed.
+
+Two benchmarks of this run were removed on 2026-10-22, as others cover what they measured. `ReceiveBenchmark` timed the writer on one 512-span batch
+(5.6 ms p99, a budget of 5 ms): `WriterBenchmark` times the same work a second at a time, and what a slow batch does to the page, delay the tick, shows as
+*Tick late* in a saturation run, so its budget went with it. `RelinkBenchmark` timed the first tape of an epoch (24.0 ms) for when that query linked what
+the epoch retained; since S4 the writer links as spans arrive, and the first query costs what `QueryBenchmark.tape` does. `HeapBenchmark` measures the
+design target's 2 GB budget only; `-p budgetMegabytes=1024,4096` measures others.
 
 Correctness under load is covered by tests rather than benchmarks: `MonitorHubInvariantsTest` (linking in any arrival order, within and across applications,
 duplicates), `CountingRecountTest` (every figure against T1 to T3, in any order and with late spans), `MonitorHubBudgetTest` (the degradation order and TR9), and
@@ -299,8 +302,15 @@ reference: 50 applications × 10 instances, 200 types and 50 groups each, 2 GB, 
 so that sweep has three points (5, 100, 500); the instances (100), types (1,000), and budget (256 MB) sweeps keep only the point where their dimension costs
 most, as the points between tracked the reference. With the design target that makes eight scenarios.
 
+A run takes the **core** scenarios by default: the reference, 500 applications, and the 256 MB budget, about 13 minutes. In the six runs kept by
+2026-10-22, the change in writer capacity from one run to the next of 5 and 100 applications, 100 instances, and the standalone profile stayed within 2
+percentage points of the reference's, while 500 applications moved by up to 11 points more and the 256 MB budget fails another way, refusing when a pause
+outlasts its small queues. The other five stay for `-PsaturationScenarios=all` and for `saturationCheck`, which checks the throughput `monitor.md`
+documents.
+
 ```bash
-./gradlew saturation                                   # every scenario, about 35 minutes
+./gradlew saturation                                   # the core scenarios, about 13 minutes
+./gradlew saturation -PsaturationScenarios=all         # every scenario, about 35 minutes
 ./gradlew saturation -PsaturationScenarios=quick       # the reference and the profiles; or a sweep, or IDs such as applications-500
 ./gradlew saturation -PsaturationScenarios=applications-500 -PsaturationRates=40000,50000 -PsaturationJfr=build/saturation/a500.jfr
 ./gradlew saturationDashboard                          # adds build/saturation to docs/saturation and writes build/saturation/dashboard.html
@@ -324,6 +334,32 @@ scenario, the JSON a `delivery` object, and `<scenario>-frames.csv` lists every 
 the page's parsing. On the saturation page, *Second by second* › *Frame delivery* stacks each second's lag in its parts (tick, epoch build, publisher wait,
 frame write, and send and read), which add up to the lag of the fast or, toggled, the slow client in the middle, and marks the seconds a client read as a
 snapshot or never read. Picked runs get a panel each, on shared axes, as every second-by-second measure does.
+
+Two more options make a run end to end; they combine with each other. With `-PsaturationTransport=otlp`, or `otlp-gzip`, the run
+exports each batch to `OtlpServer` on the loopback address instead of submitting it (`SaturationExporters`): one OTLP/HTTP request per batch, written by
+the OTLP exporter's own encoder (`OtlpExports`, which `OtlpExportsTest` checks against the hub's decoder), each on a virtual thread of its own, so a slow
+answer holds up no other export. The receiving threads then read, inflate, decode, and admit as they do in production, and a 503 counts as busy. The
+fill still submits directly, as it only sets up the state the steps measure. Per step the run also reports the requests, those answered busy, the time
+from sending a request to reading its answer, and a request's size; the saturation page shows the answer time as *OTLP answer* among the measures
+of *Rate by rate*. With `-PsaturationViewers=64`, that many open UIs run in a JVM of their own (`SaturationViewers`), as on the machines of the people
+viewing, so the hub's heap and collections are its own: each reads the frames over the hub's WebSocket in place of the clients, and its page asks its
+view's query over HTTP whenever it reads a newer frame, as the page does (`SaturationPages`). The pages take the tape, the traces, the failures of the
+scope's 20 most frequent causes, and the timeline of the last minute in turn; the first four ask of the whole system and each later one of one
+application, so no two share an answer (W5) unless they share a view and a scope. For these runs the publisher takes any number of clients, and
+`-PsaturationQueryCap` sets how many queries run at once in place of C9's 4. Per step the run reports the queries, those answered 429 or timed out,
+which leave a page with its last answer, the time to an answer, and the cores the viewers' JVM used, which shares the machine with the hub.
+
+The viewer ladder asks how many open UIs the hub serves while it ingests, and at what cost: a run without viewers, then one per number of viewers (1, 8,
+16, 32, 48, 64, and 128) and query cap (4, 16, 64), each filling a minute of the reference scenario and offering 60,000 spans per second for one step,
+about 25 minutes. For each it keeps what the viewers got (queries answered, the share of seconds the worst and the median viewer saw fresh data, the answer
+time, frames received and their lag) and what it cost the hub (writer capacity against the run without viewers, cores, heap, and collections), and whether
+ingest kept up. `saturationDashboard -PsaturationViewers` adds it to `docs/saturation/viewers.json`, and the page's *End to end* › *Open UIs* view draws
+it: the caps of one ladder, or one cap across ladders, to compare a change.
+
+```bash
+./gradlew saturationViewers                            # the viewer ladder, about 25 minutes; -PsaturationViewerCounts=1,16,64 -PsaturationQueryCaps=4,64
+./gradlew saturationDashboard -PsaturationViewers      # adds build/saturation-viewers to docs/saturation
+```
 
 Run 1, 2026-10-20, on a Ryzen 7 5825U (16 threads, 32 GB, Linux) at the commit before the optimizations of pull requests #1 to #3, in spans per second:
 
@@ -380,7 +416,8 @@ Budgets still missed and work deferred, with the cause found and the levers to t
 - **Building an epoch takes 158 ms p99.** It rewrites the statistics of 27,500 types every second and snapshots the changed traces; the tail is collection pauses.
   Counts that did not change are shared with the previous epoch already, but a key's record is new every second, as its sparkline moves with the window. Lever:
   rebuild only the keys that counted or changed, with a sparkline that moves without a copy, which also shortens the publisher's comparison.
-- **The batch time is 5.6 ms p99.** The tail is collection pauses on a 2 GB live set. Levers: fewer allocations in decoding; a pause-time goal.
+- **Collection pauses delay the tick.** A pause on a 2 GB live set holds up the writer's batch and so its tick (*Tick late* in a saturation run).
+  Levers: fewer allocations in decoding; a pause-time goal.
 - **The span index takes about 300 bytes per fact**, so at small budgets the horizon shrinks first. Levers: compact facts the way `Specimen` is, or a lower
   specimen floor.
 - **A slow page falls behind unseen.** A client is busy, and skips to a snapshot, only while its send is unfinished, and a send finishes once the kernel's

@@ -29,8 +29,11 @@ public class UiServer implements AutoCloseable {
     }
 
     UiServer(HubSettings settings, MonitorHub hub, FramePublisher publisher) {
+        this(settings, hub, publisher, new HubQueries(hub));
+    }
+
+    UiServer(HubSettings settings, MonitorHub hub, FramePublisher publisher, HubQueries queries) {
         this.publisher = requireNonNull(publisher);
-        var queries = new HubQueries(hub);
         javalin = Javalin.create(config -> {
             config.concurrency.useVirtualThreads = true;
             config.startup.showJavalinBanner = false;

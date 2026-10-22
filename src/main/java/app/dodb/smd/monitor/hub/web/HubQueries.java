@@ -46,10 +46,16 @@ public final class HubQueries {
     // The hub's own mapper, so no other Jackson settings change the wire format the page reads.
     private final ObjectMapper mapper = new ObjectMapper();
     private final MonitorHub hub;
-    private final QueryAnswers answers = new QueryAnswers();
+    private final QueryAnswers answers;
 
     public HubQueries(MonitorHub hub) {
+        this(hub, QueryAnswers.MAX_RUNNING);
+    }
+
+    // A benchmark tunes how many queries run at once.
+    public HubQueries(MonitorHub hub, int maxRunning) {
         this.hub = requireNonNull(hub);
+        this.answers = new QueryAnswers(maxRunning);
     }
 
     public QueryAnswer tape(QueryFilter filter, String minDurationMillis, String after, String limit) {
