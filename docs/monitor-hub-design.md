@@ -227,7 +227,7 @@ Per tick, after each second:
 | Invocations per trace    | 10,000                                 |
 | Concurrent queries       | 16                                     |
 | Cached answers per epoch | 256                                    |
-| WebSocket clients        | 128, with a 5 s send timeout           |
+| WebSocket clients        | 128 (`ui.max-viewers`), 5 s send timeout|
 | Specimen chunk           | 4,096                                  |
 | Request body             | 16 MB, inflated or not                 |
 | `Retry-After`            | 2 s                                    |

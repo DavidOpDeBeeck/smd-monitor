@@ -3,6 +3,7 @@ package app.dodb.smd.monitor.hub.javalin;
 import app.dodb.smd.monitor.hub.MonitorHub;
 import app.dodb.smd.monitor.hub.web.FramePublisher;
 import app.dodb.smd.monitor.hub.web.HubQueries;
+import app.dodb.smd.monitor.hub.web.MonitorFrames;
 import app.dodb.smd.monitor.hub.web.Origins;
 import app.dodb.smd.monitor.hub.web.QueryAnswer;
 import app.dodb.smd.monitor.hub.web.QueryFilter;
@@ -29,7 +30,7 @@ public class UiServer implements AutoCloseable {
     private final Javalin javalin;
 
     UiServer(HubSettings settings, MonitorHub hub) {
-        this(settings, hub, new FramePublisher(hub));
+        this(settings, hub, new FramePublisher(hub, new MonitorFrames(), settings.maxViewers(), FramePublisher::intervalFor));
     }
 
     UiServer(HubSettings settings, MonitorHub hub, FramePublisher publisher) {

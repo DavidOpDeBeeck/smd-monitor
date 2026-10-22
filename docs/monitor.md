@@ -105,6 +105,7 @@ virtual threads of its own, so pages never take a thread from the exports.
 | `smd.monitor.hub.ui.port`            | `8080`        | The page's port                                                                         |
 | `smd.monitor.hub.ui.address`         | Every address | The address the page's port listens on                                                  |
 | `smd.monitor.hub.ui.allowed-origins` | None          | Origins besides the page's own that may open `/live`, such as `https://monitor.example` |
+| `smd.monitor.hub.ui.max-viewers`     | `128`         | Pages open at once; the hub refuses the live connection of one more                     |
 | `smd.monitor.hub.otlp.port`          | `4318`        | The OTLP endpoint's port, the standard one of OTLP/HTTP; differs from the page's        |
 | `smd.monitor.hub.otlp.address`       | Every address | The address the OTLP port listens on                                                    |
 
@@ -384,7 +385,7 @@ the endpoint answers 503 to it.
 **Live updates.** A page receives the whole system on one WebSocket: a snapshot when it connects, then only what changed: every second while up to 16 pages are open, every 2 seconds up to 32, and so on,
 at most every 5 seconds from 65. The page scrolls its charts at a second a second whatever the interval, and asks again for its view after each frame. At the design target the
 snapshot is about 41 MB of JSON and a delta about 1.4 MB, 290 KB compressed by `permessage-deflate`, so pages on a large hub need bandwidth to match. A client that
-falls behind by a frame or three receives the changes since the frame it holds, and one further behind the next snapshot. The hub accepts 128 clients. The page reconnects with backoff, keeping its last state visible, and reloads when the hub serves
+falls behind by a frame or three receives the changes since the frame it holds, and one further behind the next snapshot. The hub accepts 128 pages at once, or `smd.monitor.hub.ui.max-viewers`. The page reconnects with backoff, keeping its last state visible, and reloads when the hub serves
 another build.
 
 **Queries.** The page asks for retained invocations under `/api` (`tape`, `traces`, `failures`, `timeline`, `invocations`, `types`) and asks again with every

@@ -7,7 +7,7 @@ import java.util.List;
 
 import static java.util.Objects.requireNonNull;
 
-public record HubSettings(int uiPort, String uiAddress, int otlpPort, String otlpAddress, List<String> allowedOrigins, HubConfig hub) {
+public record HubSettings(int uiPort, String uiAddress, int otlpPort, String otlpAddress, List<String> allowedOrigins, int maxViewers, HubConfig hub) {
 
     private static final String HUB = "smd.monitor.hub.";
 
@@ -16,6 +16,9 @@ public record HubSettings(int uiPort, String uiAddress, int otlpPort, String otl
         requireNonNull(hub);
         if (uiPort != 0 && uiPort == otlpPort) {
             throw new IllegalArgumentException(HUB + "otlp.port must differ from " + HUB + "ui.port; both are " + uiPort);
+        }
+        if (maxViewers < 1) {
+            throw new IllegalArgumentException(HUB + "ui.max-viewers must be at least 1, as no page could connect otherwise; got " + maxViewers);
         }
     }
 
@@ -29,6 +32,7 @@ public record HubSettings(int uiPort, String uiAddress, int otlpPort, String otl
                 .map(String::strip)
                 .filter(origin -> !origin.isEmpty())
                 .toList(),
+            configuration.getInt(HUB + "ui.max-viewers"),
             new HubConfig(configuration.getLong(HUB + "memory"),
                 configuration.getDuration(HUB + "window"),
                 configuration.getDuration(HUB + "history"),

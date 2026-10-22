@@ -20,7 +20,7 @@ public final class SaturationOtlpServer implements AutoCloseable {
     }
 
     public static SaturationOtlpServer start(MonitorHub hub) {
-        var settings = new HubSettings(0, "127.0.0.1", 0, "127.0.0.1", List.of(), HubConfig.withDefaults().build());
+        var settings = new HubSettings(0, "127.0.0.1", 0, "127.0.0.1", List.of(), 128, HubConfig.withDefaults().build());
         var server = new OtlpServer(settings, hub);
         server.start();
         return new SaturationOtlpServer(server);
