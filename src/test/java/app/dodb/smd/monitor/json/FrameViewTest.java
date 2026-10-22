@@ -82,10 +82,7 @@ class FrameViewTest {
         var types = application.get("types");
         assertThat(types.valueStream().map(type -> type.get("kind").asString())).containsExactly("EVENT", "COMMAND");
         assertThat(types.get(1).get("entryPoint").asBoolean()).isTrue();
-        assertThat(types.get(1).get("window").get(2).asLong()).isEqualTo(1);
-        assertThat(types.get(1).get("window").get(9).asDouble()).isEqualTo(3.0);
         assertThat(types.get(1).get("retained").asInt()).isEqualTo(1);
-        assertThat(types.get(1).get("startedPerSecond").size()).isEqualTo(30);
         var group = application.get("groups").get(0);
         assertThat(group.get("processingGroup").asString()).isEqualTo("ticket-view");
         assertThat(group.get("delivery").asString()).isEqualTo("sync");
@@ -124,8 +121,7 @@ class FrameViewTest {
             "silent", "clockAhead", "exportLagMillis", "dispatches", "handlings");
         assertThat(frame.get("applications").get(0).get("other").propertyNames()).containsExactly("dispatchWindow", "dispatchHistory", "handlingWindow",
             "handlingHistory", "edgeHistory", "failureHistory");
-        assertThat(frame.get("applications").get(0).get("types").get(0).propertyNames()).containsExactly("kind", "name", "entryPoint", "window", "history",
-            "retained", "startedPerSecond");
+        assertThat(frame.get("applications").get(0).get("types").get(0).propertyNames()).containsExactly("kind", "name", "entryPoint", "retained");
         assertThat(frame.get("applications").get(0).get("crossings").get(0).propertyNames()).containsExactly("parentApplication", "link");
     }
 
@@ -160,21 +156,6 @@ class FrameViewTest {
 
         assertThat(statistics.get(3).asLong()).isZero();
         assertThat(statistics.get(4).isNull()).isTrue();
-    }
-
-    // Statistics are positional: started, entered, failed, completed, average, floor, p50, p95, p99, max; a brief one ends at the p95.
-    @Test
-    void from_typeAndItsHistory_writesTheWindowWholeAndTheHistoryBrief() {
-        hub.receive(new SpanBatch(TICKETS, new InstanceName("tickets-1"), new SessionId("session-1"), List.of(
-            span("0000000000000001", Optional.empty(), MessageId.generate(), new Stage.Dispatch(COMMAND), new Outcome.Completed(Duration.ofMillis(2)))), List.of()));
-
-        var type = json(OptionalLong.of(HEAP)).get("applications").get(0).get("types").get(0);
-
-        assertThat(type.get("window").size()).isEqualTo(10);
-        assertThat(type.get("window").valueStream().limit(5).map(JsonNode::asString)).containsExactly("1", "1", "0", "1", "2.0");
-        assertThat(type.get("window").get(9).asDouble()).isEqualTo(2.0);
-        assertThat(type.get("history").size()).isEqualTo(5);
-        assertThat(type.get("history").valueStream().limit(4).map(JsonNode::asString)).containsExactly("1", "1", "0", "1");
     }
 
     @Test

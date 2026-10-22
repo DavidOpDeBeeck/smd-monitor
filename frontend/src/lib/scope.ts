@@ -1,14 +1,14 @@
 import { parseTypeKey, perKind } from './format';
 import { EMPTY_TOTALS, NO_OTHER, type ApplicationState, type InstanceState, type MonitorState, type Totals } from './state';
 import { sumSeries } from './throughput';
-import type { Brief, GroupStatistics, HandlingKey, HandlingStatistics, Link, OtherCounts, TypeKey, TypeStatistics } from './types';
+import type { Brief, GroupStatistics, HandlingKey, HandlingStatistics, Link, OtherCounts, TypeEntry, TypeKey } from './types';
 
 // What the page shows: the whole system when application is null, or else that one application.
 export interface ScopedState {
     application: string | null;
     // Empty while the application in scope has not reported.
     applications: readonly ApplicationState[];
-    types: ReadonlyMap<TypeKey, TypeStatistics>;
+    types: ReadonlyMap<TypeKey, TypeEntry>;
     groups: readonly GroupStatistics[];
     handlings: ReadonlyMap<HandlingKey, HandlingStatistics>;
     instances: readonly InstanceState[];

@@ -8,15 +8,12 @@ import app.dodb.smd.monitor.hub.GroupStatistics;
 import app.dodb.smd.monitor.hub.HandlingStatistics;
 import app.dodb.smd.monitor.hub.LinkStatistics;
 import app.dodb.smd.monitor.hub.OtherStatistics;
-import app.dodb.smd.monitor.hub.RaisedFailureStatistics;
 import app.dodb.smd.monitor.hub.SinkRouteStatistics;
 import app.dodb.smd.monitor.hub.TypeStatistics;
 import app.dodb.smd.monitor.hub.span.MessageKind;
-import app.dodb.smd.monitor.hub.span.Stage;
 import app.dodb.smd.monitor.json.FrameView.BriefView;
 import app.dodb.smd.monitor.json.FrameView.InstanceView;
 import app.dodb.smd.monitor.json.FrameView.MessageTypeView;
-import app.dodb.smd.monitor.json.FrameView.StatisticsView;
 
 import java.util.Arrays;
 import java.util.List;
@@ -58,14 +55,12 @@ public record ApplicationView(String name,
             statistics.provisionalFrom().getEpochSecond());
     }
 
-    // Its history carries the counts and the p95; the type's query answers every figure of it, and its failures second by second, which only
-    // the type inspector and the flow view draw.
-    public record TypeView(String kind, String name, boolean entryPoint, StatisticsView window, BriefView history, int retained,
-                           List<Long> startedPerSecond) {
+    // A type the application dispatched, with its dispatches the hub still retains, which the type filters show. What it counted comes with the
+    // queries of the views that show it: the type figures (TypeFiguresView), the type's (RetainedTypeView), and the flow (FlowView).
+    public record TypeView(String kind, String name, boolean entryPoint, int retained) {
 
         static TypeView from(TypeStatistics type) {
-            return new TypeView(type.type().kind().name(), type.type().name(), type.entryPoint(), StatisticsView.from(type.window()),
-                BriefView.from(type.history()), type.retained(), type.startedPerSecond());
+            return new TypeView(type.type().kind().name(), type.type().name(), type.entryPoint(), type.retained());
         }
     }
 

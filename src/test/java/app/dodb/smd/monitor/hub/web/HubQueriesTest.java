@@ -419,6 +419,21 @@ class HubQueriesTest {
         assertThat(type.propertyNames()).containsExactly("application", "kind", "name", "entryPoint", "window", "history", "retained", "startedPerSecond");
     }
 
+    // Statistics are positional: started, entered, failed, completed, average, floor, p50, p95, p99, max; a brief one ends at the p95.
+    @Test
+    void typeFigures_completedDispatch_writesTheWindowWholeAndTheHistoryBrief() {
+        receive(new MessageSpan(SpanRef.of(TRACE, "0000000000000001"), Optional.empty(), MessageId.generate(),
+            new Stage.Dispatch(new MessageType(MessageKind.COMMAND, "OpenTicket")), Optional.empty(), settled(), "main", new Outcome.Completed(Duration.ofMillis(2))));
+
+        var type = mapper.readTree(queries.typeFigures(null, List.of(), List.of(), "rate", null).body()).get("types").get(0);
+
+        assertThat(type.get("window").size()).isEqualTo(10);
+        assertThat(type.get("window").valueStream().limit(5).map(JsonNode::asString)).containsExactly("1", "1", "0", "1", "2.0");
+        assertThat(type.get("window").get(9).asDouble()).isEqualTo(2.0);
+        assertThat(type.get("history").size()).isEqualTo(5);
+        assertThat(type.get("history").valueStream().limit(4).map(JsonNode::asString)).containsExactly("1", "1", "0", "1");
+    }
+
     @Test
     void typeFigures_kindSelected_answersTheTypesOfThatKindOnly() {
         receive(dispatch("0000000000000001", new MessageType(MessageKind.COMMAND, "OpenTicket")));

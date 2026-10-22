@@ -67,17 +67,22 @@ export interface Linked extends Activity {
     parent: ParentRef | null;
 }
 
-export interface TypeStatistics {
+// A type an application dispatched, as the frame carries it.
+export interface TypeEntry {
     key: TypeKey;
     application: string;
     kind: MessageKind;
     messageType: string;
     entryPoint: boolean;
+    // Its dispatches the hub still retains.
+    retained: number;
+}
+
+// A type with what it counted, which the type figures query answers.
+export interface TypeStatistics extends TypeEntry {
     window: Statistics;
     // Every figure of the history is in the type's query.
     history: Brief;
-    // Its dispatches the hub still retains.
-    retained: number;
     startedPerSecond: readonly number[];
 }
 

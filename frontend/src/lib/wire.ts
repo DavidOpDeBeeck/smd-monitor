@@ -189,21 +189,26 @@ export interface WireOther {
 }
 
 // The history is brief; the type's query answers it whole.
+// A type the application dispatched; what it counted comes with the queries of the views that show it.
 export interface WireType {
     kind: MessageKind;
     name: string;
     entryPoint: boolean;
-    window: WireStatistics;
-    history: WireBrief;
     // Its dispatches the hub still retains.
     retained: number;
+}
+
+export interface WireTypeFigure extends WireType {
+    application: string;
+    window: WireStatistics;
+    history: WireBrief;
     startedPerSecond: number[];
 }
 
 // The figures of the message types a view shows, in the order it asked for, out of the total selected.
 export interface WireTypeFigures extends WireAnswer {
     total: number;
-    types: (WireType & { application: string })[];
+    types: WireTypeFigure[];
 }
 
 export interface WireGroup {

@@ -14,6 +14,7 @@ import type {
     Route,
     SinkRoute,
     Statistics,
+    TypeEntry,
     TypeKey,
     TypeStatistics,
 } from './types';
@@ -32,6 +33,7 @@ import type {
     WireHandlings,
     WireStatistics,
     WireType,
+    WireTypeFigure,
     WireTypeFigures,
     WireTypeLink,
 } from './wire';
@@ -112,7 +114,7 @@ export interface ApplicationState {
     // How long after its publication returned a group started handling an event, p95 over the window, or null when none did.
     eventDelayP95Millis: number | null;
     instances: readonly InstanceState[];
-    types: ReadonlyMap<TypeKey, TypeStatistics>;
+    types: ReadonlyMap<TypeKey, TypeEntry>;
     groups: readonly GroupStatistics[];
     handlings: ReadonlyMap<HandlingKey, HandlingStatistics>;
     // Into this application's types from a parent type of another application.
@@ -307,7 +309,7 @@ export function typeFigures(answer: WireTypeFigures | null): TypeFigures {
     if (!answer) return NO_TYPE_FIGURES;
     return {
         total: answer.total,
-        types: answer.types.map(type => typeStatistics(type.application, typeKey(type.application, type.kind, type.name), type)),
+        types: answer.types.map(typeStatistics),
     };
 }
 
@@ -380,7 +382,7 @@ function applicationState(application: WireApplication, health: WireApplicationH
         failedReceived: application.failedReceived,
         eventDelayP95Millis: application.eventDelayP95Millis,
         instances: application.instances.map(instance => instanceState(name, instance)),
-        types: new Map(application.types.map(type => [keyOf(type), typeStatistics(name, keyOf(type), type)])),
+        types: new Map(application.types.map(type => [keyOf(type), typeEntry(name, keyOf(type), type)])),
         groups,
         handlings: new Map(groups.flatMap(group => group.handlings.map(handling => [handling.key, handling]))),
         crossings: application.crossings.map(crossing => linkOf(crossing.link, crossing.parentApplication)),
@@ -400,16 +402,16 @@ function applicationState(application: WireApplication, health: WireApplicationH
     };
 }
 
-function typeStatistics(application: string, key: TypeKey, type: WireType): TypeStatistics {
+function typeEntry(application: string, key: TypeKey, type: WireType): TypeEntry {
+    return { key, application, kind: type.kind, messageType: type.name, entryPoint: type.entryPoint, retained: type.retained };
+}
+
+function typeStatistics(type: WireTypeFigure): TypeStatistics {
+    const key = typeKey(type.application, type.kind, type.name);
     return {
-        key,
-        application,
-        kind: type.kind,
-        messageType: type.name,
-        entryPoint: type.entryPoint,
+        ...typeEntry(type.application, key, type),
         window: statistics(type.window),
         history: brief(type.history),
-        retained: type.retained,
         startedPerSecond: type.startedPerSecond,
     };
 }
