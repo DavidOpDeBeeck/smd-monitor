@@ -239,6 +239,15 @@ export function flowEdges(flow: WireFlow | null): ReadonlyMap<string, FlowEdges>
     );
 }
 
+// The failures second by second of each type that failed in the window, from the flow query's answer.
+export function flowFailures(flow: WireFlow | null): ReadonlyMap<TypeKey, readonly number[]> {
+    return new Map(
+        (flow?.applications ?? []).flatMap(application =>
+            application.failingTypes.map(failing => [typeKey(application.name, failing.type.kind, failing.type.name), failing.failedPerSecond] as const),
+        ),
+    );
+}
+
 // What each handling counted, by its key, from the handlings query's answer, or nothing before it answered.
 export function handlingFigures(answer: WireHandlings | null): ReadonlyMap<HandlingKey, HandlingFigures> {
     return new Map(
@@ -355,7 +364,6 @@ function typeStatistics(application: string, key: TypeKey, type: WireType): Type
         history: brief(type.history),
         retained: type.retained,
         startedPerSecond: type.startedPerSecond,
-        failedPerSecond: type.failedPerSecond,
     };
 }
 

@@ -7,7 +7,7 @@ import { parseTypeKey } from '../lib/format';
 import type { LiveVisual } from '../lib/live';
 import { fetchAnswer, hubRequest } from '../lib/api';
 import { scopedState } from '../lib/scope';
-import { flowEdges, handlingFigures } from '../lib/state';
+import { flowEdges, flowFailures, handlingFigures } from '../lib/state';
 import { traceDetail, type PinnedTrace, type TraceSummary } from '../lib/traces';
 import { everyType, type TypeSelection } from '../lib/type-selection';
 import type { TypeKey } from '../lib/types';
@@ -88,6 +88,7 @@ export function createMonitorApp(store: MonitorStore, stage: () => HTMLElement) 
     // Only the flow view draws how messages flow, so only it asks the hub for the edges; the graph holds the frame's types and groups meanwhile.
     const flowQuery = createHubQuery<WireFlow>(store, () => (view() === 'flow' ? hubRequest('flow') : null), { kept: true });
     const flowGraph = createMemo(() => lensGraph(system().applications, flowEdges(flowQuery.answer())));
+    const flowFailing = createMemo(() => flowFailures(flowQuery.answer()));
     // What each handling counted is only an expanded group's, the failures view's, and the flow view's, so only they ask the hub for it.
     const handlingsQuery = createHubQuery<WireHandlings>(
         store,
@@ -290,6 +291,8 @@ export function createMonitorApp(store: MonitorStore, stage: () => HTMLElement) 
         flow: {
             // Every application's types and processing groups with the steps between them.
             graph: flowGraph,
+            // The failures second by second of each type that failed in the window.
+            failing: flowFailing,
             focus: flowFocus,
             focusOn: (key: LensKey) => setFlowFocus(key),
             hops: flowHops,

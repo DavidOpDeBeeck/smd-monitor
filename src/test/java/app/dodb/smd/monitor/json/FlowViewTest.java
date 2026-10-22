@@ -79,7 +79,22 @@ class FlowViewTest {
         var flow = json();
 
         assertThat(flow.propertyNames()).containsExactly("hubSession", "sequence", "applications");
-        assertThat(flow.get("applications").get(0).propertyNames()).containsExactly("name", "links", "routes", "sinkRoutes", "groupLinks");
+        assertThat(flow.get("applications").get(0).propertyNames()).containsExactly("name", "links", "routes", "sinkRoutes", "groupLinks", "failingTypes");
+    }
+
+    // A flow card rings as its type fails, so the flow carries the failures of the types that failed in the window, and of those only.
+    @Test
+    void from_typeFailedInTheWindow_listsItsFailuresSecondBySecond() {
+        hub.receive(new SpanBatch(TICKETS, new InstanceName("tickets-1"), new SessionId("session-1"), List.of(
+            span("0000000000000001", Optional.empty(), MessageId.generate(), new Stage.Dispatch(COMMAND),
+                new Outcome.Failed(Duration.ofMillis(1), IllegalStateException.class.getName())),
+            span("0000000000000002", Optional.empty(), MessageId.generate(), new Stage.Dispatch(EVENT))), List.of()));
+
+        var failing = json().get("applications").get(0).get("failingTypes");
+
+        assertThat(failing.size()).isEqualTo(1);
+        assertThat(failing.get(0).get("type").get("name").asString()).isEqualTo(COMMAND.name());
+        assertThat(failing.get(0).get("failedPerSecond").valueStream().mapToLong(JsonNode::asLong).sum()).isEqualTo(1);
     }
 
     private JsonNode json() {
@@ -89,8 +104,12 @@ class FlowViewTest {
 
     // The span links to the span of the invocation it continues.
     private MessageSpan span(String spanId, Optional<String> continues, MessageId messageId, Stage stage) {
+        return span(spanId, continues, messageId, stage, new Outcome.Completed(Duration.ZERO));
+    }
+
+    private MessageSpan span(String spanId, Optional<String> continues, MessageId messageId, Stage stage, Outcome outcome) {
         var delivery = stage instanceof Stage.Handling ? Optional.of(EventDelivery.SYNC) : Optional.<EventDelivery>empty();
         return new MessageSpan(SpanRef.of(TRACE, spanId), continues.map(continued -> SpanRef.of(TRACE, continued)), messageId, stage, delivery, start, "main",
-            new Outcome.Completed(Duration.ZERO));
+            outcome);
     }
 }

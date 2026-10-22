@@ -59,13 +59,14 @@ public record ApplicationView(String name,
             statistics.provisionalFrom().getEpochSecond());
     }
 
-    // Its history carries the counts and the p95; the type's query answers every figure of it.
+    // Its history carries the counts and the p95; the type's query answers every figure of it, and its failures second by second, which only
+    // the type inspector and the flow view draw.
     public record TypeView(String kind, String name, boolean entryPoint, StatisticsView window, BriefView history, int retained,
-                           List<Long> startedPerSecond, List<Long> failedPerSecond) {
+                           List<Long> startedPerSecond) {
 
         static TypeView from(TypeStatistics type) {
             return new TypeView(type.type().kind().name(), type.type().name(), type.entryPoint(), StatisticsView.from(type.window()),
-                BriefView.from(type.history()), type.retained(), type.startedPerSecond(), type.failedPerSecond());
+                BriefView.from(type.history()), type.retained(), type.startedPerSecond());
         }
     }
 

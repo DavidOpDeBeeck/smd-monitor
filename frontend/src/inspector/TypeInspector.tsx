@@ -81,6 +81,8 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
     const provisionalFrom = () => store.view().applications.get(type()?.application ?? '')?.provisionalFrom;
     const completed = () => type()?.history.completed ?? 0;
     const handlings = () => [...app.system().handlings.values()].filter(handling => handling.typeKey === props.typeKey);
+    // Its failures second by second, which its query answers as only the inspector draws them.
+    const failedPerSecond = () => retained()?.failedPerSecond ?? [];
     // What each group's handling of the event counted, as the type's query answers it.
     const handlingHistories = createMemo(
         () => new Map((retained()?.handlings ?? []).map(handling => [handling.processingGroup, brief(handling.history)] as const)),
@@ -125,9 +127,9 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
                                 lineClass={cx('stroke-[1.5]', KIND_TONE[type().kind].spark)}
                                 areaClass={KIND_TONE[type().kind].sparkArea}
                             />
-                            <Show when={type().failedPerSecond.some(Boolean)}>
+                            <Show when={failedPerSecond().some(Boolean)}>
                                 <Sparkline
-                                    values={type().failedPerSecond}
+                                    values={failedPerSecond()}
                                     endsAt={store.end()}
                                     width={320}
                                     height={40}

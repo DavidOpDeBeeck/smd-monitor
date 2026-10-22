@@ -5,6 +5,7 @@ import app.dodb.smd.monitor.json.ApplicationView.GroupLinkView;
 import app.dodb.smd.monitor.json.ApplicationView.LinkView;
 import app.dodb.smd.monitor.json.ApplicationView.RouteView;
 import app.dodb.smd.monitor.json.ApplicationView.SinkRouteView;
+import app.dodb.smd.monitor.json.FrameView.MessageTypeView;
 
 import java.util.List;
 import java.util.UUID;
@@ -25,7 +26,9 @@ public record FlowView(String hubSession, long sequence, List<FlowApplicationVie
         return new FlowView(hubSession.toString(), sequence, applications.stream().map(FlowApplicationView::from).toList());
     }
 
-    public record FlowApplicationView(String name, List<LinkView> links, List<RouteView> routes, List<SinkRouteView> sinkRoutes, List<GroupLinkView> groupLinks) {
+    // The failing types are those that failed in the window, with their failures second by second, so a card rings as its type fails.
+    public record FlowApplicationView(String name, List<LinkView> links, List<RouteView> routes, List<SinkRouteView> sinkRoutes, List<GroupLinkView> groupLinks,
+                                      List<FailingTypeView> failingTypes) {
 
         public FlowApplicationView {
             requireNonNull(name);
@@ -33,12 +36,23 @@ public record FlowView(String hubSession, long sequence, List<FlowApplicationVie
             requireNonNull(routes);
             requireNonNull(sinkRoutes);
             requireNonNull(groupLinks);
+            requireNonNull(failingTypes);
         }
 
         static FlowApplicationView from(ApplicationStatistics statistics) {
             return new FlowApplicationView(statistics.application().value(), statistics.links().stream().map(LinkView::from).toList(),
                 statistics.routes().stream().map(RouteView::from).toList(), statistics.sinkRoutes().stream().map(SinkRouteView::from).toList(),
-                statistics.groupLinks().stream().map(GroupLinkView::from).toList());
+                statistics.groupLinks().stream().map(GroupLinkView::from).toList(),
+                statistics.types().stream().filter(type -> type.window().failed() > 0)
+                    .map(type -> new FailingTypeView(MessageTypeView.from(type.type()), type.failedPerSecond())).toList());
+        }
+    }
+
+    public record FailingTypeView(MessageTypeView type, List<Long> failedPerSecond) {
+
+        public FailingTypeView {
+            requireNonNull(type);
+            requireNonNull(failedPerSecond);
         }
     }
 }

@@ -16,6 +16,7 @@ import app.dodb.smd.monitor.hub.span.SpanRef;
 import app.dodb.smd.monitor.hub.span.Stage;
 import app.dodb.smd.monitor.json.Protocol;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
@@ -282,6 +283,17 @@ class HubQueriesTest {
         assertThat(handlings.get(0).get("processingGroup").asString()).isEqualTo("ticket-view");
         assertThat(handlings.get(0).get("name").asString()).isEqualTo("TicketOpened");
         assertThat(handlings.get(0).get("history").get(0).asLong()).isEqualTo(1);
+    }
+
+    @Test
+    void type_commandThatFailed_answersItsFailuresSecondBySecond() {
+        receive(TICKETS, new MessageSpan(SpanRef.of(TRACE, "0000000000000001"), Optional.empty(), MessageId.generate(),
+            new Stage.Dispatch(new MessageType(MessageKind.COMMAND, "OpenTicket")), Optional.empty(), Instant.now().minusSeconds(10), "main",
+            new Outcome.Failed(Duration.ofMillis(1), "java.lang.IllegalStateException")));
+
+        var failed = mapper.readTree(queries.type("tickets::COMMAND:OpenTicket").body()).get("failedPerSecond");
+
+        assertThat(failed.valueStream().mapToLong(JsonNode::asLong).sum()).isEqualTo(1);
     }
 
     @Test

@@ -21,7 +21,8 @@ import java.util.stream.Stream;
 // out of it are those of its application and the crossings of every application, most invocations first; an event's handlings are those of its
 // application's processing groups.
 public record RetainedTypeView(String hubSession, long sequence, StatisticsView history, int retained, List<FailureTypeView> failureTypes,
-                               List<InvocationView> latest, List<TypeLinkView> incoming, List<TypeLinkView> outgoing, List<TypeHandlingView> handlings) {
+                               List<InvocationView> latest, List<TypeLinkView> incoming, List<TypeLinkView> outgoing, List<TypeHandlingView> handlings,
+                               List<Long> failedPerSecond) {
 
     public static RetainedTypeView from(UUID hubSession, RetainedType type, Optional<Counts> history, ApplicationType selected,
                                        List<ApplicationStatistics> applications) {
@@ -41,7 +42,10 @@ public record RetainedTypeView(String hubSession, long sequence, StatisticsView 
                 .flatMap(statistics -> statistics.groups().stream().flatMap(group -> group.handlings().stream()
                     .filter(handling -> handling.type().equals(selected.type()))
                     .map(handling -> new TypeHandlingView(group.processingGroup(), BriefView.from(handling.window()), BriefView.from(handling.history())))))
-                .toList());
+                .toList(),
+            applications.stream().filter(statistics -> statistics.application().equals(selected.application()))
+                .flatMap(statistics -> statistics.types().stream()).filter(statistics -> statistics.type().equals(selected.type()))
+                .findFirst().map(statistics -> statistics.failedPerSecond()).orElse(List.of()));
     }
 
     // A processing group's handling of the event.

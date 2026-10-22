@@ -125,7 +125,7 @@ class FrameViewTest {
         assertThat(frame.get("applications").get(0).get("other").propertyNames()).containsExactly("dispatchWindow", "dispatchHistory", "handlingWindow",
             "handlingHistory", "edgeHistory", "failureHistory");
         assertThat(frame.get("applications").get(0).get("types").get(0).propertyNames()).containsExactly("kind", "name", "entryPoint", "window", "history",
-            "retained", "startedPerSecond", "failedPerSecond");
+            "retained", "startedPerSecond");
         assertThat(frame.get("applications").get(0).get("crossings").get(0).propertyNames()).containsExactly("parentApplication", "link");
     }
 

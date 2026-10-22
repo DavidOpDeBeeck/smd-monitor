@@ -16,6 +16,8 @@ const LABEL_WIDTH = 168;
 
 // The lens on a board that scrolls natively: the lanes' names stay at its left edge, each application's lane in the surface tone and each
 // medium's sunken below the application writing to it first.
+const NO_FAILURES: readonly number[] = [];
+
 export function JourneyCanvas(props: { lens: Lens; journey: Journey; graph: LensGraph }) {
     const app = useMonitorApp();
     let scroller!: HTMLDivElement;
@@ -186,7 +188,7 @@ export function JourneyCanvas(props: { lens: Lens; journey: Journey; graph: Lens
                                                     application={parsed().application}
                                                     entryPoint={type()?.entryPoint ?? false}
                                                     figures={type() ? typeFigures(type()!, windowSeconds()) : null}
-                                                    failedPerSecond={type()?.failedPerSecond ?? []}
+                                                    failedPerSecond={app.flow.failing().get(typeKey()) ?? NO_FAILURES}
                                                     onSelect={() => {
                                                         app.flow.focusOn(typeKey());
                                                         app.select({ type: 'type', key: typeKey() });

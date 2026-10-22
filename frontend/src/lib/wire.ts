@@ -189,7 +189,6 @@ export interface WireType {
     // Its dispatches the hub still retains.
     retained: number;
     startedPerSecond: number[];
-    failedPerSecond: number[];
 }
 
 export interface WireGroup {
@@ -383,6 +382,8 @@ export interface WireRetainedType extends WireAnswer {
     outgoing: WireTypeLink[];
     // An event's handlings by its application's processing groups.
     handlings: { processingGroup: string; window: WireBrief; history: WireBrief }[];
+    // Its failures second by second over the window.
+    failedPerSecond: number[];
 }
 
 export interface WireTypeLink {
@@ -415,6 +416,8 @@ export interface WireFlowApplication {
     sinkRoutes: WireSinkRoute[];
     // Messages this application's processing groups dispatched.
     groupLinks: WireGroupLink[];
+    // The types that failed in the window, with their failures second by second.
+    failingTypes: { type: WireMessageType; failedPerSecond: number[] }[];
 }
 
 // Newest first.

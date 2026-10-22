@@ -79,7 +79,6 @@ export interface TypeStatistics {
     // Its dispatches the hub still retains.
     retained: number;
     startedPerSecond: readonly number[];
-    failedPerSecond: readonly number[];
 }
 
 // What a processing group's handling of an event counted, which the handlings query answers.
