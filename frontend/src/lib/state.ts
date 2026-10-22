@@ -4,6 +4,7 @@ import type {
     FailureCount,
     GroupLink,
     GroupStatistics,
+    HandlingFigures,
     HandlingKey,
     HandlingStatistics,
     Link,
@@ -26,6 +27,7 @@ import type {
     WireMessageType,
     WireOther,
     WireFlow,
+    WireHandlings,
     WireStatistics,
     WireType,
     WireTypeLink,
@@ -237,6 +239,22 @@ export function flowEdges(flow: WireFlow | null): ReadonlyMap<string, FlowEdges>
     );
 }
 
+// What each handling counted, by its key, from the handlings query's answer, or nothing before it answered.
+export function handlingFigures(answer: WireHandlings | null): ReadonlyMap<HandlingKey, HandlingFigures> {
+    return new Map(
+        (answer?.handlings ?? []).map(handling => [
+            handlingKey(typeKey(handling.application, 'EVENT', handling.name), handling.processingGroup),
+            { window: brief(handling.window), history: brief(handling.history) },
+        ]),
+    );
+}
+
+// What a handling counted while its figures have not arrived: nothing yet.
+export const NO_FIGURES: HandlingFigures = {
+    window: { started: 0, entered: 0, failed: 0, completed: 0, p95Millis: null },
+    history: { started: 0, entered: 0, failed: 0, completed: 0, p95Millis: null },
+};
+
 // A link into or out of a type, as the type query answers it, each end named with its application.
 export const typeLink = (link: WireTypeLink): Link => ({
     parent: typeKey(link.parentApplication, link.parent.kind, link.parent.name),
@@ -269,8 +287,6 @@ function applicationState(application: WireApplication, health: WireApplicationH
                 messageType: handling.name,
                 processingGroup: group.processingGroup,
                 delivery: group.delivery,
-                window: brief(handling.window),
-                history: brief(handling.history),
                 asynchronous: handling.asynchronous,
                 delayP95Millis: handling.delayP95Millis,
             };
@@ -348,7 +364,7 @@ export function statistics(wire: WireStatistics): Statistics {
     return { started, entered, failed, completed, averageMillis, floorMillis, p50Millis, p95Millis, p99Millis, maxMillis };
 }
 
-function brief(wire: WireBrief): Brief {
+export function brief(wire: WireBrief): Brief {
     const [started, entered, failed, completed, p95Millis] = wire;
     return { started, entered, failed, completed, p95Millis };
 }

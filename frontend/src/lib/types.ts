@@ -82,6 +82,12 @@ export interface TypeStatistics {
     failedPerSecond: readonly number[];
 }
 
+// What a processing group's handling of an event counted, which the handlings query answers.
+export interface HandlingFigures {
+    window: Brief;
+    history: Brief;
+}
+
 export interface HandlingStatistics {
     key: HandlingKey;
     typeKey: TypeKey;
@@ -89,8 +95,6 @@ export interface HandlingStatistics {
     messageType: string;
     processingGroup: string;
     delivery: string;
-    window: Brief;
-    history: Brief;
     // Once the group started handling one of these events after its publication returned.
     asynchronous: boolean;
     // How long after its publication returned the group started handling the event, p95 over the window, or null.

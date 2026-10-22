@@ -76,12 +76,12 @@ public record ApplicationView(String name,
         }
     }
 
-    // The event delay is the p95 over the window, or null when the group handled none of these events asynchronously in it.
-    public record HandlingView(String name, BriefView window, BriefView history, boolean asynchronous, Double delayP95Millis) {
+    // The event delay is the p95 over the window, or null when the group handled none of these events asynchronously in it. What the handling
+    // counted is only an expanded group's, the failures view's, and the flow view's, so the handlings query answers it (HandlingsView).
+    public record HandlingView(String name, boolean asynchronous, Double delayP95Millis) {
 
         static HandlingView from(HandlingStatistics handling) {
-            return new HandlingView(handling.type().name(), BriefView.from(handling.window()), BriefView.from(handling.history()),
-                handling.asynchronous(), p95Millis(handling.delay()));
+            return new HandlingView(handling.type().name(), handling.asynchronous(), p95Millis(handling.delay()));
         }
     }
 

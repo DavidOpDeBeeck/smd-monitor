@@ -11,9 +11,9 @@ import { cx } from '../lib/cx';
 import { HandlingGlyph } from '../components/Glyph';
 import { ago, count, duration, percent, rate, shortHistorySpan, shortName, STATUS_LABEL } from '../lib/format';
 import { activity, hubRequest } from '../lib/api';
-import { statistics, typeLink } from '../lib/state';
+import { brief, NO_FIGURES, statistics, typeLink } from '../lib/state';
 import { ratePerSecond } from '../lib/throughput';
-import type { Activity, HandlingStatistics, TypeKey } from '../lib/types';
+import type { Activity, Brief, HandlingStatistics, TypeKey } from '../lib/types';
 import type { WireRetainedType } from '../lib/wire';
 import { createHubQuery } from '../store/hub-query';
 import { InspectorHeading, InspectorSection, StaticRelation, Stats, TypeRelation } from './parts';
@@ -36,8 +36,8 @@ function InvocationRow(props: { message: Activity }) {
     );
 }
 
-function HandlingRow(props: { handling: HandlingStatistics }) {
-    const completed = () => props.handling.history.completed;
+function HandlingRow(props: { handling: HandlingStatistics; history: Brief }) {
+    const completed = () => props.history.completed;
     return (
         <div class="grid grid-cols-[14px_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-md border px-2 py-1.5">
             <HandlingGlyph />
@@ -48,15 +48,15 @@ function HandlingRow(props: { handling: HandlingStatistics }) {
                 <DeliveryChip delivery={props.handling.delivery} class="flex-none" />
             </span>
             <span class="font-mono text-sm whitespace-nowrap text-muted">
-                ×{count(props.handling.history.started)}
-                <Show when={props.handling.history.failed > 0}>
-                    <span class="ml-1.5 text-failed" title={`${count(props.handling.history.failed)} of ${count(completed())} completed handlings failed`}>
-                        {percent(props.handling.history.failed, completed())} failed
+                ×{count(props.history.started)}
+                <Show when={props.history.failed > 0}>
+                    <span class="ml-1.5 text-failed" title={`${count(props.history.failed)} of ${count(completed())} completed handlings failed`}>
+                        {percent(props.history.failed, completed())} failed
                     </span>
                 </Show>
             </span>
             <span class="min-w-[92px] text-right font-mono text-sm whitespace-nowrap text-muted" title="Approximate p95 handling time">
-                {props.handling.history.p95Millis === null ? 'p95 —' : `p95 ${duration(props.handling.history.p95Millis)}`}
+                {props.history.p95Millis === null ? 'p95 —' : `p95 ${duration(props.history.p95Millis)}`}
             </span>
         </div>
     );
@@ -81,6 +81,10 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
     const provisionalFrom = () => store.view().applications.get(type()?.application ?? '')?.provisionalFrom;
     const completed = () => type()?.history.completed ?? 0;
     const handlings = () => [...app.system().handlings.values()].filter(handling => handling.typeKey === props.typeKey);
+    // What each group's handling of the event counted, as the type's query answers it.
+    const handlingHistories = createMemo(
+        () => new Map((retained()?.handlings ?? []).map(handling => [handling.processingGroup, brief(handling.history)] as const)),
+    );
 
     return (
         <Show
@@ -181,7 +185,12 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
                         <InspectorSection title="Handled by" note={`processing groups, last ${shortHistorySpan(store.view().historySeconds)}`}>
                             <div class="grid gap-[5px]">
                                 <Key each={handlings()} by="key">
-                                    {handling => <HandlingRow handling={handling()} />}
+                                    {handling => (
+                                        <HandlingRow
+                                            handling={handling()}
+                                            history={handlingHistories().get(handling().processingGroup) ?? NO_FIGURES.history}
+                                        />
+                                    )}
                                 </Key>
                             </div>
                         </InspectorSection>

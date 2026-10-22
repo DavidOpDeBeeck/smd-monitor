@@ -1,9 +1,9 @@
 import { KINDS, shortName } from './format';
 import { latencySpread, type LatencySpread } from './latency-spread';
-import type { ApplicationState, Totals } from './state';
+import { NO_FIGURES, type ApplicationState, type Totals } from './state';
 import { ratePerSecond, scrollable } from './throughput';
 import { selectionMatches, type TypeSelection } from './type-selection';
-import type { GroupStatistics, HandlingKey, HandlingStatistics, MessageKind, TypeStatistics } from './types';
+import type { GroupStatistics, HandlingFigures, HandlingKey, HandlingStatistics, MessageKind, TypeStatistics } from './types';
 
 export type TypeSort = 'rate' | 'failed' | 'p50' | 'p95' | 'p99' | 'name';
 
@@ -44,13 +44,14 @@ export function typeRows(types: Iterable<TypeStatistics>, sort: TypeSort, select
         .sort((a, b) => COMPARE[sort](a, b) || nameOf(a.statistics).localeCompare(nameOf(b.statistics)) || a.statistics.key.localeCompare(b.statistics.key));
 }
 
-// The busiest groups first, each with its busiest event types first.
-export function groupSections(groups: readonly GroupStatistics[]): GroupStatistics[] {
+// The busiest groups first, each with its busiest event types first, as far as their figures arrived.
+export function groupSections(groups: readonly GroupStatistics[], figures: ReadonlyMap<HandlingKey, HandlingFigures>): GroupStatistics[] {
+    const of = (handling: HandlingStatistics) => figures.get(handling.key) ?? NO_FIGURES;
     return groups
         .map(group => ({
             ...group,
             handlings: [...group.handlings].sort(
-                (a, b) => b.window.started - a.window.started || b.history.started - a.history.started || a.typeKey.localeCompare(b.typeKey),
+                (a, b) => of(b).window.started - of(a).window.started || of(b).history.started - of(a).history.started || a.typeKey.localeCompare(b.typeKey),
             ),
         }))
         .sort((a, b) => b.window.started - a.window.started || a.processingGroup.localeCompare(b.processingGroup));

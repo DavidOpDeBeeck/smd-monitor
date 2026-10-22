@@ -204,7 +204,7 @@ export function JourneyCanvas(props: { lens: Lens; journey: Journey; graph: Lens
                                                     name={parseGroupKey(group()).processingGroup}
                                                     application={lensApplication(group())}
                                                     delivery={statistics()?.delivery ?? null}
-                                                    figures={statistics() ? groupFigures(statistics()!, windowSeconds()) : null}
+                                                    figures={statistics() ? groupFigures(statistics()!, app.handlingFigures(), windowSeconds()) : null}
                                                     onSelect={() => app.flow.focusOn(group())}
                                                 />
                                             );

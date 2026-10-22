@@ -14,6 +14,7 @@ import app.dodb.smd.monitor.json.DurationsView;
 import app.dodb.smd.monitor.json.FailureCausesView;
 import app.dodb.smd.monitor.json.FlowView;
 import app.dodb.smd.monitor.json.FoundView;
+import app.dodb.smd.monitor.json.HandlingsView;
 import app.dodb.smd.monitor.json.MessageDetailView;
 import app.dodb.smd.monitor.json.QueryNames;
 import app.dodb.smd.monitor.json.RetainedTypeView;
@@ -117,6 +118,16 @@ public final class HubQueries {
         var selected = QueryNames.type(required("type", type));
         return answer(List.of("types", selected), epoch -> versioned(RetainedTypeView.from(epoch.session(), epoch.type(selected), epoch.history(selected),
             selected, epoch.statistics().applications())));
+    }
+
+    // What each processing group's handlings counted, in every application or in the one the scope names, for an expanded group, the failures
+    // view, and the flow view.
+    public QueryAnswer handlings(String scope) {
+        var application = Optional.ofNullable(scope).map(ApplicationName::new);
+        return answer(List.of("handlings", application), epoch -> versioned(HandlingsView.from(epoch.session(), epoch.sequence(), epoch.statistics().applications()
+            .stream()
+            .filter(statistics -> application.isEmpty() || application.get().equals(statistics.application()))
+            .toList())));
     }
 
     // How messages flow within and between the applications, or within the one the scope names, for the flow view and the live lanes.

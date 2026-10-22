@@ -7,11 +7,11 @@ import { parseTypeKey } from '../lib/format';
 import type { LiveVisual } from '../lib/live';
 import { fetchAnswer, hubRequest } from '../lib/api';
 import { scopedState } from '../lib/scope';
-import { flowEdges } from '../lib/state';
+import { flowEdges, handlingFigures } from '../lib/state';
 import { traceDetail, type PinnedTrace, type TraceSummary } from '../lib/traces';
 import { everyType, type TypeSelection } from '../lib/type-selection';
 import type { TypeKey } from '../lib/types';
-import type { WireFlow, WireTraceDetail } from '../lib/wire';
+import type { WireFlow, WireHandlings, WireTraceDetail } from '../lib/wire';
 import { createHubQuery } from '../store/hub-query';
 import type { MonitorStore } from '../store/monitor-store';
 import { createLiveState } from '../views/live/live-state';
@@ -88,6 +88,17 @@ export function createMonitorApp(store: MonitorStore, stage: () => HTMLElement) 
     // Only the flow view draws how messages flow, so only it asks the hub for the edges; the graph holds the frame's types and groups meanwhile.
     const flowQuery = createHubQuery<WireFlow>(store, () => (view() === 'flow' ? hubRequest('flow') : null), { kept: true });
     const flowGraph = createMemo(() => lensGraph(system().applications, flowEdges(flowQuery.answer())));
+    // What each handling counted is only an expanded group's, the failures view's, and the flow view's, so only they ask the hub for it.
+    const handlingsQuery = createHubQuery<WireHandlings>(
+        store,
+        () => {
+            if (view() === 'flow') return hubRequest('handlings');
+            if (view() === 'failures' || (view() === 'overview' && expandedGroups().size > 0)) return hubRequest('handlings', { scope: scope() });
+            return null;
+        },
+        { kept: true },
+    );
+    const figures = createMemo(() => handlingFigures(handlingsQuery.answer()));
     const hues = createMemo(() => applicationHues(system().applications.map(application => application.name)));
     // The failures the hub received of each application in scope since its failures were last shown; seen per application, so looking at one
     // application's failures does not count another's as seen. The live state counts them, so the badge moves while the view is paused.
@@ -274,6 +285,8 @@ export function createMonitorApp(store: MonitorStore, stage: () => HTMLElement) 
                 });
             },
         },
+        // What each handling counted, while a view that shows it is open.
+        handlingFigures: figures,
         flow: {
             // Every application's types and processing groups with the steps between them.
             graph: flowGraph,

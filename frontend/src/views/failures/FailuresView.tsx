@@ -102,7 +102,7 @@ export function FailuresView() {
                                                 <FailureCauseCard
                                                     cause={cause()}
                                                     examples={examples().get(cause().key)}
-                                                    started={stageStarted(cause(), app.scoped())}
+                                                    started={stageStarted(cause(), app.scoped(), app.handlingFigures())}
                                                     end={store.end()}
                                                     windowSeconds={store.view().windowSeconds}
                                                     historySeconds={history()}

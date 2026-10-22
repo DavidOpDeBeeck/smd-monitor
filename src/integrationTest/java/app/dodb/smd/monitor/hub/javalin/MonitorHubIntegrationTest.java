@@ -234,6 +234,19 @@ class MonitorHubIntegrationTest {
     }
 
     @Test
+    void api_handlings_answersWhatTheGroupsOfTheApplicationInScopeHandled() throws Exception {
+        openTicket();
+        awaitInvocation(TICKETS, invocation -> invocation.processingGroup().isPresent());
+
+        var response = query("/api/handlings?scope=tickets");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        var handling = new ObjectMapper().readTree(response.body()).get("handlings").get(0);
+        assertThat(handling.get("application").asString()).isEqualTo("tickets");
+        assertThat(handling.propertyNames()).containsExactly("application", "processingGroup", "name", "window", "history");
+    }
+
+    @Test
     void api_typeNotNamedAsAType_answersABadRequestWithContext() throws Exception {
         var response = query("/api/types?type=OpenTicket");
 

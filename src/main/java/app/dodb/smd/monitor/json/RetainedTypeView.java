@@ -6,6 +6,7 @@ import app.dodb.smd.monitor.hub.Counts;
 import app.dodb.smd.monitor.hub.LinkStatistics;
 import app.dodb.smd.monitor.hub.RetainedType;
 import app.dodb.smd.monitor.hub.span.ApplicationName;
+import app.dodb.smd.monitor.json.FrameView.BriefView;
 import app.dodb.smd.monitor.json.FrameView.MessageTypeView;
 import app.dodb.smd.monitor.json.FrameView.StatisticsView;
 
@@ -17,9 +18,10 @@ import java.util.stream.Stream;
 
 // The failure types most frequent first, and the latest dispatches newest first. The history holds every figure of the type over the history,
 // of which the frame carries only the counts and the p95; it is null when the application did not report the type. The links into the type and
-// out of it are those of its application and the crossings of every application, most invocations first.
+// out of it are those of its application and the crossings of every application, most invocations first; an event's handlings are those of its
+// application's processing groups.
 public record RetainedTypeView(String hubSession, long sequence, StatisticsView history, int retained, List<FailureTypeView> failureTypes,
-                               List<InvocationView> latest, List<TypeLinkView> incoming, List<TypeLinkView> outgoing) {
+                               List<InvocationView> latest, List<TypeLinkView> incoming, List<TypeLinkView> outgoing, List<TypeHandlingView> handlings) {
 
     public static RetainedTypeView from(UUID hubSession, RetainedType type, Optional<Counts> history, ApplicationType selected,
                                        List<ApplicationStatistics> applications) {
@@ -34,7 +36,16 @@ public record RetainedTypeView(String hubSession, long sequence, StatisticsView 
             type.failureTypes().stream().map(count -> new FailureTypeView(count.failureType(), count.count())).toList(),
             type.latest().stream().map(InvocationView::from).toList(),
             links.stream().filter(link -> link.childApplication().equals(application) && link.child().equals(name)).toList(),
-            links.stream().filter(link -> link.parentApplication().equals(application) && link.parent().equals(name)).toList());
+            links.stream().filter(link -> link.parentApplication().equals(application) && link.parent().equals(name)).toList(),
+            applications.stream().filter(statistics -> statistics.application().equals(selected.application()))
+                .flatMap(statistics -> statistics.groups().stream().flatMap(group -> group.handlings().stream()
+                    .filter(handling -> handling.type().equals(selected.type()))
+                    .map(handling -> new TypeHandlingView(group.processingGroup(), BriefView.from(handling.window()), BriefView.from(handling.history())))))
+                .toList());
+    }
+
+    // A processing group's handling of the event.
+    public record TypeHandlingView(String processingGroup, BriefView window, BriefView history) {
     }
 
     public record FailureTypeView(String failureType, int count) {

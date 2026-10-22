@@ -199,8 +199,8 @@ export interface WireGroup {
     delivery: string;
     window: WireBrief;
     // A handling is asynchronous once the group started handling one of its events after the publication returned; the delay is the p95 of how
-    // long after over the window, or null.
-    handlings: { name: string; window: WireBrief; history: WireBrief; asynchronous: boolean; delayP95Millis: number | null }[];
+    // long after over the window, or null. What it counted comes with the handlings query (WireHandlings).
+    handlings: { name: string; asynchronous: boolean; delayP95Millis: number | null }[];
 }
 
 export interface WireLink {
@@ -381,6 +381,8 @@ export interface WireRetainedType extends WireAnswer {
     latest: WireInvocation[];
     incoming: WireTypeLink[];
     outgoing: WireTypeLink[];
+    // An event's handlings by its application's processing groups.
+    handlings: { processingGroup: string; window: WireBrief; history: WireBrief }[];
 }
 
 export interface WireTypeLink {
@@ -390,6 +392,12 @@ export interface WireTypeLink {
     child: WireMessageType;
     history: number;
     lastSecond: number;
+}
+
+// What each processing group's handling of each event counted over the window and the history, which only an expanded group, the failures
+// view, and the flow view show, so the frame leaves it out.
+export interface WireHandlings extends WireAnswer {
+    handlings: { application: string; processingGroup: string; name: string; window: WireBrief; history: WireBrief }[];
 }
 
 // How messages flow within the applications asked about: only the flow view and the live lanes draw it, so the frame leaves it out.

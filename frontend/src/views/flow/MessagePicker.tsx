@@ -47,7 +47,13 @@ export function MessagePicker(props: { focus: LensKey | null; onPick: (key: Lens
         }));
         const groups = app.scoped().groups.map((group): Choice => {
             const key = groupKey(group.application, group.processingGroup);
-            return { key, section: 'Processing groups', name: group.processingGroup, application: group.application, ...groupFigures(group, windowSeconds) };
+            return {
+                key,
+                section: 'Processing groups',
+                name: group.processingGroup,
+                application: group.application,
+                ...groupFigures(group, app.handlingFigures(), windowSeconds),
+            };
         });
         return [...types, ...groups].sort(
             (a, b) =>

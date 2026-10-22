@@ -92,6 +92,7 @@ class FrameViewTest {
         assertThat(group.get("handlings").get(0).get("name").asString()).isEqualTo(EVENT.name());
         assertThat(group.get("handlings").get(0).get("asynchronous").asBoolean()).isFalse();
         assertThat(group.get("handlings").get(0).get("delayP95Millis").isNull()).isTrue();
+        assertThat(group.get("handlings").get(0).propertyNames()).containsExactly("name", "asynchronous", "delayP95Millis");
         assertThat(application.get("crossings").isEmpty()).isTrue();
         assertThat(application.get("kinds").valueStream().map(kind -> kind.get("kind").asString())).containsExactly("COMMAND", "QUERY", "EVENT");
         assertThat(application.get("kinds").get(0).get("startedPerSecond").size()).isEqualTo(90);

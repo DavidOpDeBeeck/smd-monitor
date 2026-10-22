@@ -271,6 +271,29 @@ class HubQueriesTest {
         assertThat(flow.get("applications").valueStream().map(application -> application.get("name").asString())).containsExactlyInAnyOrder("billing", "tickets");
     }
 
+    @Test
+    void handlings_eventHandledInAScope_answersWhatEachGroupsHandlingCounted() {
+        receive(TICKETS, handling("0000000000000001", "ticket-view"));
+        receive(BILLING, span("0000000000000002", Optional.empty()));
+
+        var handlings = mapper.readTree(queries.handlings("tickets").body()).get("handlings");
+
+        assertThat(handlings.size()).isEqualTo(1);
+        assertThat(handlings.get(0).get("processingGroup").asString()).isEqualTo("ticket-view");
+        assertThat(handlings.get(0).get("name").asString()).isEqualTo("TicketOpened");
+        assertThat(handlings.get(0).get("history").get(0).asLong()).isEqualTo(1);
+    }
+
+    @Test
+    void type_eventHandledByAGroup_answersThatGroupsHandling() {
+        receive(TICKETS, handling("0000000000000001", "ticket-view"));
+
+        var event = mapper.readTree(queries.type("tickets::EVENT:TicketOpened").body());
+
+        assertThat(event.get("handlings").get(0).get("processingGroup").asString()).isEqualTo("ticket-view");
+        assertThat(event.get("handlings").get(0).get("history").get(0).asLong()).isEqualTo(1);
+    }
+
     // The type inspector shows the links into the type and out of it, across applications too, which the frame no longer carries.
     @Test
     void type_commandContinuedInAnotherApplication_answersTheLinkOutOfItAndIntoTheOther() {
@@ -296,6 +319,14 @@ class HubQueriesTest {
     private void receive(ApplicationName application, MessageSpan span) {
         hub.receive(new SpanBatch(application, new InstanceName("tickets-1"), new SessionId("session"), List.of(span), List.of()));
         hub.epoch();
+    }
+
+    private static MessageSpan handling(String spanId, String processingGroup) {
+        return new MessageSpan(SpanRef.of(TRACE, spanId), Optional.empty(), MessageId.generate(),
+            new Stage.Handling(new MessageType(MessageKind.EVENT, "TicketOpened"), processingGroup), Optional.of(EventDelivery.SYNC),
+            // Old enough that its second settled into the history.
+            Instant.now().minusSeconds(10), "main",
+            new Outcome.Completed(Duration.ofMillis(1)));
     }
 
     private static MessageSpan span(String spanId, Optional<String> continues) {

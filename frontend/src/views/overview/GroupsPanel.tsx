@@ -9,12 +9,13 @@ import { Tweened, TweenedDuration } from '../../components/tween';
 import { cx } from '../../lib/cx';
 import { eventDelays, groupSections, SLOW_DELAY_MILLIS } from '../../lib/dashboard';
 import { count, duration, historySpan, lastPeriod, parseTypeKey, plural, shortName, wholeCount } from '../../lib/format';
-import type { Brief, GroupStatistics, HandlingKey, HandlingStatistics } from '../../lib/types';
+import { NO_FIGURES } from '../../lib/state';
+import type { Brief, GroupStatistics, HandlingFigures, HandlingKey, HandlingStatistics } from '../../lib/types';
 import { HeaderCell, NameCell, NUMBER_CELL, Row, Table } from './table';
 
 export function GroupsPanel() {
     const app = useMonitorApp();
-    const sections = createMemo(() => groupSections(app.scoped().groups));
+    const sections = createMemo(() => groupSections(app.scoped().groups, app.handlingFigures()));
     const delays = createMemo(() => eventDelays(app.scoped().handlings.values()));
     const asynchronous = () => [...app.scoped().handlings.values()].some(handling => handling.asynchronous);
     const expanded = (section: GroupStatistics) => app.overview.expandedGroups().has(section.key);
@@ -68,7 +69,14 @@ export function GroupsPanel() {
                                 />
                                 <Show when={expanded(section())}>
                                     <Key each={section().handlings} by="key">
-                                        {handling => <GroupRowView handling={handling()} delay={delays().get(handling().key)} asynchronous={asynchronous()} />}
+                                        {handling => (
+                                            <GroupRowView
+                                                handling={handling()}
+                                                figures={app.handlingFigures().get(handling().key) ?? NO_FIGURES}
+                                                delay={delays().get(handling().key)}
+                                                asynchronous={asynchronous()}
+                                            />
+                                        )}
                                     </Key>
                                 </Show>
                             </>
@@ -148,7 +156,7 @@ function GroupHeaderRow(props: { section: GroupStatistics; delays: Map<HandlingK
     );
 }
 
-function GroupRowView(props: { handling: HandlingStatistics; delay: number | undefined; asynchronous: boolean }) {
+function GroupRowView(props: { handling: HandlingStatistics; figures: HandlingFigures; delay: number | undefined; asynchronous: boolean }) {
     const app = useMonitorApp();
     const statistics = () => props.handling;
     const select = () => app.select({ type: 'type', key: statistics().typeKey });
@@ -156,15 +164,15 @@ function GroupRowView(props: { handling: HandlingStatistics; delay: number | und
         <Row
             reorder={statistics().key}
             onSelect={select}
-            title={`Processing group ${statistics().processingGroup} handling ${statistics().messageType}: ${count(statistics().history.started)} handlings, ${count(statistics().history.failed)} failed, and p95 ${duration(statistics().history.p95Millis)} over the last ${historySpan(app.store.view().historySeconds)}`}
+            title={`Processing group ${statistics().processingGroup} handling ${statistics().messageType}: ${count(props.figures.history.started)} handlings, ${count(props.figures.history.failed)} failed, and p95 ${duration(props.figures.history.p95Millis)} over the last ${historySpan(app.store.view().historySeconds)}`}
         >
             <NameCell indent onSelect={select} label={`Processing group ${statistics().processingGroup} handling ${shortName(statistics().messageType)}`}>
                 <Glyph kind={parseTypeKey(statistics().typeKey).kind} />
-                <span class={cx('truncate text-sm transition-colors duration-500', statistics().window.started === 0 && 'text-muted')}>
+                <span class={cx('truncate text-sm transition-colors duration-500', props.figures.window.started === 0 && 'text-muted')}>
                     {shortName(statistics().messageType)}
                 </span>
             </NameCell>
-            <Figures statistics={props.handling.window} asynchronous={props.asynchronous} delay={props.delay} noDelay={<span class="text-faint">—</span>} />
+            <Figures statistics={props.figures.window} asynchronous={props.asynchronous} delay={props.delay} noDelay={<span class="text-faint">—</span>} />
         </Row>
     );
 }

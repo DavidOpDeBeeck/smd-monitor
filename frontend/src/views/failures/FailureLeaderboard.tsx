@@ -40,8 +40,14 @@ export function FailureLeaderboard() {
     const failedTypes = createMemo(() =>
         [...app.scoped().types.values()].filter(type => type.history.failed > 0).sort((a, b) => b.history.failed - a.history.failed),
     );
+    // What each handling counted comes with the handlings query, which the failures view keeps asking while it is open.
     const failedHandlings = createMemo(() =>
-        [...app.scoped().handlings.values()].filter(handling => handling.history.failed > 0).sort((a, b) => b.history.failed - a.history.failed),
+        [...app.scoped().handlings.values()]
+            .flatMap(handling => {
+                const figures = app.handlingFigures().get(handling.key);
+                return figures && figures.history.failed > 0 ? [{ ...handling, history: figures.history }] : [];
+            })
+            .sort((a, b) => b.history.failed - a.history.failed),
     );
     return (
         <Panel title="Failed invocations per message type" class="self-start">
