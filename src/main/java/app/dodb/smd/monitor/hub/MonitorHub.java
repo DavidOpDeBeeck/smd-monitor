@@ -47,7 +47,7 @@ public final class MonitorHub implements AutoCloseable {
         this.clock = requireNonNull(clock);
         var hub = new Hub(config, budget);
         this.admission = new Admission(config);
-        this.queues = new IntakeQueues(budget.queuedSpans());
+        this.queues = new IntakeQueues(budget.queues());
         this.epochs = new Epochs(hub.tick(clock.instant(), Map.of(), admission.refused(), queues.health()));
         this.writer = new HubWriter(admission, queues, hub, epochs, clock);
         this.thread = Thread.ofPlatform().name("smd-monitor-hub").daemon().unstarted(writer);

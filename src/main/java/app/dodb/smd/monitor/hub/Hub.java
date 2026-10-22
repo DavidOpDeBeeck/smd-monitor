@@ -1,7 +1,6 @@
 package app.dodb.smd.monitor.hub;
 
 import app.dodb.smd.monitor.hub.budget.FairShare;
-import app.dodb.smd.monitor.hub.budget.Footprint;
 import app.dodb.smd.monitor.hub.budget.MemoryBudget;
 import app.dodb.smd.monitor.hub.health.ApplicationHealth;
 import app.dodb.smd.monitor.hub.health.HealthReason;
@@ -207,7 +206,7 @@ final class Hub {
 
     private HealthView health(Map<ApplicationName, Specimens.Retention> retentions, RefusedSpans refused, QueueHealth queues) {
         var counted = countingBytes();
-        var memory = new MemoryUse(budget.total(), new ProductUse(queues.queued() * Footprint.QUEUED_SPAN, budget.queues()),
+        var memory = new MemoryUse(budget.total(), new ProductUse(queues.queuedBytes(), budget.queues()),
             new ProductUse(counted, budget.counting()), new ProductUse(index.bytes(), budget.join()), new ProductUse(specimens.bytes(), specimenAllowance));
         var oldest = specimens.oldest();
         var joinShare = FairShare.of(budget.join(), applications.size());

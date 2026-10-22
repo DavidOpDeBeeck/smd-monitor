@@ -9,14 +9,14 @@ public final class Budgets {
     private Budgets() {
     }
 
-    // Nothing gives way; the queues hold 65,536 spans in all.
+    // Nothing gives way; the queues hold 65,536 packed spans in all.
     public static MemoryBudget generous() {
-        return queuing(QUEUED_SPANS);
+        return queuing(QUEUED_SPANS * Footprint.QUEUED_SPAN);
     }
 
-    // Nothing else gives way.
-    public static MemoryBudget queuing(int spans) {
-        return new MemoryBudget(PLENTY, spans * Footprint.QUEUED_SPAN, PLENTY, PLENTY, PLENTY);
+    // The queues hold the given bytes of packed batches; nothing else gives way.
+    public static MemoryBudget queuing(long bytes) {
+        return new MemoryBudget(PLENTY, bytes, PLENTY, PLENTY, PLENTY);
     }
 
     // The specimens fit about the given number of invocations, each in a trace of its own with its parent found; nothing else gives way.

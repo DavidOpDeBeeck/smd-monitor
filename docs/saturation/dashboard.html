@@ -485,6 +485,8 @@
     shedUnjoined: { group: 'Given up', label: 'Not linked', format: share, max: 1, what: 'Share of processed spans counted but not linked to their trace.' },
     queueMax: { group: 'Given up', label: 'Queue, most waiting', format: count, what: 'The most spans waiting in the intake queues at once during the step.' },
     queueEnd: { group: 'Given up', label: 'Queue at the end', format: count, what: 'Spans waiting in the intake queues when the step ended.' },
+    queueSpans: { group: 'Given up', label: 'Queue capacity', format: count, value: (row) => queueSpansOf(row.run, row.scenario),
+      what: 'The most spans the intake queues hold, as the run’s budget sizes them; queues that count their room in bytes hold this many when each batch’s spans share their names.' },
     writerBusy: { group: 'Writer', label: 'Writer busy', format: share, max: 1, references: [{ y: 0.9, label: 'falls behind above 90%' }],
       what: 'Share of each second the single writer thread was busy, not waiting for a batch.' },
     writerBusyMax: { group: 'Writer', label: 'Writer busy, worst second', format: share, max: 1, what: 'The busiest second of the step for the writer thread.' },
@@ -570,6 +572,8 @@
   const rowsOf = (id) => new Map((rowsByRun.get(id) || []).map((row) => [row.scenario, row]));
   const max = maxOf(runs, (run) => run.maxRate);
   const scenarioById = new Map(scenarios.map((scenario) => [scenario.scenario, scenario]));
+  // The spans a run's intake queues hold at most on a scenario, as its budget sizes them; a run kept before runs recorded it takes the scenario's.
+  const queueSpansOf = (runId, scenarioId) => rowsOf(runId).get(scenarioId)?.queueSpans ?? scenarioById.get(scenarioId)?.queueSpans;
   const stepsOf = (runId, scenarioId) => steps.filter((row) => row.run === runId && row.scenario === scenarioId).sort((a, b) => a.rate - b.rate);
   // A run's writer capacity on a scenario against a baseline run's, over the rates both offered with the load generator keeping up: each run's
   // geometric mean over those rates, and the change between the two.
@@ -1095,9 +1099,11 @@
       }).filter((each) => each.rows.length)
       : timelines;
     const all = shown.flatMap((each) => each.rows);
+    // The capacity of the run the chart shows, as each run's budget may size its queues apart.
+    const capacity = queueSpansOf(timelines[0].run.run, scenario.scenario);
     let top = maxOf(all, value);
     if (measure.also) top = Math.max(top, maxOf(all, (row) => row.rate));
-    if (measure.capacity) top = Math.max(top, scenario.queueSpans);
+    if (measure.capacity) top = Math.max(top, capacity);
     const yMax = yTop ?? axisTop(measure, top, 1.08);
     const yTicks = niceTicks(0, yMax, 6);
     const yTick = tickFormat(measure.format);
@@ -1122,8 +1128,8 @@
     axisBottom(svg, x, x.range(), niceTicks(t0, t1, Math.max(2, Math.floor((width - left) / 80))), (t) => `${t} s`, height - margin.bottom);
     axisTitle(svg, width - margin.right, height - 4, step ? 'seconds since the step began' : 'seconds since the history was filled');
     if (measure.capacity) {
-      el(svg, 'line', { class: 'reference', x1: margin.left, x2: width - margin.right, y1: y(scenario.queueSpans), y2: y(scenario.queueSpans) });
-      el(svg, 'text', { x: width - margin.right, y: y(scenario.queueSpans) - 5, 'text-anchor': 'end' }, 'queue capacity');
+      el(svg, 'line', { class: 'reference', x1: margin.left, x2: width - margin.right, y1: y(capacity), y2: y(capacity) });
+      el(svg, 'text', { x: width - margin.right, y: y(capacity) - 5, 'text-anchor': 'end' }, 'queue capacity');
     }
     const atT = (row) => x(row.t);
     // The rate each step offered, once, as the line processed should follow; the seconds offered jitter with the exports' batches.
@@ -1728,7 +1734,8 @@
       const rebased = timelines.map((each) => ({ ...each, rows: stepRowsOf(each.rows, step) })).filter((each) => each.rows.length);
       const all = rebased.flatMap((each) => each.rows);
       const value = measure.value || ((row) => row[measure.key]);
-      const top = Math.max(maxOf(all, value), measure.also ? maxOf(all, (row) => row.rate) : 0, measure.capacity ? scenario.queueSpans : 0);
+      const top = Math.max(maxOf(all, value), measure.also ? maxOf(all, (row) => row.rate) : 0,
+        measure.capacity ? maxOf(timelines, (each) => queueSpansOf(each.run.run, scenario.scenario)) : 0);
       const yTop = axisTop(measure, top, 1.08);
       const tRange = [minOf(all, (row) => row.t), maxOf(all, (row) => row.t)];
       multiples(stage.chart, timelines.filter((each) => rebased.some((other) => other.run === each.run)), chartHeight(),
