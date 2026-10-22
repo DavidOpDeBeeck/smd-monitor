@@ -106,6 +106,10 @@ Before coding, name the owning package, the smallest public contract, the thread
 
 - Public behavior or configuration changed: update `docs/monitor.md`.
 - A design decision or budget changed: update `docs/monitor-hub-design.md`.
+- Commit messages are concise: a subject line saying what changed, and at most two or three sentences on why when the subject leaves it open. The
+  numbers and the evidence go in the pull request, not the commit.
+- Pull requests follow `.github/pull_request_template.md`: one or two sentences on what and why, then validation, screenshots or a short video of
+  the page, or before → after figures, showing what the change solves or improves.
 - Ingest, frames, or queries changed: run the affected benchmarks (`./gradlew jmh -PjmhIncludes=...`).
 - Documented throughput changed: keep `docs/monitor.md` and `SaturationCheck` identical.
 
