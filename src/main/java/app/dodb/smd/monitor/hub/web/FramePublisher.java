@@ -93,7 +93,8 @@ public final class FramePublisher implements AutoCloseable {
 
     private void publish(Collection<Client> recipients, PublishedFrame frame) {
         for (var client : recipients) {
-            // One send per client at a time; a busy client skips the frame, and receives the snapshot of the next.
+            // One send per client at a time; a busy client skips the frame, and receives the changes since the one it was sent with the next, or
+            // the snapshot once it fell further behind than the frame keeps changes for.
             if (!client.sending.compareAndSet(false, true)) {
                 continue;
             }
@@ -131,8 +132,8 @@ public final class FramePublisher implements AutoCloseable {
     // Where a client receives its messages, such as a WebSocket session; it identifies the client to the publisher.
     public interface Sink {
 
-        // Sends the message without waiting for it to be written, then reports whether it was.
-        void send(String message, Consumer<Boolean> sent);
+        // Sends the message, UTF-8 JSON text that other clients share, without waiting for it to be written, then reports whether it was.
+        void send(byte[] message, Consumer<Boolean> sent);
 
         void close();
     }

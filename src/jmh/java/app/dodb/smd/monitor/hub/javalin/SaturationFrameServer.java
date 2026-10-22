@@ -9,7 +9,6 @@ import app.dodb.smd.monitor.hub.web.MonitorFrames;
 import app.dodb.smd.monitor.hub.web.PublishedFrame;
 
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.OptionalInt;
 
@@ -73,7 +72,7 @@ public final class SaturationFrameServer implements AutoCloseable {
             var frame = super.publish(epoch, previous);
             var message = frame.messageFor(previous == null ? NONE : previous.epoch());
             var writtenAt = System.nanoTime();
-            written.written(epoch, started, writtenAt, message.getBytes(StandardCharsets.UTF_8).length, previous == null ? 0 : epoch.sequence() - previous.epoch() - 1);
+            written.written(epoch, started, writtenAt, message.length, previous == null ? 0 : epoch.sequence() - previous.epoch() - 1);
             return frame;
         }
     }

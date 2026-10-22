@@ -115,7 +115,7 @@ The hub keeps four kinds of state, each with its own lifetime and bound.
 | C6  | One epoch per second: one immutable view of catalog, aggregates, specimens, and health, shared by the frame and the queries.                                                                                                                                                                                        |
 | C7  | Building an epoch costs in proportion to what changed: at most one copy of changed array chunks.                                                                                                                                                                                                                    |
 | C8  | JSON is serialized off the writer, once per epoch, and shared by every client.                                                                                                                                                                                                                                      |
-| C9  | At most 4 queries run at once; beyond that the hub answers 429.                                                                                                                                                                                                                                                     |
+| C9  | At most 16 queries run at once; beyond that the hub answers 429.                                                                                                                                                                                                                                                    |
 | C10 | An exception in one batch drops that batch, reports it, and logs it once. The writer keeps running.                                                                                                                                                                                                                 |
 | C11 | Exports arrive on a port of their own, served by a Javalin server of its own with its own virtual threads, which serves nothing else; the page's port serves no exports. The page can be published without the endpoint, and pages never take a thread from admission.                                              |
 
@@ -163,7 +163,7 @@ The hub keeps four kinds of state, each with its own lifetime and bound.
 |----|--------------------------------------------------------------------------------------------------------------------------------------------------------|
 | W1 | One system-wide frame per epoch over the WebSocket. Scope stays on the client.                                                                         |
 | W2 | Frames are deltas against the previous epoch, found by comparing two immutable snapshots. Each names its `epoch` and `base`.                           |
-| W3 | A snapshot goes to a client on connect and to any client that missed a delta. Each is serialized at most once per epoch.                               |
+| W3 | A snapshot goes to a client on connect and to any client more than three frames behind; one that skipped fewer receives the changes since the frame it holds. Each message is serialized at most once per epoch, as UTF-8, and shared. |
 | W4 | JSON, compressed by `permessage-deflate`. Statistics travel as arrays of figures in a fixed order.                                                     |
 | W5 | Specimens are pulled over HTTP from the epoch, by a visible page as the retained sequence moves; a list asks again for its first page only. Identical queries of an epoch are answered once; every answer but the timeline's, which moves with the clock, carries an ETag of its content but the sequence, which the page sends back to receive 304. |
 | W6 | Frames and answers carry a protocol version and a build ID; the page reloads when either differs.                                                      |
@@ -183,7 +183,7 @@ The hub keeps four kinds of state, each with its own lifetime and bound.
  (own port)                                                             │   snapshot to clients that missed one
      └──────────► Admission ──► IntakeQueues ──► HubWriter ──► Epochs ──┤
                   limits,       per application,  drains round-robin,   │
-                  skew,         bounded,          ticks each second,    └─► HubQueries: at most 4 at once,
+                  skew,         bounded,          ticks each second,    └─► HubQueries: at most 16 at once,
                   liveness      shedding level    owns Hub                  per-epoch cache, ETag
                                                     │
                                 Hub (single-threaded core)
@@ -225,7 +225,7 @@ Per tick, after each second:
 | Shedding thresholds      | 50% and 80% of the pool or of its half |
 | Slowest and Failures K   | 5 per type, 20 per cause (minimum 1)   |
 | Invocations per trace    | 10,000                                 |
-| Concurrent queries       | 4                                      |
+| Concurrent queries       | 16                                     |
 | Cached answers per epoch | 256                                    |
 | WebSocket clients        | 64, with a 5 s send timeout            |
 | Specimen chunk           | 4,096                                  |
@@ -361,6 +361,15 @@ it: the caps of one ladder, or one cap across ladders, to compare a change.
 ./gradlew saturationDashboard -PsaturationViewers      # adds build/saturation-viewers to docs/saturation
 ```
 
+The first two ladders, on 2026-10-22 on the Ryzen 7 5825U, measured what changed W3 and C9. Before, at the commit after pull request #8, a client
+still sending a frame skipped the next and then received the snapshot, about 25 MB of JSON against a delta's 2.6 MB, encoded to UTF-8 and deflated
+again for every client. From 48 viewers clients fell further behind with every snapshot: at 48 viewers and 16 queries at once, a profile of the hub
+found the publisher writing snapshots for a third of the samples and the sends encoding text for a fifth, clients read 41% of the frames, 287 of 307 of
+them snapshots, and the heap reached 11.5 GB of 12 GB. Sending a client that skipped up to three frames the changes since the frame it holds, and
+encoding each message once, kept the heap at 7 GB at every number of viewers; at 48 viewers clients read 81% of the frames, and with 4 queries at once
+ingest kept up with 64 viewers where it had fallen behind. With 4 queries at once, the worst of 8 viewers saw fresh data a third of the seconds and
+of 16 viewers an eighth; with 16, every viewer did up to 32 viewers, as ingest kept up, for about 5 more cores at 32 viewers. So C9 went from 4 to 16.
+
 Run 1, 2026-10-20, on a Ryzen 7 5825U (16 threads, 32 GB, Linux) at the commit before the optimizations of pull requests #1 to #3, in spans per second:
 
 | Sweep        | Scenario           | Keeps up | Holds   | Fails at         |
@@ -425,5 +434,9 @@ Budgets still missed and work deferred, with the cause found and the levers to t
   delta, the client read every delta and none was skipped, 250 ms later each second, until 23 s behind when the run ended; clients reading as frames come
   read them 250 to 520 ms after their second. Once the buffers fill, the snapshot of 17.7 MB that follows is slower still to read. Levers: the page
   acknowledges the epoch it applied, and the hub sends a client nothing new while its acknowledgement is more than a frame behind.
+- **Queries take the cores from 32 viewers.** Each viewer of another view costs its query once per epoch: at 32 viewers, 16 queries at once took
+  the hub from 6.5 to 11.3 cores and the writer to 68% of its capacity without viewers, and from 48 viewers ingest fell behind at 60,000 spans per second
+  (the viewer ladder, with the viewers' JVM on the same 16 threads). Levers: cheaper queries (`QueryBenchmark`, `TraceViewBenchmark`), fewer
+  queries at once while the writer is busy, and answers shared across scopes.
 - **Shedding and the clock-ahead flag are covered by tests only.** The demo's in-process exporters never fill a queue share and share the hub's clock. Lever: a demo
   instance in another process that exports bursts, and one whose clock runs ahead.

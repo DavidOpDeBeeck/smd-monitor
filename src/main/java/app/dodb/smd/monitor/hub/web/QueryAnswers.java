@@ -17,7 +17,9 @@ import static java.util.Objects.requireNonNull;
 final class QueryAnswers {
 
     static final int MAX_ANSWERS = 256;
-    static final int MAX_RUNNING = 4;
+    // As many as the design target's 16 viewers ask at once when each looks at another view; fewer refused every viewer but four most
+    // seconds in the viewer ladder of docs/monitor-hub-design.md, at no cost the ladder could tell.
+    static final int MAX_RUNNING = 16;
 
     private final Semaphore running;
     private final QueryAnswer busy;

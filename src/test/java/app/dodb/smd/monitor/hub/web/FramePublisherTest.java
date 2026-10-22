@@ -73,9 +73,9 @@ class FramePublisherTest {
         assertThat(connected).isTrue();
     }
 
-    // One send per client at a time: a client still writing skips frames, then catches up with a snapshot.
+    // One send per client at a time: a client still writing skips frames, then catches up with the changes since the frame it was sent.
     @Test
-    void publish_clientStillWritingTheLastFrame_skipsFramesAndThenReceivesTheSnapshot() {
+    void publish_clientStillWritingTheLastFrame_skipsFramesAndThenReceivesTheChangesSinceItsFrame() {
         var slow = new RecordingSink(false);
         var fast = new RecordingSink(true);
         publisher.connect(slow);
@@ -87,8 +87,28 @@ class FramePublisherTest {
         hub.epoch();
 
         await().until(() -> fast.messages.size() == 3 && slow.messages.size() == 2);
-        assertThat(slow.message(1).get("type").asString()).isEqualTo("snapshot");
+        assertThat(slow.message(1).get("type").asString()).isEqualTo("delta");
+        assertThat(slow.message(1).get("base").asLong()).isEqualTo(slow.message(0).get("epoch").asLong());
         assertThat(fast.message(2).get("type").asString()).isEqualTo("delta");
+    }
+
+    @Test
+    void publish_clientFurtherBehindThanTheFrameKeepsChangesFor_receivesTheSnapshot() {
+        var slow = new RecordingSink(false);
+        var fast = new RecordingSink(true);
+        publisher.connect(slow);
+        publisher.connect(fast);
+        for (var epoch = 1; epoch <= PublishedFrame.BASES; epoch++) {
+            hub.epoch();
+            var received = epoch + 1;
+            await().until(() -> fast.messages.size() == received);
+        }
+
+        slow.complete(true);
+        hub.epoch();
+
+        await().until(() -> slow.messages.size() == 2);
+        assertThat(slow.message(1).get("type").asString()).isEqualTo("snapshot");
     }
 
     @Test
@@ -119,7 +139,7 @@ class FramePublisherTest {
 
     // Records what the publisher sends; it reports each message written at once, or holds the report until completed.
     private final class RecordingSink implements FramePublisher.Sink {
-        private final List<String> messages = new CopyOnWriteArrayList<>();
+        private final List<byte[]> messages = new CopyOnWriteArrayList<>();
         private final boolean writesAtOnce;
         private final AtomicBoolean closed = new AtomicBoolean();
         private volatile Consumer<Boolean> pending;
@@ -129,7 +149,7 @@ class FramePublisherTest {
         }
 
         @Override
-        public void send(String message, Consumer<Boolean> sent) {
+        public void send(byte[] message, Consumer<Boolean> sent) {
             messages.add(message);
             if (writesAtOnce) {
                 sent.accept(true);

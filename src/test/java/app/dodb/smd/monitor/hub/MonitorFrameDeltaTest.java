@@ -17,7 +17,7 @@ import static app.dodb.smd.monitor.hub.RecordingInstance.OPEN;
 import static app.dodb.smd.monitor.hub.RecordingInstance.with;
 import static org.assertj.core.api.Assertions.assertThat;
 
-// snapshot(e) = snapshot(e - 1) + delta(e) (W2): the changes of every epoch, applied to the JSON of the frame before, give the JSON of the frame,
+// snapshot(e) = snapshot(e - k) + delta(e - k, e) (W2): the changes of every epoch, applied to the JSON of the frame k before, give the JSON of the frame,
 // under generated load over the whole history, while one application appears later, sorted before the others, and another retires.
 class MonitorFrameDeltaTest {
 
@@ -29,7 +29,7 @@ class MonitorFrameDeltaTest {
     private final MutableClock clock = new MutableClock();
 
     @Test
-    void deltaFrom_everyEpochOfGeneratedLoad_appliesToThePreviousSnapshotAsTheCurrentOne() {
+    void deltaFrom_everyEpochOfGeneratedLoad_appliesToTheSnapshotOfItsBaseAsTheCurrentOne() {
         var config = PROFILE.hubConfig().silentAfter(Duration.ofSeconds(5)).retireAfter(Duration.ofSeconds(15)).build();
         var hub = new SynchronousHub(config, clock);
         var load = new LoadGenerator(PROFILE, 3, clock);
@@ -52,10 +52,13 @@ class MonitorFrameDeltaTest {
 
         assertThat(frames.getFirst().view().applications()).extracting(application -> application.name()).contains(LEAVING.value());
         assertThat(frames.getLast().view().applications()).extracting(application -> application.name()).startsWith(EARLY.value()).doesNotContain(LEAVING.value());
-        for (var index = 1; index < frames.size(); index++) {
-            var delta = frames.get(index).deltaFrom(frames.get(index - 1), mapper);
-            var applied = FrameDelta.apply(mapper.valueToTree(frames.get(index - 1).view()), delta.changes(), delta.shift());
-            assertThat(applied).as("epoch %d", delta.epoch()).isEqualTo(mapper.valueToTree(frames.get(index).view()));
+        // Also from the frames a few epochs back, as a client that skipped frames receives them.
+        for (var back = 1; back <= 4; back++) {
+            for (var index = back; index < frames.size(); index++) {
+                var delta = frames.get(index).deltaFrom(frames.get(index - back), mapper);
+                var applied = FrameDelta.apply(mapper.valueToTree(frames.get(index - back).view()), delta.changes(), delta.shift());
+                assertThat(applied).as("epoch %d from %d back", delta.epoch(), back).isEqualTo(mapper.valueToTree(frames.get(index).view()));
+            }
         }
     }
 }

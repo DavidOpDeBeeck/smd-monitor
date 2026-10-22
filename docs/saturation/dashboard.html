@@ -536,7 +536,7 @@
     { key: 'answerP99Ms', group: 'What the viewers get', label: 'Query answer, p99', format: millis, references: [{ y: 50, label: '50 ms budget' }],
       what: 'Answered queries only, from asking to the last byte read.' },
     { key: 'framesReceived', group: 'What the viewers get', label: 'Live frames received', format: share, max: 1,
-      what: 'Share of the frames the viewers read; a viewer that missed one reads a full snapshot next.' },
+      what: 'Share of the frames the viewers read; a viewer still reading one skips the next, and then reads the changes since, or a snapshot once far behind.' },
     { key: 'frameLagP99Ms', group: 'What the viewers get', label: 'Live frame lag, p99', format: (value) => lagFormat(value), references: [{ y: 1000, label: 'one second' }],
       what: 'From the end of a second to a viewer reading its frame.' },
     { key: 'capacityShare', group: 'What it costs the hub', label: 'Writer capacity against no viewers', format: share,
