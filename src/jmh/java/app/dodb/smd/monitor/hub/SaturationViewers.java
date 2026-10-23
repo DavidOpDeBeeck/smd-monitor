@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
@@ -30,6 +31,7 @@ final class SaturationViewers implements AutoCloseable {
 
     private static final String VIEWERS_PROPERTY = "saturation.viewers";
     private static final String HEAP_PROPERTY = "saturation.viewerHeap";
+    private static final String JFR_PROPERTY = "saturation.viewerJfr";
     private static final String PREFIX = "saturation-viewers ";
     private static final String FRAME = "frame ";
     private static final String QUERY = "query ";
@@ -67,7 +69,8 @@ final class SaturationViewers implements AutoCloseable {
         throw new IllegalArgumentException("Saturation run expects -D" + VIEWERS_PROPERTY + " to be a whole number, 0 or more; got '" + value + "'");
     }
 
-    // Starts a viewer per plan in a JVM of its own, with -Dsaturation.viewerHeap of heap, 4g by default, and waits until each read its first frame.
+    // Starts a viewer per plan in a JVM of its own, with -Dsaturation.viewerHeap of heap, 4g by default, and with -Dsaturation.viewerJfr a flight
+    // recording into that file, and waits until each read its first frame.
     // The listeners hear every frame read and every query on the thread that follows the viewers' output.
     static SaturationViewers start(URI live, URI api, List<SaturationPages.Plan> plans, Path output, Consumer<FrameReceipt> read,
                                    Consumer<SaturationPages.Query> asked) throws IOException, InterruptedException {
@@ -79,8 +82,10 @@ final class SaturationViewers implements AutoCloseable {
         var java = ProcessHandle.current().info().command()
             .orElseThrow(() -> new IllegalStateException("Saturation viewers cannot find the java command of this JVM to start their own"));
         var heap = System.getProperty(HEAP_PROPERTY, "4g");
-        var process = new ProcessBuilder(java, "-Xms" + heap, "-Xmx" + heap, "@" + classpath, SaturationViewers.class.getName(), live.toString(), api.toString(),
-            plan.toString())
+        var command = new ArrayList<>(List.of(java, "-Xms" + heap, "-Xmx" + heap));
+        Optional.ofNullable(System.getProperty(JFR_PROPERTY)).ifPresent(file -> command.add("-XX:StartFlightRecording=filename=" + file + ",settings=profile"));
+        command.addAll(List.of("@" + classpath, SaturationViewers.class.getName(), live.toString(), api.toString(), plan.toString()));
+        var process = new ProcessBuilder(command)
             .redirectError(ProcessBuilder.Redirect.INHERIT)
             .start();
         var viewers = new SaturationViewers(process, read, asked);

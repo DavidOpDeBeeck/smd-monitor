@@ -34,9 +34,10 @@ public final class Footprint {
     // The parent of children that left unlinked, remembered for another horizon with their count per application.
     public static final long TOMBSTONE = object(2 * REFERENCE + LONG) + HASH_ENTRY + QUEUE_SLOT + SMALL_MAP;
 
-    // A retained invocation: the specimen with its slots in its chunk and in the chunk's copy while an epoch shares it, its slot in Recent,
-    // its slots in its trace's members and snapshot as they grow, and its entry in the span index, which lives as long as it.
-    public static final long SPECIMEN = object(7 * REFERENCE + 11 * LONG + 1) + 2 * (LONG + REFERENCE + INT) + QUEUE_SLOT + 3 * LONG + FACT + PARENT_KEY;
+    // A retained invocation: the specimen with its slots in its chunk and in the chunk's copy while an epoch shares it (its ID, itself, its trace,
+    // and its application; its failed bit is left out), its slot in Recent, its slots in its trace's members and snapshot as they grow, and its
+    // entry in the span index, which lives as long as it.
+    public static final long SPECIMEN = object(7 * REFERENCE + 11 * LONG + 1) + 2 * (LONG + 2 * REFERENCE + INT) + QUEUE_SLOT + 3 * LONG + FACT + PARENT_KEY;
     // The summary of the parent of a retained invocation, once found, with the parent's message ID.
     public static final long PARENT = object(LONG + 5 * REFERENCE + 1) + 2 * INVOCATION_ID + MESSAGE_ID;
     // A trace: its component, which grows as members join, and its snapshot, with their slots.

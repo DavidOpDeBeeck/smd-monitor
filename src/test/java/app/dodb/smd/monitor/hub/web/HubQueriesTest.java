@@ -37,7 +37,7 @@ class HubQueriesTest {
     private final SynchronousHub hub = new SynchronousHub(HubConfig.withDefaults().build());
     private static final QueryFilter EVERY_INVOCATION = new QueryFilter(null, List.of(), List.of(), List.of(), List.of(), null);
 
-    private final HubQueries queries = new HubQueries(hub.hub());
+    private final HubQueries queries = new HubQueries(hub.hub(), 8);
     private final ObjectMapper mapper = new ObjectMapper();
 
     @Test

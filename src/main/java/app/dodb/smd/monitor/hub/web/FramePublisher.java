@@ -19,9 +19,6 @@ import static java.util.Objects.requireNonNull;
 // messages are written at most once per epoch and shared. Every client receives the statistics of the whole system; the page applies its scope.
 public final class FramePublisher implements AutoCloseable {
 
-    // As smd.monitor.hub.ui.max-viewers sets by default: with a frame every 5 epochs, a hub ingesting 60,000 spans a second kept up with 128
-    // clients in the viewer ladder.
-    static final int MAX_CLIENTS = 128;
     // The frame interval (W1): an epoch, a second, for up to 16 clients, and one more for each 16 more, at most 5. Each client re-sends its
     // queries after every frame, so the interval spaces out the frames and the queries alike. Past 15 seconds the page would take the hub for gone.
     static final int CLIENTS_PER_EPOCH = 16;
@@ -37,14 +34,6 @@ public final class FramePublisher implements AutoCloseable {
     private final Thread publisher = Thread.ofPlatform().daemon().name("smd-monitor-frames").unstarted(this::publishEpochs);
     private volatile PublishedFrame latest;
     private boolean closed;
-
-    public FramePublisher(MonitorHub hub) {
-        this(hub, new MonitorFrames());
-    }
-
-    public FramePublisher(MonitorHub hub, MonitorFrames frames) {
-        this(hub, frames, MAX_CLIENTS, FramePublisher::intervalFor);
-    }
 
     // How many clients it takes, from the settings, and how many epochs apart it publishes for a number of clients, which a benchmark fixes.
     public FramePublisher(MonitorHub hub, MonitorFrames frames, int maxClients, IntUnaryOperator interval) {

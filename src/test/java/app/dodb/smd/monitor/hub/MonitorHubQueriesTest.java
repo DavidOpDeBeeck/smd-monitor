@@ -17,6 +17,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.IntStream;
 
 import static app.dodb.smd.monitor.hub.RecordingInstance.ASSIGN;
 import static app.dodb.smd.monitor.hub.RecordingInstance.BILLING;
@@ -50,6 +51,28 @@ class MonitorHubQueriesTest {
         assertThat(page.matching()).isEqualTo(3);
         assertThat(page.slowest()).contains(Duration.ofMillis(5));
         assertThat(page.next()).isEmpty();
+    }
+
+    // Retained invocations sit in chunks of 4,096 in arrival order, every application's interleaved; a query of one application or of the
+    // failures passes over the others' slots by what each slot keeps, also in the chunks a later epoch copied.
+    @Test
+    void tape_scopeAcrossChunksOfInterleavedApplications_countsOnlyItsInvocations() {
+        for (var round = 0; round < 3; round++) {
+            var spans = new ArrayList<MessageSpan>();
+            for (var index = 0; index < 1_500; index++) {
+                spans.add(index % 100 == 0 ? failed(tickets.dispatch(ASSIGN), 1) : tickets.dispatch(OPEN));
+            }
+            tickets.reportTo(hub, spans.toArray(MessageSpan[]::new));
+            billing.reportTo(hub, IntStream.range(0, 1_500).mapToObj(index -> billing.dispatch(OPEN)).toArray(MessageSpan[]::new));
+        }
+        var billingOnly = new InvocationFilter(Optional.of(BILLING), Set.of(), TypeSelection.EVERY_TYPE, Set.of(), "");
+
+        var page = hub.tape(new TapeQuery(billingOnly, Duration.ZERO, Optional.empty(), 10));
+        var failures = hub.failures(List.of(step(ASSIGN))).causes();
+
+        assertThat(page.total()).isEqualTo(4_500);
+        assertThat(page.invocations()).extracting(retained -> retained.invocation().application()).containsOnly(BILLING);
+        assertThat(failures).singleElement().satisfies(cause -> assertThat(cause.retained()).isEqualTo(45));
     }
 
     @Test

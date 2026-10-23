@@ -19,6 +19,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -133,8 +134,12 @@ final class SaturationPages implements AutoCloseable {
                 var request = HttpRequest.newBuilder(uri).timeout(TIMEOUT).GET();
                 held.ifPresent(eTag -> request.header("If-None-Match", eTag));
                 var started = System.nanoTime();
+                var headers = new AtomicLong(started);
                 try {
-                    var response = client.send(request.build(), HttpResponse.BodyHandlers.ofByteArray());
+                    var response = client.send(request.build(), info -> {
+                        headers.set(System.nanoTime());
+                        return HttpResponse.BodySubscribers.ofByteArray();
+                    });
                     var nanos = System.nanoTime() - started;
                     var answer = switch (response.statusCode()) {
                         case 200 -> Answer.ANSWERED;
@@ -149,9 +154,9 @@ final class SaturationPages implements AutoCloseable {
                         fault.compareAndSet(null, "query " + uri + " answered " + response.statusCode() + ": " + new String(response.body(), StandardCharsets.UTF_8));
                         return;
                     }
-                    this.asked.accept(new Query(asked, plan.page(), plan.view(), plan.scope(), answer, nanos, response.body().length));
+                    this.asked.accept(new Query(asked, plan.page(), plan.view(), plan.scope(), answer, nanos, headers.get() - started, response.body().length));
                 } catch (IOException failure) {
-                    this.asked.accept(new Query(asked, plan.page(), plan.view(), plan.scope(), Answer.FAILED, System.nanoTime() - started, 0));
+                    this.asked.accept(new Query(asked, plan.page(), plan.view(), plan.scope(), Answer.FAILED, System.nanoTime() - started, 0, 0));
                 }
             }
         } catch (InterruptedException interrupted) {
@@ -285,7 +290,8 @@ final class SaturationPages implements AutoCloseable {
 
     // One query a page asked: the epoch it asked after, the page, its view and scope, how the hub answered and after how long, and the bytes of
     // the answer.
-    record Query(long epoch, int page, View view, Optional<ApplicationName> scope, Answer answer, long nanos, long bytes) {
+    // The nanos run from asking to the answer's last byte read, of which the headers took the first.
+    record Query(long epoch, int page, View view, Optional<ApplicationName> scope, Answer answer, long nanos, long headersNanos, long bytes) {
 
         Query {
             requireNonNull(view);
@@ -295,13 +301,13 @@ final class SaturationPages implements AutoCloseable {
 
         String line() {
             return String.join(",", String.valueOf(epoch), String.valueOf(page), view.key(), scopeKey(scope), answer.key(), String.valueOf(nanos),
-                String.valueOf(bytes));
+                String.valueOf(headersNanos), String.valueOf(bytes));
         }
 
         static Query parse(String line) {
             var fields = line.split(",");
             return new Query(Long.parseLong(fields[0]), Integer.parseInt(fields[1]), View.of(fields[2]), SaturationPages.scope(fields[3]), Answer.of(fields[4]),
-                Long.parseLong(fields[5]), Long.parseLong(fields[6]));
+                Long.parseLong(fields[5]), Long.parseLong(fields[6]), Long.parseLong(fields[7]));
         }
     }
 }

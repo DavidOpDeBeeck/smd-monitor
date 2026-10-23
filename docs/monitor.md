@@ -105,7 +105,7 @@ virtual threads of its own, so pages never take a thread from the exports.
 | `smd.monitor.hub.ui.port`            | `8080`        | The page's port                                                                         |
 | `smd.monitor.hub.ui.address`         | Every address | The address the page's port listens on                                                  |
 | `smd.monitor.hub.ui.allowed-origins` | None          | Origins besides the page's own that may open `/live`, such as `https://monitor.example` |
-| `smd.monitor.hub.ui.max-viewers`     | `128`         | Pages open at once; the hub refuses the live connection of one more                     |
+| `smd.monitor.hub.ui.max-viewers`     | `128`         | Pages open at once, and queries answered at once; the hub refuses one more of either    |
 | `smd.monitor.hub.otlp.port`          | `4318`        | The OTLP endpoint's port, the standard one of OTLP/HTTP; differs from the page's        |
 | `smd.monitor.hub.otlp.address`       | Every address | The address the OTLP port listens on                                                    |
 
@@ -395,8 +395,8 @@ expanded or the failures or flow view shows them, for the failure causes the ove
 and asks again with every
 frame while it is visible; a hidden tab asks nothing until it shows again. Every answer but the timeline's, which moves with the clock, carries an ETag of
 its content, which the page sends back, so an answer that did not change answers 304 and the page renders nothing again. The trace list and the tape ask again for their first 100 only: read from the top,
-that is the list; scrolled further down, it replaces the top while the rest stays as loaded until the list is read from the top again. Identical queries of one epoch are answered once for every page. At most 16
-queries run at once; a further one gets 429 and the page keeps its last answer. An evicted invocation or trace answers 404; a parameter the hub cannot read
+that is the list; scrolled further down, it replaces the top while the rest stays as loaded until the list is read from the top again. Identical queries of one epoch are answered once for every page. At most as many
+queries run at once as pages may be open, `smd.monitor.hub.ui.max-viewers`; a further one gets 429 and the page keeps its last answer. An evicted invocation or trace answers 404; a parameter the hub cannot read
 answers 400 with the reason.
 
 ## Develop the UI
