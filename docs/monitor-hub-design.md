@@ -32,7 +32,7 @@ payloads, exception messages and stack traces, and counts that account for sampl
 | FR7  | The hub's own health: what it retains, evicts, refuses, and drops, by reason, and its memory against its budget.             |
 | FR8  | The scope is the system or one application. An instance is a filter.                                                         |
 | FR9  | Event delay per processing group and event type.                                                                             |
-| FR10 | Failure propagation chains, as a heuristic over retained specimens, computed when queried.                                   |
+| FR10 | Failure propagation chains, as a heuristic over retained specimens, computed by the first query of an epoch that asks.       |
 
 ### Technical
 
@@ -195,7 +195,7 @@ The hub keeps four kinds of state, each with its own lifetime and bound.
 | OTLP port threads (export)  | Decoding, `Admission`, packing, `IntakeQueues.offer`   | Admission (own lock), the queues (thread-safe) |
 | `smd-monitor-hub` writer    | Unpacking, receiving batches, ticking, building epochs | All mutable state of `Hub`, exclusively        |
 | Frame publisher             | Building, diffing, and serializing frames; async sends | The latest two epochs, immutable               |
-| Page port threads (queries) | `Queries` over the latest epoch                        | The epoch, immutable                           |
+| Page port threads (queries) | `Queries` over the latest epoch                        | The epoch, immutable, and its failure causes   |
 
 Per span, on the writer, in arrival order within its application:
 
@@ -443,8 +443,10 @@ Budgets still missed and work deferred, with the cause found and the levers to t
 - **The delta frame is above 100 KB** (370 KB at the design target, 73 KB deflated). Since the frame left out what only some views show (W1), most of it is
   the processing groups' window counts and event delays and the instances' counts, which change every second. Levers: leave the groups' figures to the
   views that expand them, or refresh percentiles and counts every few seconds instead of every second.
-- **The failures query takes 97 ms p99.** Each query walks every failed specimen and works out its propagation. Lever: index failed specimens by cause in the
-  writer as they are retained, and their propagation as children link.
+- **The first failures query of an epoch takes 97 ms p99.** It walks every failed specimen to find the failed parent each propagated to, and groups
+  them by cause (`FailureChains`); the epoch keeps what it found, so every other failures query of the epoch reads only the occurrences of its
+  causes, in 0.03 ms rather than the 117 ms each took on 2026-10-23 (`QueryBenchmark` on an AMD Ryzen 7 5825U, 1.2 million failed specimens). Lever:
+  index failed specimens by cause in the writer as they are retained, and their propagation as children link.
 - **Building an epoch takes 158 ms p99.** It rewrites the statistics of 27,500 types every second and snapshots the changed traces; the tail is collection pauses.
   Counts that did not change are shared with the previous epoch already, but a key's record is new every second, as its sparkline moves with the window. Lever:
   rebuild only the keys that counted or changed, with a sparkline that moves without a copy, which also shortens the publisher's comparison.
@@ -460,8 +462,7 @@ Budgets still missed and work deferred, with the cause found and the levers to t
 - **Viewers take cores.** Each viewer of another view costs its query once per epoch, and every viewer its frames: at 128 viewers the hub used 6.6
   cores against 1.1 without, and the writer kept 71% of its capacity without viewers (the viewer ladder of 2026-10-23, with the viewers' JVM on the
   same 16 threads). Most of it is the queries: a query of one application costs nearly what one of the system does, as the trace list walks
-  every trace to find the application's, and the failures query works out every failed invocation's chain for each set of causes asked. Levers:
-  index the traces by application as J7 indexes the specimens, work out the failures' chains once per epoch for every query, and fewer
-  queries at once while the writer is busy.
+  every trace to find the application's. Levers: index the traces by application as J7 indexes the specimens, and fewer queries at once while
+  the writer is busy. Since 2026-10-23 the failures queries of an epoch share one walk of its failed specimens.
 - **Shedding and the clock-ahead flag are covered by tests only.** The demo's in-process exporters never fill a queue share and share the hub's clock. Lever: a demo
   instance in another process that exports bursts, and one whose clock runs ahead.
