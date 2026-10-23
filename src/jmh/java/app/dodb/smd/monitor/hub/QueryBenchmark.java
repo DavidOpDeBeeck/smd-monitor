@@ -38,8 +38,9 @@ public class QueryBenchmark {
     // Most pages look at one application, as the pages of SaturationPages do after the first four.
     private TapeQuery tapeOfOne;
     private TimelineQuery timelineOfOne;
-    // The causes the Failures view shows first: the most frequent of the window.
+    // The causes the Failures view shows first: the most frequent of the window, and those of one application.
     private List<FailureCause.Step> shown;
+    private List<FailureCause.Step> shownOfOne;
 
     @Setup(Level.Trial)
     public void fill() {
@@ -53,11 +54,10 @@ public class QueryBenchmark {
             .flatMap(application -> application.failures().stream().map(failure -> Map.entry(failure,
                 new FailureCause.Step(application.application(), failure.failure().stage(), failure.failure().failureType()))))
             .toList();
-        shown = counted.stream()
-            .sorted(Comparator.comparingLong((Map.Entry<RaisedFailureStatistics, FailureCause.Step> entry) -> entry.getKey().window()).reversed())
-            .limit(SHOWN_CAUSES)
-            .map(Map.Entry::getValue)
-            .toList();
+        var ranked = Comparator.comparingLong((Map.Entry<RaisedFailureStatistics, FailureCause.Step> entry) -> entry.getKey().window()).reversed();
+        shown = counted.stream().sorted(ranked).limit(SHOWN_CAUSES).map(Map.Entry::getValue).toList();
+        shownOfOne = counted.stream().filter(entry -> entry.getValue().application().equals(one.scope().orElseThrow())).sorted(ranked).limit(SHOWN_CAUSES)
+            .map(Map.Entry::getValue).toList();
         System.out.printf("Failures of the steady load: %,d causes counted; the %d shown retain %,d occurrences%n", counted.size(), shown.size(),
             epoch.failures(shown).causes().stream().mapToInt(FailureCause::retained).sum());
     }
@@ -97,13 +97,31 @@ public class QueryBenchmark {
         return epoch.traces(TRACES);
     }
 
+    // The first failures query of an epoch walks its failed specimens; the others of the epoch read only the occurrences of their causes.
     @Benchmark
-    public Failures failures() {
-        return epoch.failures(shown);
+    public Failures failures(FreshEpoch fresh) {
+        return fresh.epoch.failures(shown);
+    }
+
+    @Benchmark
+    public Failures failuresOfOneApplicationAfterTheFirst() {
+        return epoch.failures(shownOfOne);
     }
 
     @Benchmark
     public TimelineWindow timeline() {
         return epoch.timeline(TIMELINE);
+    }
+
+    // An epoch no query asked yet, of the same specimens.
+    @State(Scope.Thread)
+    public static class FreshEpoch {
+
+        private Epoch epoch;
+
+        @Setup(Level.Invocation)
+        public void tick(QueryBenchmark benchmark) {
+            epoch = benchmark.hub.epoch();
+        }
     }
 }
