@@ -25,8 +25,8 @@ import static java.util.Objects.requireNonNull;
 // viewers, 1, 2, 4, and so on, and for each climbs from two rates below the last limit until a step is not usable. A climb whose first rate is
 // not usable climbs again from the ladder's first; once even that is not usable, the viewers before were the most the hub serves, so a change that
 // lets it serve more shows as more viewers, and no run tests viewers beyond the limit. Each climb is a saturation run in a JVM of its own that
-// fills a minute of history, and writes into <output>/v-<n>; the frontier goes to <output>/capacity.json, which docs/saturation/dashboard.py
-// --add-capacity keeps for the saturation page's Capacity view.
+// fills a minute of history, and writes into <output>/v-<n>; the frontier goes to <output>/capacity.json, which ./gradlew benchmarkRecord keeps
+// for the benchmarks page's Capacity view.
 public final class SaturationCapacity {
 
     private static final int MAX_VIEWERS = 4_096;
@@ -92,7 +92,7 @@ public final class SaturationCapacity {
             SaturationUsability.FRESH_WORST));
         capacity.put("limits", limits);
         Files.writeString(output.resolve("capacity.json"), new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(capacity));
-        System.out.printf("%nCapacity of %s in %s: %s; add it to the saturation page with ./gradlew saturationDashboard -PsaturationCapacity%n", SCENARIO, output,
+        System.out.printf("%nCapacity of %s in %s: %s; keep it with ./gradlew benchmarkRecord -PbenchmarkName=\"<name>\"%n", SCENARIO, output,
             limits.stream().map(limit -> "%,d viewers at %,d spans/s".formatted(limit.viewers(), limit.rate())).collect(Collectors.joining(", ")));
     }
 

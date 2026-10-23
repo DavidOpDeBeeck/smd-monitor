@@ -15,11 +15,11 @@
       "port": 5173
     },
     {
-      "name": "saturation-page",
+      "name": "benchmarks-page",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "python3 -I docs/saturation/dashboard.py --out build/saturation-page/dashboard.html && exec python3 -I -m http.server 8765 --bind 0.0.0.0 --directory build/saturation-page"],
+      "runtimeArgs": ["-c", "python3 -I docs/benchmarks/benchmarks.py page && exec python3 -I -m http.server 8765 --bind 0.0.0.0 --directory build/benchmarks"],
       "port": 8765,
-      "url": "http://127.0.0.1:8765/dashboard.html"
+      "url": "http://127.0.0.1:8765/page.html"
     }
   ]
 }

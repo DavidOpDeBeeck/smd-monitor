@@ -1,8 +1,8 @@
 [
-{"key":"machine","label":"Machine","value":"AMD Ryzen 7 5825U, 16 threads, 32 GB, Linux"},
+{"key":"machine","label":"Reference machine","value":"AMD Ryzen 7 5825U, 16 threads, 32 GB, Linux"},
 {"key":"jvm","label":"JVM","value":"OpenJDK 25.0.4, 12 GB heap, G1, one JVM per scenario"},
 {"key":"scenarios","label":"Scenarios","value":"A reference shape; four sweeps that each change one thing of it: applications (5, 100, 500), instances (100 each), message types (1,000 each), and budget (256 MB); and the standalone deployment profile, the design target"},
-{"key":"coverage","label":"Coverage","value":"Every run runs the eight scenarios, on an otherwise idle machine"},
+{"key":"coverage","label":"Coverage","value":"The core scenarios (the reference, 500 applications, and the 256 MB budget), or all eight with -PsaturationScenarios=all, on an otherwise idle machine"},
 {"key":"fill","label":"Before measuring","value":"The whole history, filled at 5,000 spans/s as fast as the hub takes it, so scenarios that compare start from the same state"},
 {"key":"steps","label":"Each rate","value":"Each rate of one ladder up to 300,000 spans/s offered for 30 s, open loop, until two fail in a row; the first 5 s of each are left out"},
 {"key":"load","label":"Load","value":"4 generator threads; 8 submitting threads call admission and the intake queues"},

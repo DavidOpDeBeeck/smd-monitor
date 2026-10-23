@@ -92,7 +92,7 @@ public final class SaturationRun {
     private static final int DELIVERY_COLUMNS = 13;
     // The run every scenario of one invocation belongs to, named by when it started and the commit; the parent passes it on to the JVM of each.
     private static final String RUN_PROPERTY = "saturation.run";
-    // What the run ran on, from -PsaturationMachine; described from the JVM when absent.
+    // What the run ran on, from -PbenchmarkMachine; described from the JVM when absent.
     private static final String MACHINE_PROPERTY = "saturation.machine";
 
     private final SaturationScenario scenario;

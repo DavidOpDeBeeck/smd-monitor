@@ -313,13 +313,13 @@ documents.
 ./gradlew saturation -PsaturationScenarios=all         # every scenario, about 35 minutes
 ./gradlew saturation -PsaturationScenarios=quick       # the reference and the profiles; or a sweep, or IDs such as applications-500
 ./gradlew saturation -PsaturationScenarios=applications-500 -PsaturationRates=40000,50000 -PsaturationJfr=build/saturation/a500.jfr
-./gradlew saturationDashboard                          # adds build/saturation to docs/saturation and writes build/saturation/dashboard.html
+./gradlew benchmarkRecord -PbenchmarkName="..."       # keeps the run in docs/benchmarks/runs and writes build/benchmarks/page.html
 ```
 
 A run writes a table, every second as CSV, and its limits and steps as JSON to `build/saturation`, and the latest progress line to `build/saturation/progress.txt`.
-Name the machine with `-PsaturationMachine="..."`, pass collector flags with `-PsaturationJvmArgs`, name the run on the page with `-PsaturationName="..."`
-instead of Run N, and choose the Python of `saturationDashboard` with `-PsaturationPython`. `docs/saturation` keeps every run added; its page compares
-them on one scale, so an improvement shows as a limit that moves right. A limit moves in steps of the ladder, and two runs of one commit can land a step
+Name the machine with `-PbenchmarkMachine="..."` and pass collector flags with `-PsaturationJvmArgs`. A run is kept as every benchmark's is
+([`docs/benchmarks/README.md`](benchmarks/README.md)): one run file per change, which the benchmarks page compares with main's newest on one scale, so an
+improvement shows as a limit that moves right. A limit moves in steps of the ladder, and two runs of one commit can land a step
 apart, so the page also compares the writer's capacity: the spans processed per second of the writer on a core, at the rates both runs offered. It moves by
 a few percent between runs of one commit, so a change of a tenth shows plainly. Compare only runs of the same machine, and run on an idle one.
 
@@ -331,7 +331,7 @@ snapshots among them, the lag from the end of the second an epoch closes to the 
 Clients that read frames as they come connect before the run's clock starts. Slow ones read 10 MB of JSON a second, about what a 16 Mbit/s link carries once
 deflated, or `-PsaturationSlowClientRate` characters, and connect as the clock starts, as a page that opens on a busy hub. The summary adds a table per
 scenario, the JSON a `delivery` object, and `<scenario>-frames.csv` lists every frame read. The clients share the hub's cores and leave out the network and
-the page's parsing. On the saturation page, *Second by second* › *Frame delivery* stacks each second's lag in its parts (tick, epoch build, publisher wait,
+the page's parsing. On the benchmarks page, *Second by second* › *Frame delivery* stacks each second's lag in its parts (tick, epoch build, publisher wait,
 frame write, and send and read), which add up to the lag of the fast or, toggled, the slow client in the middle, and marks the seconds a client read as a
 snapshot or never read. Picked runs get a panel each, on shared axes, as every second-by-second measure does.
 
@@ -340,7 +340,7 @@ exports each batch to `OtlpServer` on the loopback address instead of submitting
 the OTLP exporter's own encoder (`OtlpExports`, which `OtlpExportsTest` checks against the hub's decoder), each on a virtual thread of its own, so a slow
 answer holds up no other export. The receiving threads then read, inflate, decode, and admit as they do in production, and a 503 counts as busy. The
 fill still submits directly, as it only sets up the state the steps measure. Per step the run also reports the requests, those answered busy, the time
-from sending a request to reading its answer, and a request's size; the saturation page shows the answer time as *OTLP answer* among the measures
+from sending a request to reading its answer, and a request's size; the benchmarks page shows the answer time as *OTLP answer* among the measures
 of *Rate by rate*. With `-PsaturationViewers=64`, that many open UIs run in a JVM of their own (`SaturationViewers`), as on the machines of the people
 viewing, so the hub's heap and collections are its own: each reads the frames over the hub's WebSocket in place of the clients, and its page asks its
 view's query over HTTP whenever it reads a newer frame, as the page does (`SaturationPages`). The pages take the tape, the traces, the failures of the
@@ -355,7 +355,7 @@ The viewer ladder asks how many open UIs the hub serves while it ingests, and at
 16, 32, 48, 64, and 128) and query cap (4, 16, 64), each filling a minute of the reference scenario and offering 60,000 spans per second for one step,
 about 25 minutes. For each it keeps what the viewers got (queries answered, the share of seconds the worst and the median viewer saw fresh data, the answer
 time, frames received and their lag) and what it cost the hub (writer capacity against the run without viewers, cores, heap, and collections), and whether
-ingest kept up. `saturationDashboard -PsaturationViewers` adds it to `docs/saturation/viewers.json`, and the page's *End to end* › *Open UIs* view draws
+ingest kept up. `benchmarkRecord` keeps it as a viewers run, and the benchmarks page's *End to end* › *Open UIs* view draws
 it: the caps of one ladder, or one cap across ladders, to compare a change.
 
 The capacity frontier asks how many open UIs the hub serves at which span rate. Without viewers it climbs the reference scenario's rates until the
@@ -364,7 +364,7 @@ until the UIs are no longer usable: 99% of the frames read, with a p99 lag of at
 queries answered, with a p99 answer of at most a second, and the least lucky viewer's view fresh after 95% of the frames (`SaturationUsability`).
 The run judges each step a few seconds after it ends and stops at the first that is not usable, so no step is offered past the frontier. Once even
 the ladder's first rate is not usable, the viewers before were the most the hub serves; a change that serves more shows as viewers further right,
-and no run spends time on viewers beyond the limit. `saturationDashboard -PsaturationCapacity` adds it to `docs/saturation/capacity.json`, and the
+and no run spends time on viewers beyond the limit. `benchmarkRecord` keeps it as a capacity run, and the
 page's *End to end* › *Capacity* view draws each run's frontier.
 
 The first frontier, on 2026-10-23 at the lean frame (W1), took 30 minutes: without viewers and with up to 8 the hub kept up with 200,000 spans per
@@ -374,9 +374,8 @@ the second the UIs are given, so which rate passes there is close to chance, as 
 
 ```bash
 ./gradlew saturationCapacity                           # the capacity frontier: span rate against open UIs
-./gradlew saturationDashboard -PsaturationCapacity     # adds build/saturation-capacity to docs/saturation
 ./gradlew saturationViewers                            # the viewer ladder, about 25 minutes; -PsaturationViewerCounts=1,16,64 -PsaturationQueryCaps=4,64
-./gradlew saturationDashboard -PsaturationViewers      # adds build/saturation-viewers to docs/saturation
+./gradlew benchmarkRecord -PbenchmarkName="..."        # keeps either in docs/benchmarks/runs
 ```
 
 The first two ladders, on 2026-10-22 on the Ryzen 7 5825U, measured what changed W3 and C9. Before, at the commit after pull request #8, a client
@@ -421,7 +420,7 @@ documented rate, a heavier steady state than one reached by stepping up, so the 
 
 Budgets still missed and work deferred, with the cause found and the levers to try.
 
-- **Many applications cap the writer.** 500 applications first fail at 80,000 spans per second where 5 hold 200,000 (run 1 in `docs/saturation`). Already
+- **Many applications cap the writer.** 500 applications first fail at 80,000 spans per second where 5 hold 200,000 (run 1 of the runs `docs/saturation` kept until 2026-10-23, in git history). Already
   done: the reservoirs keep their entries by application, `Specimens` and `SpanIndex` keep running byte counts, `SpanIndex` fits from a heap of the applications
   above their share built once per fit, `Specimens`, which fits after every batch, keeps its heap from one fit to the next and sets aside the applications at
   their floor until Recent holds a trace of theirs or their reservoirs grow, sparklines copy out of their rings, failure series are read in one pass, handlings
@@ -438,8 +437,8 @@ Budgets still missed and work deferred, with the cause found and the levers to t
 - **The publisher at 500 applications** writes a delta in about 1.5 seconds under load, so pages miss frames, and its garbage lengthens the collections that
   pause the writer. Already done: the delta keys records by the values that name them rather than by text, and latency figures round their nanoseconds as
   integers rather than through an exact decimal. Together they took a quarter of a frame and over half the publisher's garbage, whose collections paused the
-  writer: at 500 applications its capacity rose by a tenth, and frames fit a second up to 40,000 spans per second where none did (runs 5 and 6 in
-  `docs/saturation`). What is left: reading every field of every record by reflection to compare two frames (about a fifth of the publisher; caching the
+  writer: at 500 applications its capacity rose by a tenth, and frames fit a second up to 40,000 spans per second where none did (runs 5 and 6 of
+  `docs/saturation`, in git history). What is left: reading every field of every record by reflection to compare two frames (about a fifth of the publisher; caching the
   accessors moved that time into the reflective call). Levers: those of the delta below, and rebuilding only the records that changed.
 - **The delta frame is above 100 KB** (370 KB at the design target, 73 KB deflated). Since the frame left out what only some views show (W1), most of it is
   the processing groups' window counts and event delays and the instances' counts, which change every second. Levers: leave the groups' figures to the

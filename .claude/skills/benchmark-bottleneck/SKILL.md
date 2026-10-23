@@ -1,6 +1,6 @@
 ---
 name: benchmark-bottleneck
-description: Autonomously find where the monitor hub's throughput stops and remove it. Reads the saturation results (build/saturation, docs/saturation, JMH), ranks the bottlenecks, tries optimizations one at a time with short before/after probes, and for one that works runs the full saturation benchmark before and after, adds both runs to docs/saturation, screenshots the saturation page as proof (improving the page when it does not show the gain plainly), and opens a concise pull request with the code, the run data, and the screenshots. Runs without asking for approval. Use when asked to analyse benchmark or saturation results, find a bottleneck, or make the hub faster.
+description: Autonomously find where the monitor hub's throughput stops and remove it. Reads the saturation results (build/saturation, docs/benchmarks/runs, JMH), ranks the bottlenecks, tries optimizations one at a time with short before/after probes, and for one that works records a full saturation run of the change in docs/benchmarks/runs against main's newest run, screenshots the benchmarks page as proof (improving the page when it does not show the gain plainly), and opens a concise pull request with the code, the run file, and the screenshots. Runs without asking for approval. Use when asked to analyse benchmark or saturation results, find a bottleneck, or make the hub faster.
 ---
 
 # Find a bottleneck, remove it, and prove it
@@ -16,7 +16,7 @@ dependency that does not resolve, a push or pull request that is refused).
 | 1. Analyse | Nothing: reads the results that exist | Bottlenecks are ranked, each with a probe to measure it |
 | 2. Probe before | The target scenario and one or two check scenarios, on the base commit | The probe shows the bottleneck, and the profile agrees |
 | 3. Try a change | `./gradlew test`, then the same probes | A change improves the target and worsens no check, or the candidates run out |
-| 4. Prove it | `./gradlew saturation` before and after, about 13 minutes each | Both runs are in `docs/saturation` and the screenshots show the gain |
+| 4. Prove it | `./gradlew saturation` on the change, about 13 minutes, and on main only when its newest run does not compare | The run is recorded in `docs/benchmarks/runs` and the screenshots show the gain against main's |
 | 5. Pull request | `git push`, `gh pr create` | The pull request is open and the user is told |
 
 **Stop** after one pull request, or after five changes that did not improve anything, unless the arguments ask for more; then report what the journal holds.
@@ -41,8 +41,10 @@ dependency that does not resolve, a push or pull request that is refused).
   ```
 
 - **One machine.** Limits depend on the machine. Compare only runs of the same machine: probes with probes, and full runs with full runs whose `machine` in
-  `docs/saturation/runs.json` names this one. The runs kept there may come from another machine; then they only point at bottlenecks, never serve as a
+  `docs/benchmarks/runs/*.json` names this one. The runs kept there may come from another machine; then they only point at bottlenecks, never serve as a
   "before".
+- **One process.** Full runs are kept as `docs/benchmarks/README.md` describes, and only those: one run per kind of the change, recorded with
+  `./gradlew benchmarkRecord`, against main's newest run. Probes stay in `build/saturation-probe`.
 - **Background, no polling.** Run probes, benchmarks, and the tests in the background (Bash `run_in_background`) and wait for the notification.
 - **Commands.** Use `python3` (Linux, macOS) or `py` (Windows) for the scripts below. When `./gradlew` is not executable in the checkout, run `bash ./gradlew`
   rather than changing its mode.
@@ -57,8 +59,8 @@ Read, without running anything:
 
 - `build/saturation/<scenario>.json`: the latest result of each scenario, with its limits (`keepsUp`, `holds`, `failsAt`, `failsAs`) and every step's
   measures; `summary.md` for the same as tables, and `<scenario>.csv` for the seconds of a step that needs a closer look.
-- `docs/saturation/runs.json`, `steps.json` and `seconds.json` for the runs kept, so a trend or a regression shows; `profile.json` for the last writer profile
-  kept; `setup.json` for how they were measured.
+- `docs/benchmarks/runs/*.json` for the runs kept, one per merged change and kind, so a trend or a regression shows; `*.seconds.json` for the seconds of
+  the newest three saturation runs; `docs/benchmarks/setup.json` for how they were measured.
 - `build/results/jmh/results.json`, when it exists, for the JMH benchmarks of the single-threaded paths.
 - `docs/monitor-hub-design.md`, sections *Saturation* and *Open items*, for what is already known and the levers already named.
 
@@ -145,36 +147,38 @@ otherwise the next bottleneck of step 1.
 Commit the change on the branch, with its tests and the docs `AGENTS.md` asks for (`docs/monitor-hub-design.md` when a decision or budget changes,
 `docs/monitor.md` when public behavior changes). Do not change the throughput `docs/monitor.md` documents.
 
-The proof is two full runs on this machine: **before** on the base commit and **after** on the branch's commit, each with the core scenarios, the
-default; add `-PsaturationScenarios=all` when the change targets a scenario outside them. When the change touches frames, queries, or the WebSocket, also run
-the capacity frontier (`./gradlew saturationCapacity`) before and after, add both with `saturationDashboard -PsaturationCapacity`, and screenshot
-`view=capacity`; the viewer ladder (`saturationViewers`) shows what each viewer costs at one rate when the frontier moved and the reason is unclear.
+The proof is the change's full run on this machine, compared with main's newest run: the core scenarios, the default; add
+`-PsaturationScenarios=all` when the change targets a scenario outside them. When the change touches frames, queries, or the WebSocket, also run the
+capacity frontier (`./gradlew saturationCapacity`) and screenshot `view=capacity`; the viewer ladder (`saturationViewers`) shows what each viewer costs at
+one rate when the frontier moved and the reason is unclear. Record whatever ran under the one name.
 
-- Name the machine as the earlier runs of this machine in `docs/saturation/runs.json` did; when there are none, name it by processor, threads, memory, and
-  operating system, such as `Ryzen 7 5825U, 16 threads, 32 GB, Linux`, and use that name for both runs.
-- Reuse a "before" already kept when `runs.json` holds a full run of this machine on the base commit, or on a commit whose `src/main` does not differ from
-  it. Otherwise run it: switch to the base commit in a separate worktree (`git worktree add`), so the branch stays as it is.
+- Name the machine as the runs of this machine in `docs/benchmarks/runs` do; when there are none, name it by processor, threads, memory, and operating
+  system, such as `Ryzen 7 5825U, 16 threads, 32 GB, Linux`.
+- Main's newest run of the kind is the "before" when it ran on this machine, with the scenarios the change's run runs, on a commit whose `src/main` does
+  not differ from the base's (`git diff --quiet <its commit> origin/main -- src/main`). Otherwise measure main too: check out the base commit in a separate
+  worktree (`git worktree add`), so the branch stays as it is, run it there, and record it from there with its own name, `Main at <short commit>`.
 
 ```bash
-flock /tmp/smd-monitor-bench.lock ./gradlew saturation -PsaturationMachine="<machine>"     # in the base worktree for before, on the branch for after
-cp -r <that checkout>/build/saturation build/saturation-probe/full-<before|after>
-python3 -I docs/saturation/dashboard.py --add build/saturation-probe/full-<before|after> --name "<name>" --out build/saturation-page/dashboard.html
+flock /tmp/smd-monitor-bench.lock ./gradlew saturation -PbenchmarkMachine="<machine>"          # on the branch, its change committed
+./gradlew benchmarkRecord -PbenchmarkName="<name of the change>"
+# only when main's newest run does not compare, in the base worktree first:
+flock /tmp/smd-monitor-bench.lock ./gradlew saturation -PbenchmarkMachine="<machine>"
+./gradlew benchmarkRecord -PbenchmarkName="Main at <short commit>" -PbenchmarkResults=saturation=<base worktree>/build/saturation   # on the branch
 ```
 
-Run "before" and add it, then "after" and add it, always into the branch's `docs/saturation`: a run in the base worktree writes that worktree's
-`build/saturation`, so copy it into the branch's `build/saturation-probe/full-before` first. Keep both copies until the pull request is merged: they are what
-the runs are added again from when `main` moves. Each line the run prints, and `build/saturation/progress.txt`, say which scenario of how many it runs and how
-long it still takes. `dashboard.py --add` merges the run into `docs/saturation` as the next Run N and writes the page with the data inlined; the
-`docs/saturation/dashboard.html` itself is the template and stays as it is.
+`benchmarkRecord` keeps each kind's results that measured `HEAD` as one run file, `docs/benchmarks/runs/<date>-<slug>.<kind>.json`, and writes the page,
+`build/benchmarks/page.html`; it refuses results measured with uncommitted changes, so commit the change before the full run. Each line the run prints,
+and `build/saturation/progress.txt`, say which scenario of how many it runs and how long it still takes.
 
-Name each run so the page says what it measured, in at most about 40 characters: the "after" by the change, such as `Reserved queue room and pool`, and
-the "before" by the same words, such as `Before reserved queue room and pool`. The page shows the name instead of "Run N"; the query string still picks runs by
-their number, which `dashboard.py` prints. Name a run kept, or rename one, with `--rename <N>=<name>`.
+Name the change's run by what the change does, in at most about 40 characters, such as `Reserved queue room and pool`. The page shows the name, and
+the query string picks runs by its slug, such as `runs=main-at-1a2b3c4,reserved-queue-room-and-pool`; with no runs picked it compares the newest two of
+each kind, main's and the change's.
 
 Compare each scenario's writer capacity (the table of the page's `change` view: spans processed per second of the writer on a core, over the rates both
 runs offered) and its `keepsUp`, `holds`, `failsAt` and `failsAs` between the two runs. Runs of one commit differ by a few percent in capacity and up to a
-step in a limit. The full runs must confirm the probe: the target scenario's capacity or limit better, no scenario's capacity lower by more than 5%, and no
-limit worse by more than one step. When they do not, record it, drop the commit, and go back to step 3.
+step in a limit. The full run must confirm the probe: the target scenario's capacity or limit better, no scenario's capacity lower by more than 5%, and no
+limit worse by more than one step. When it does not, record it in the journal, delete the run file (it never reached main), drop the commit, and go back
+to step 3.
 
 ### Screenshots
 
@@ -188,13 +192,13 @@ npm install --prefix <scratch>/pw playwright@<version>
 ```
 
 Point `PLAYWRIGHT_BROWSERS_PATH` at the cache, or `CHROMIUM` at a Chromium executable. Only when there is none, run `npx --prefix <scratch>/pw playwright
-install chromium-headless-shell` in the background. Then screenshot the page, choosing each view by its query string, with the run numbers of before and after:
+install chromium-headless-shell` in the background. Then screenshot the page, choosing each view by its query string, with the slugs of main's run and the change's:
 
 ```bash
 PLAYWRIGHT_BROWSERS_PATH=<cache> NODE_PATH=<scratch>/pw/node_modules node .claude/skills/benchmark-bottleneck/dashboard_screenshots.cjs \
-  build/saturation-page/dashboard.html docs/saturation/proof/<slug> \
-  change="view=change&runs=<before>,<after>" \
-  target="view=steps&scenario=<target>&measure=<measure that shows the mechanism>&runs=<before>,<after>"
+  build/benchmarks/page.html docs/benchmarks/proof/<slug> \
+  change="view=change&runs=<main's slug>,<slug>" \
+  target="view=steps&scenario=<target>&measure=<measure that shows the mechanism>&runs=<main's slug>,<slug>"
 ```
 
 The script takes each view as a figure: the title, the runs, the chart and its key, 1,000 pixels wide so a pull request shows it unscaled. It fails on a page
@@ -205,22 +209,22 @@ change moves that whole sweep. Look at each screenshot before using it (Read the
 
 ### Improve the page when it hides the gain
 
-The saturation page is part of the work too: we iterate on everything. When no view shows plainly what the change improved, or a view fails, misleads, or
+The benchmarks page is part of the work too: we iterate on everything. When no view shows plainly what the change improved, or a view fails, misleads, or
 cuts rows off, improve the page rather than settling for a weaker screenshot: a measure or view it lacks, a clearer label or scale, a chart that compares two
-runs better, a bug. The page is `docs/saturation/dashboard.html`, a template without data, and `docs/saturation/dashboard.py`, which inlines the data.
+runs better, a bug. The page is `docs/benchmarks/page.html`, a template without data, and `docs/benchmarks/benchmarks.py`, which inlines the data.
 
 - Keep the page self-contained: one HTML file that opens from disk, its state in the query string, no external scripts or fonts.
-- Change what serves every run, not this one pull request: no run numbers or scenario names written into the page.
+- Change what serves every run, not this one pull request: no run slugs or scenario names written into the page.
 - Compare runs in one chart when each run is a line of a few points on a shared scale, and the comparison happens at a point: whose line is higher at
   a rate, whose limit sits further right. Rate by rate, the sweeps, and the limits per scenario overlay their runs; in panels the eye would jump
   between charts to compare two points. Give each run a panel of its own, on the same axes, when overlaid runs would cover or tangle: stacked parts,
   such as frame delivery, and long series of seconds, such as second by second. `multiples` draws the panels.
-- Write the page again with `dashboard.py --out build/saturation-page/dashboard.html`, and screenshot every view (`change`, `overview`, each
-  `sweep-<sweep>`, `steps`, `seconds`, `about`, and one with `figure=0`) for the runs kept, so a change that breaks another view shows as the script failing. Look at them.
+- Write the page again with `./gradlew benchmarkPage`, and screenshot every view (`change`, `overview`, each `sweep-<sweep>`, `steps`, `seconds`,
+  `capacity`, `viewers`, `jmh`, `about`, and one with `figure=0`) for the runs kept, so a change that breaks another view shows as the script failing. Look at them.
 - Commit it on the branch in a commit of its own, before the data, and say what it changed in one line of the pull request.
 
-Commit the data and the screenshots on the branch in a commit of their own: `docs/saturation/{runs,steps,seconds,scenarios}.json` and
-`docs/saturation/proof/<slug>/*.png`.
+Commit the run files and the screenshots on the branch in a commit of their own: `docs/benchmarks/runs/<date>-<slug>.*` and
+`docs/benchmarks/proof/<slug>/*.png`.
 
 ## 5. Open the pull request
 
@@ -277,18 +281,16 @@ Every other scenario: the same limits, writer capacity within ±n%.
 |---|---|---|
 | <Benchmark.method>, p50 | ... | ... (−n%) |
 
-**Runs.** Full saturation runs on <machine>, kept in `docs/saturation` as runs <before> and <after>.
+**Runs.** Full saturation run on <machine>, recorded as `<slug>` and compared with main's `<main's slug>`.
 **Page.** <When the page changed: what it now shows.>
 
-![What changed between runs](https://github.com/<owner>/<repo>/blob/<commit>/docs/saturation/proof/<slug>/change.png?raw=true)
-![<Measure> at <target> rate by rate](https://github.com/<owner>/<repo>/blob/<commit>/docs/saturation/proof/<slug>/target.png?raw=true)
+![What changed between runs](https://github.com/<owner>/<repo>/blob/<commit>/docs/benchmarks/proof/<slug>/change.png?raw=true)
+![<Measure> at <target> rate by rate](https://github.com/<owner>/<repo>/blob/<commit>/docs/benchmarks/proof/<slug>/target.png?raw=true)
 ```
 
 Link the screenshots by the commit that added them, so the images stay as they were when the branch moves on.
 
-When `main` moves before the pull request is merged, and above all when it adds runs of its own, the run data conflicts: each pull request numbers its runs
-after the last run on its base. Rebase the branch onto `origin/main`, take the run data from `main` (`git checkout origin/main --
-docs/saturation/{runs,steps,seconds,scenarios}.json`), add the two runs again from `build/saturation-probe/full-{before,after}` with their names (and `--only` with the scenarios
-`scenarios.json` holds, when a run's results hold scenarios `SaturationScenario` no longer defines), take the
-screenshots again with the new run numbers, update the body's links, and push with `--force-with-lease`; this branch is this skill's own. Then tell the user: the pull request's link,
+When `main` moves before the pull request is merged, rebase the branch onto `origin/main` and push with `--force-with-lease`; this branch is this
+skill's own. The run files do not conflict: each run is a file of its own. When `main` merged a run of the same kind meanwhile, it is the newer baseline:
+compare with it, and when it no longer compares, measure main again as step 4 describes. Then tell the user: the pull request's link,
 the table, and anything the journal holds that the pull request leaves out, such as changes that did not work and the next bottleneck.

@@ -12,8 +12,8 @@ import java.util.Locale;
 // How many open UIs the hub serves while it ingests, and at what cost: a run without viewers, then one per number of viewers and query cap, each a
 // saturation run of the reference scenario in a JVM of its own that fills a minute of history and offers one rate for a step while the viewers
 // are open (SaturationViewers). At each number of viewers the query caps take turns, so drift of the machine meets every cap alike. Each run
-// writes into <output>/baseline or <output>/cap-<c>/v-<n>, and docs/saturation/dashboard.py --add-viewers keeps the ladder for the saturation
-// page's Open UIs view.
+// writes into <output>/baseline or <output>/cap-<c>/v-<n>, and ./gradlew benchmarkRecord keeps the ladder for the benchmarks page's Open UIs
+// view.
 public final class SaturationViewerLadder {
 
     static final List<Integer> VIEWERS = List.of(1, 8, 16, 32, 48, 64, 128);
@@ -48,7 +48,7 @@ public final class SaturationViewerLadder {
                 POINT_ESTIMATE.multipliedBy(points.size() - index - 1));
             SaturationRun.runInOwnJvm(scenario, point.output(), fill, rate, progress, point.properties());
         }
-        System.out.printf("%nViewer ladder of %d runs in %s; add it to the saturation page with ./gradlew saturationDashboard -PsaturationViewers%n",
+        System.out.printf("%nViewer ladder of %d runs in %s; keep it with ./gradlew benchmarkRecord -PbenchmarkName=\"<name>\"%n",
             points.size(), output);
     }
 

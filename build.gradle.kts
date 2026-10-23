@@ -1,3 +1,6 @@
+import java.time.Instant
+import java.time.temporal.ChronoUnit
+
 plugins {
     java
     application
@@ -145,6 +148,22 @@ jmh {
     providers.gradleProperty("jmhProfilers").orNull?.let { profilers = it.split(",") }
 }
 
+// Names the JMH run as the saturation runs name theirs, by when it started and the commit it measures, marked when the working tree differs, and
+// the machine (-PbenchmarkMachine), in build/results/jmh/run.json beside the results, so ./gradlew benchmarkRecord can keep it.
+tasks.named("jmh") {
+    val stamp = layout.buildDirectory.file("results/jmh/run.json")
+    val machine = providers.gradleProperty("benchmarkMachine")
+    val root = layout.projectDirectory.asFile
+    doFirst {
+        fun git(vararg arguments: String) = ProcessBuilder("git", *arguments).directory(root).start().inputStream.bufferedReader().readText().trim()
+        val changed = git("status", "--porcelain", "--untracked-files=no").isNotEmpty()
+        val run = "${Instant.now().truncatedTo(ChronoUnit.SECONDS)} ${git("rev-parse", "--short", "HEAD")}${if (changed) " with changes" else ""}"
+        val described = machine.orNull ?: "${System.getProperty("os.arch")}, ${Runtime.getRuntime().availableProcessors()} threads, ${System.getProperty("os.name")}"
+        val json = { value: String -> "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"" }
+        stamp.get().asFile.apply { parentFile.mkdirs() }.writeText("{\"run\":${json(run)},\"machine\":${json(described)}}\n")
+    }
+}
+
 // The JVM of a saturation run: the heap the benchmarks use, a GC log per process in the output directory, which the JVM opens before the run
 // creates it, and optionally a flight recording, for example -PsaturationJfr=build/saturation/B100.jfr, to see where the writer and the
 // collector spend their time.
@@ -155,8 +174,8 @@ fun JavaExec.saturationJvm(output: Provider<Directory>) {
     providers.gradleProperty("saturationJfr").orNull?.let { jvmArgs("-XX:StartFlightRecording=filename=$it,settings=profile") }
     // For example -PsaturationJvmArgs="-XX:+UseZGC", to measure with another collector than the default G1.
     providers.gradleProperty("saturationJvmArgs").orNull?.let { jvmArgs(it.split(" ").filter(String::isNotBlank)) }
-    // For example -PsaturationMachine="i5-12600K, 64 GB, Windows 11", to name the machine in the results; described from the JVM otherwise.
-    providers.gradleProperty("saturationMachine").orNull?.let { jvmArgs("-Dsaturation.machine=$it") }
+    // For example -PbenchmarkMachine="i5-12600K, 64 GB, Windows 11", to name the machine in the results; described from the JVM otherwise.
+    providers.gradleProperty("benchmarkMachine").orNull?.let { jvmArgs("-Dsaturation.machine=$it") }
     // For example -PsaturationClients=4 -PsaturationSlowClients=1, to publish the frames over the hub's WebSocket to clients and measure what they read
     // and how late (FrameClients); the slow ones read 10,000,000 characters of JSON a second, or -PsaturationSlowClientRate.
     providers.gradleProperty("saturationClients").orNull?.let { jvmArgs("-Dsaturation.clients=$it") }
@@ -198,36 +217,9 @@ tasks.register<JavaExec>("saturation") {
     })
 }
 
-// Adds the run in build/saturation to the runs kept in docs/saturation and writes build/saturation/dashboard.html (docs/saturation/dashboard.py); with
-// -PsaturationViewers, adds the viewer ladder in build/saturation-viewers instead, and with -PsaturationCapacity the frontier in build/saturation-capacity.
-// Take some scenarios of the results only with -PsaturationOnly=reference,applications-500, and name the run on the page with
-// -PsaturationName="Reserved queue room" instead of Run N. Runs Python with the py launcher on Windows, where
-// python often opens the Microsoft Store instead, and python3 elsewhere; choose another with -PsaturationPython=/path/to/python.
-tasks.register<Exec>("saturationDashboard") {
-    group = "verification"
-    description = "Adds the saturation run in build/saturation to docs/saturation and writes the saturation page"
-    val windows = System.getProperty("os.name").startsWith("Windows")
-    val python = providers.gradleProperty("saturationPython").orElse(if (windows) "py" else "python3")
-    val only = providers.gradleProperty("saturationOnly").orElse("")
-    val name = providers.gradleProperty("saturationName")
-    val viewers = providers.gradleProperty("saturationViewers").isPresent
-    val capacity = providers.gradleProperty("saturationCapacity").isPresent
-    val results = layout.buildDirectory.dir(if (capacity) "saturation-capacity" else if (viewers) "saturation-viewers" else "saturation")
-    workingDir = layout.projectDirectory.asFile
-    executable = python.get()
-    argumentProviders.add(CommandLineArgumentProvider {
-        listOf("-I", "docs/saturation/dashboard.py") +
-                (if (capacity) listOf("--add-capacity", results.get().asFile.path)
-                else if (viewers) listOf("--add-viewers", results.get().asFile.path)
-                else listOf("--add", results.get().asFile.path, "--only", only.get())) +
-                (name.orNull?.let { listOf("--name", it) } ?: emptyList())
-    })
-}
-
 // How many open UIs the hub serves while it ingests, and at what cost (SaturationViewerLadder): a run without viewers, then one per number of viewers
 // and query cap, each filling a minute of the reference scenario and offering one rate, into build/saturation-viewers; about 25 minutes. Narrow it
-// with -PsaturationViewerCounts=1,16,64 and -PsaturationQueryCaps=4,64, and offer another rate with -PsaturationViewerRate=80000. Then
-// ./gradlew saturationDashboard -PsaturationViewers adds it to the saturation page.
+// with -PsaturationViewerCounts=1,16,64 and -PsaturationQueryCaps=4,64, and offer another rate with -PsaturationViewerRate=80000.
 tasks.register<JavaExec>("saturationViewers") {
     description = "Runs the viewer ladder: open UIs against what they get and what they cost the hub"
     val output = layout.buildDirectory.dir("saturation-viewers")
@@ -241,7 +233,7 @@ tasks.register<JavaExec>("saturationViewers") {
 
 // How many open UIs the hub serves at which span rate (SaturationCapacity): the highest rate it keeps up with without viewers, then for 1, 2, 4, and
 // so on viewers the highest at which their UIs stay usable, until even the lowest is not; each climb fills a minute of the reference scenario,
-// into build/saturation-capacity. Then ./gradlew saturationDashboard -PsaturationCapacity adds it to the saturation page.
+// into build/saturation-capacity.
 tasks.register<JavaExec>("saturationCapacity") {
     description = "Finds the frontier of span rate and open UIs the hub serves usably"
     val output = layout.buildDirectory.dir("saturation-capacity")
@@ -259,6 +251,37 @@ tasks.register<JavaExec>("saturationCheck") {
     mainClass.set("app.dodb.smd.monitor.hub.SaturationCheck")
     val scenarios = providers.gradleProperty("saturationScenarios").orElse("")
     argumentProviders.add(CommandLineArgumentProvider { listOf(output.get().asFile.path, scenarios.get()) })
+}
+
+// The benchmarks' one process (docs/benchmarks/README.md): run one of the tasks above on a committed tree, then keep its run with benchmarkRecord.
+// docs/benchmarks/benchmarks.py does the work; it runs with the py launcher on Windows, where python often opens the Microsoft Store instead, and
+// python3 elsewhere; choose another with -PbenchmarkPython=/path/to/python.
+fun Exec.benchmarks(vararg arguments: String) {
+    group = "verification"
+    val windows = System.getProperty("os.name").startsWith("Windows")
+    workingDir = layout.projectDirectory.asFile
+    executable = providers.gradleProperty("benchmarkPython").orElse(if (windows) "py" else "python3").get()
+    args("-I", "docs/benchmarks/benchmarks.py", *arguments)
+}
+
+// Keeps every run the benchmark tasks wrote for HEAD (build/saturation, build/saturation-capacity, build/saturation-viewers, build/results/jmh) as a
+// run file in docs/benchmarks/runs, named -PbenchmarkName="Scoped specimen walks", and writes the page. -PbenchmarkResults=saturation=<dir>,... records
+// runs from elsewhere instead, such as main measured in another worktree.
+tasks.register<Exec>("benchmarkRecord") {
+    description = "Keeps the benchmark runs of HEAD in docs/benchmarks/runs and writes the benchmarks page"
+    val name = providers.gradleProperty("benchmarkName")
+    val results = providers.gradleProperty("benchmarkResults").orElse("")
+    benchmarks("record")
+    argumentProviders.add(CommandLineArgumentProvider {
+        listOf("--name", name.orNull ?: throw GradleException("Name the runs with -PbenchmarkName=\"<what they measure>\", such as the change")) +
+                results.get().split(",").filter(String::isNotBlank).flatMap { listOf("--results", it.trim()) }
+    })
+}
+
+// Writes the benchmarks page, build/benchmarks/page.html, from the runs in docs/benchmarks/runs.
+tasks.register<Exec>("benchmarkPage") {
+    description = "Writes the benchmarks page from docs/benchmarks/runs"
+    benchmarks("page")
 }
 
 // Keeps the benchmarks compiling as the hub changes; running them is left to the jmh task.
