@@ -1,3 +1,4 @@
+import java.lang.management.ManagementFactory
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
@@ -148,19 +149,42 @@ jmh {
     providers.gradleProperty("jmhProfilers").orNull?.let { profilers = it.split(",") }
 }
 
+// The machine a benchmark runs on, named from its hardware the same way by every benchmark and every run, so the runs of one machine compare: the
+// processor's model, its threads, the memory rounded up to a multiple of 8 GB, as the system reports a little less than is installed, and the
+// operating system, such as "AMD Ryzen 7 5825U, 16 threads, 32 GB, Linux".
+val benchmarkMachine: Provider<String> = providers.provider {
+    val system = ManagementFactory.getOperatingSystemMXBean() as com.sun.management.OperatingSystemMXBean
+    val gigabytes = Math.ceil(system.totalMemorySize / (1024.0 * 1024 * 1024) / 8).toInt() * 8
+    "${processorModel()}, ${Runtime.getRuntime().availableProcessors()} threads, $gigabytes GB, ${System.getProperty("os.name")}"
+}
+
+// The processor's model as the system names it, without trademarks, clock, and graphics: "AMD Ryzen 7 5825U with Radeon Graphics" is
+// "AMD Ryzen 7 5825U"; the architecture where the system names none.
+fun processorModel(): String {
+    val os = System.getProperty("os.name")
+    fun output(vararg command: String) = runCatching { ProcessBuilder(*command).redirectErrorStream(true).start().inputStream.bufferedReader().readText() }.getOrDefault("")
+    val named = when {
+        os.startsWith("Windows") -> Regex("ProcessorNameString\\s+REG_SZ\\s+(.+)")
+            .find(output("reg", "query", "HKLM\\HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", "/v", "ProcessorNameString"))?.groupValues?.get(1)
+        os.startsWith("Mac") -> output("sysctl", "-n", "machdep.cpu.brand_string")
+        else -> File("/proc/cpuinfo").takeIf(File::canRead)?.useLines { lines -> lines.firstOrNull { it.startsWith("model name") }?.substringAfter(":") }
+    }
+    return named?.replace(Regex("\\((R|TM|tm)\\)|\\bCPU\\b|@.*|with .*Graphics|\\d+-Core Processor"), "")?.replace(Regex("\\s+"), " ")?.trim()
+        ?.takeIf(String::isNotEmpty) ?: System.getProperty("os.arch")
+}
+
 // Names the JMH run as the saturation runs name theirs, by when it started and the commit it measures, marked when the working tree differs, and
-// the machine (-PbenchmarkMachine), in build/results/jmh/run.json beside the results, so ./gradlew benchmarkRecord can keep it.
+// the machine, in build/results/jmh/run.json beside the results, so ./gradlew benchmarkRecord can keep it.
 tasks.named("jmh") {
     val stamp = layout.buildDirectory.file("results/jmh/run.json")
-    val machine = providers.gradleProperty("benchmarkMachine")
+    val machine = benchmarkMachine
     val root = layout.projectDirectory.asFile
     doFirst {
         fun git(vararg arguments: String) = ProcessBuilder("git", *arguments).directory(root).start().inputStream.bufferedReader().readText().trim()
         val changed = git("status", "--porcelain", "--untracked-files=no").isNotEmpty()
         val run = "${Instant.now().truncatedTo(ChronoUnit.SECONDS)} ${git("rev-parse", "--short", "HEAD")}${if (changed) " with changes" else ""}"
-        val described = machine.orNull ?: "${System.getProperty("os.arch")}, ${Runtime.getRuntime().availableProcessors()} threads, ${System.getProperty("os.name")}"
         val json = { value: String -> "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"" }
-        stamp.get().asFile.apply { parentFile.mkdirs() }.writeText("{\"run\":${json(run)},\"machine\":${json(described)}}\n")
+        stamp.get().asFile.apply { parentFile.mkdirs() }.writeText("{\"run\":${json(run)},\"machine\":${json(machine.get())}}\n")
     }
 }
 
@@ -174,8 +198,7 @@ fun JavaExec.saturationJvm(output: Provider<Directory>) {
     providers.gradleProperty("saturationJfr").orNull?.let { jvmArgs("-XX:StartFlightRecording=filename=$it,settings=profile") }
     // For example -PsaturationJvmArgs="-XX:+UseZGC", to measure with another collector than the default G1.
     providers.gradleProperty("saturationJvmArgs").orNull?.let { jvmArgs(it.split(" ").filter(String::isNotBlank)) }
-    // For example -PbenchmarkMachine="i5-12600K, 64 GB, Windows 11", to name the machine in the results; described from the JVM otherwise.
-    providers.gradleProperty("benchmarkMachine").orNull?.let { jvmArgs("-Dsaturation.machine=$it") }
+    jvmArgumentProviders.add(CommandLineArgumentProvider { listOf("-Dsaturation.machine=${benchmarkMachine.get()}") })
     // For example -PsaturationClients=4 -PsaturationSlowClients=1, to publish the frames over the hub's WebSocket to clients and measure what they read
     // and how late (FrameClients); the slow ones read 10,000,000 characters of JSON a second, or -PsaturationSlowClientRate.
     providers.gradleProperty("saturationClients").orNull?.let { jvmArgs("-Dsaturation.clients=$it") }

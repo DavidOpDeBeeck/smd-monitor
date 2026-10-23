@@ -1,4 +1,4 @@
-{"kind":"saturation","name":"Scoped specimen walks","run":"2026-10-23T11:08:44Z edb248a with changes","machine":"Ryzen 7 5825U, 16 threads, 32 GB, Linux",
+{"kind":"saturation","name":"Scoped specimen walks","run":"2026-10-23T11:08:44Z edb248a with changes","machine":"AMD Ryzen 7 5825U, 16 threads, 32 GB, Linux",
 "scenarios":[
 {"scenario":"applications-500","name":"500 applications","sweep":"applications","description":"500 applications × 10 instances, 200 types and 50 processing groups each, 2,048 MB, 15 minutes of history","applications":500,"instances":10,"exporters":5000,"typesPerApplication":200,"groupsPerApplication":50,"memoryMb":2048,"historyS":900,"queueSpans":1952257},
 {"scenario":"budget-256mb","name":"256 MB budget","sweep":"budget","description":"50 applications × 10 instances, 200 types and 50 processing groups each, 256 MB, 15 minutes of history","applications":50,"instances":10,"exporters":500,"typesPerApplication":200,"groupsPerApplication":50,"memoryMb":256,"historyS":900,"queueSpans":244032},

@@ -17,11 +17,15 @@ the throughput `docs/monitor.md` documents and records nothing.
 
 ## The process
 
-1. **Run** the kinds your change affects, on the reference machine, otherwise idle, with every change committed, naming the machine as the runs kept do:
+1. **Run** the kinds your change affects, on the reference machine, otherwise idle, with every change committed:
 
    ```bash
-   ./gradlew saturation -PbenchmarkMachine="Ryzen 7 5825U, 16 threads, 32 GB, Linux"
+   ./gradlew saturation
    ```
+
+   Each run names its machine from the hardware, the same way for every kind and every run: the processor's model, its threads, the memory rounded
+   up to a multiple of 8 GB, and the operating system, such as `AMD Ryzen 7 5825U, 16 threads, 32 GB, Linux`. Runs compare only with runs of the same
+   name; the page warns when the runs picked ran on different machines.
 
 2. **Record** them under one name, what the change does, in a few words:
 

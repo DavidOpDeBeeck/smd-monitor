@@ -152,17 +152,16 @@ The proof is the change's full run on this machine, compared with main's newest 
 capacity frontier (`./gradlew saturationCapacity`) and screenshot `view=capacity`; the viewer ladder (`saturationViewers`) shows what each viewer costs at
 one rate when the frontier moved and the reason is unclear. Record whatever ran under the one name.
 
-- Name the machine as the runs of this machine in `docs/benchmarks/runs` do; when there are none, name it by processor, threads, memory, and operating
-  system, such as `Ryzen 7 5825U, 16 threads, 32 GB, Linux`.
+- Each run names its machine from the hardware (`benchmarkMachine` in `build.gradle.kts`), so the runs of this machine share one name.
 - Main's newest run of the kind is the "before" when it ran on this machine, with the scenarios the change's run runs, on a commit whose `src/main` does
   not differ from the base's (`git diff --quiet <its commit> origin/main -- src/main`). Otherwise measure main too: check out the base commit in a separate
   worktree (`git worktree add`), so the branch stays as it is, run it there, and record it from there with its own name, `Main at <short commit>`.
 
 ```bash
-flock /tmp/smd-monitor-bench.lock ./gradlew saturation -PbenchmarkMachine="<machine>"          # on the branch, its change committed
+flock /tmp/smd-monitor-bench.lock ./gradlew saturation          # on the branch, its change committed
 ./gradlew benchmarkRecord -PbenchmarkName="<name of the change>"
 # only when main's newest run does not compare, in the base worktree first:
-flock /tmp/smd-monitor-bench.lock ./gradlew saturation -PbenchmarkMachine="<machine>"
+flock /tmp/smd-monitor-bench.lock ./gradlew saturation
 ./gradlew benchmarkRecord -PbenchmarkName="Main at <short commit>" -PbenchmarkResults=saturation=<base worktree>/build/saturation   # on the branch
 ```
 

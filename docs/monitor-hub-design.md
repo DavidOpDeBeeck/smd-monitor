@@ -317,7 +317,7 @@ documents.
 ```
 
 A run writes a table, every second as CSV, and its limits and steps as JSON to `build/saturation`, and the latest progress line to `build/saturation/progress.txt`.
-Name the machine with `-PbenchmarkMachine="..."` and pass collector flags with `-PsaturationJvmArgs`. A run is kept as every benchmark's is
+Pass collector flags with `-PsaturationJvmArgs`; the run names its machine from the hardware, as every benchmark does. A run is kept as every benchmark's is
 ([`docs/benchmarks/README.md`](benchmarks/README.md)): one run file per change, which the benchmarks page compares with main's newest on one scale, so an
 improvement shows as a limit that moves right. A limit moves in steps of the ladder, and two runs of one commit can land a step
 apart, so the page also compares the writer's capacity: the spans processed per second of the writer on a core, at the rates both runs offered. It moves by
