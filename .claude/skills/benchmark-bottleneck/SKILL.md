@@ -147,8 +147,8 @@ Commit the change on the branch, with its tests and the docs `AGENTS.md` asks fo
 
 The proof is two full runs on this machine: **before** on the base commit and **after** on the branch's commit, each with the core scenarios, the
 default; add `-PsaturationScenarios=all` when the change targets a scenario outside them. When the change touches frames, queries, or the WebSocket, also run
-the viewer ladder (`./gradlew saturationViewers`) before and after, add both with `saturationDashboard -PsaturationViewers`, and screenshot
-`view=viewers&vpick=cap-16`.
+the capacity frontier (`./gradlew saturationCapacity`) before and after, add both with `saturationDashboard -PsaturationCapacity`, and screenshot
+`view=capacity`; the viewer ladder (`saturationViewers`) shows what each viewer costs at one rate when the frontier moved and the reason is unclear.
 
 - Name the machine as the earlier runs of this machine in `docs/saturation/runs.json` did; when there are none, name it by processor, threads, memory, and
   operating system, such as `Ryzen 7 5825U, 16 threads, 32 GB, Linux`, and use that name for both runs.

@@ -642,6 +642,13 @@
   const viewerPicks = [...[...viewerRuns].reverse().map((run) => [`run-${run.order}`, `${run.name}: every query cap`]),
     ...viewerCaps.map((cap) => [`cap-${cap}`, `Query cap ${cap}: every viewer run`])];
 
+  // The frontiers of span rate and open UIs (SaturationCapacity): for each number of viewers the highest rate at which the hub kept up and, with
+  // viewers, their UIs stayed usable; a point without a rate is the first number of viewers that no rate served.
+  const frontierRows = DATA.capacity || [];
+  const frontierRuns = groupsInOrder([...frontierRows].sort((a, b) => a.order - b.order), (row) => row.run).map(([run, rows], index) => ({ run, order: rows[0].order,
+    name: rows[0].name || `Capacity ${rows[0].order}`, label: rows[0].label, machine: rows[0].machine, color: `var(${SERIES[index % SERIES.length]})`,
+    rows: [...rows].sort((a, b) => a.viewers - b.viewers) }));
+
   // A sweep earns a view of its own when it has several points besides the reference; the overview shows the others.
   const VIEWS = [
     { id: 'change', group: 'Compare runs', title: 'What changed', controls: [] },
@@ -650,6 +657,7 @@
       .map(([sweep, { title }]) => ({ id: `sweep-${sweep}`, group: 'Compare runs', title: `${title} sweep`, sweep, controls: ['limit', 'scale'] })),
     { id: 'steps', group: 'One scenario', title: 'Rate by rate', controls: ['scenario', 'measure', 'series', 'sweep', 'run', 'scale'] },
     { id: 'seconds', group: 'One scenario', title: 'Second by second', controls: ['scenario', 'seconds'] },
+    { id: 'capacity', group: 'End to end', title: 'Capacity', controls: [] },
     { id: 'viewers', group: 'End to end', title: 'Open UIs', controls: ['vpick'] },
     { id: 'about', group: 'About', title: 'How it was measured', controls: [] },
   ];
@@ -1858,6 +1866,75 @@
     });
   };
 
+  // The frontier of each run: span rate against open UIs, both on log axes, so doubling either reads alike; the viewers' axis puts the run without
+  // viewers left of one, as "none", and a number of viewers no rate served sits on the bottom edge.
+  const frontierChart = (container, runs, height) => {
+    const { svg, width } = svgIn(container, height);
+    const viewers = [...new Set(runs.flatMap((run) => run.rows.map((row) => row.viewers)))].sort((a, b) => a - b);
+    const at = (count) => Math.max(count, 0.5);
+    const rates = runs.flatMap((run) => run.rows.map((row) => row.rate)).filter(present);
+    const [low, high] = [Math.min(...rates) / 1.6, Math.max(...rates) * 1.25];
+    const yTicks = [];
+    for (let power = 10 ** Math.floor(Math.log10(low)); power <= high; power *= 10) {
+      for (const step of [1, 2, 5]) if (power * step >= low && power * step <= high) yTicks.push(power * step);
+    }
+    const left = Math.ceil(maxOf(yTicks, (tick) => textWidth(svg, compact(tick)))) + 10;
+    const margin = { top: 26, right: 16, bottom: 34, left };
+    const x = logScale([0.5 / 1.4, at(viewers[viewers.length - 1] || 1) * 1.4], [margin.left, width - margin.right]);
+    const y = logScale([low, high], [height - margin.bottom, margin.top]);
+    gridLines(svg, yTicks, (tick) => ({ x1: margin.left, x2: width - margin.right, y1: y(tick), y2: y(tick) }));
+    axisBottom(svg, (value) => x(at(value)), x.range(), viewers, (value) => (value === 0 ? 'none' : count(value)), height - margin.bottom);
+    axisLeft(svg, y, yTicks, compact, margin.left);
+    axisTitle(svg, width - margin.right, height - 2, 'open UIs, log scale');
+    el(svg, 'text', { class: 'title', x: margin.left - 4, y: 12, 'text-anchor': 'end' }, 'spans/s');
+    const yOf = (row) => (present(row.rate) ? y(row.rate) : height - margin.bottom);
+    for (const run of runs) {
+      const served = run.rows.filter((row) => present(row.rate));
+      el(svg, 'path', { d: linePath(served, (row) => x(at(row.viewers)), yOf), fill: 'none', stroke: run.color, 'stroke-width': 2,
+        'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'data-key': run.run });
+      for (const row of run.rows) {
+        const usable = present(row.rate);
+        const mark = el(svg, 'circle', { cx: x(at(row.viewers)), cy: yOf(row), r: usable ? 4.5 : 4, fill: usable ? run.color : 'var(--panel)',
+          stroke: usable ? 'var(--panel)' : run.color, 'stroke-width': 2, 'data-key': run.run });
+        el(mark, 'title', {}, `${run.name}, ${row.viewers ? `${count(row.viewers)} UIs` : 'no UIs'}: `
+          + `${usable ? `up to ${count(row.rate)} spans/s` : 'no rate usable'}; stopped at ${row.stoppedBy}`);
+      }
+    }
+  };
+
+  const renderFrontierView = () => {
+    stage.title.textContent = 'Capacity · how many open UIs at which span rate';
+    if (!frontierRuns.length) {
+      stage.how.textContent = 'No capacity frontier was added yet: run ./gradlew saturationCapacity, then ./gradlew saturationDashboard -PsaturationCapacity.';
+      emptyLine(stage.chart, 'No capacity frontier kept.');
+      return;
+    }
+    stage.how.textContent = 'Each point is the highest span rate at which the hub keeps up without shedding while that many open UIs, in a JVM of their own, read '
+      + 'the live frames and ask their view’s query. With UIs open it must also keep them usable: 99% of frames read within a second of the second '
+      + 'they close (p99), 99% of queries answered within a second (p99), and the least lucky UI fresh after 95% of frames. The viewers double '
+      + 'until no rate is usable, a hollow point on the bottom edge. Both axes are logarithmic, so doubling either reads alike.';
+    facts(frontierRuns.map((run) => {
+      const served = run.rows.filter((row) => present(row.rate));
+      const most = Math.max(...served.map((row) => row.viewers));
+      const none = served.find((row) => row.viewers === 0);
+      return { key: run.run, name: run.name, color: run.color, title: run.label,
+        text: ` ${none ? `${count(none.rate)} spans/s without UIs; ` : ''}up to ${count(most)} usable UIs` };
+    }));
+    legend(stage.legend, [{ name: 'Filled: the highest usable rate', color: 'var(--muted)' }, { name: 'Hollow: no rate usable', block: 'key-hollow' }]);
+    frontierChart(stage.chart, frontierRuns, chartHeight());
+    const rows = frontierRuns.flatMap((run) => run.rows.map((row) => ({ ...row, line: run })));
+    fillTable(stage.table, [
+      { label: 'Run', text: true, value: (row) => row.line.name, color: (row) => row.line.color },
+      { label: 'Open UIs', value: (row) => (row.viewers ? count(row.viewers) : 'none') },
+      { label: 'Highest usable rate', value: (row) => orNone(row.rate, count) || 'none' },
+      { label: 'Hub cores', value: (row) => orNone(row.processCores, cores) },
+      { label: 'Frame lag p99', value: (row) => orNone(row.frameLagP99Ms, millis) },
+      { label: 'Answer p99', value: (row) => orNone(row.answerP99Ms, millis) },
+      { label: 'Least lucky UI fresh', value: (row) => orNone(row.freshWorst, share) },
+      { label: 'Stopped at', text: true, value: (row) => row.stoppedBy },
+    ], rows, (row) => row.line.run);
+  };
+
   const renderViewersView = () => {
     stage.title.textContent = 'Open UIs · what the viewers get and what it costs';
     if (!viewerRuns.length) {
@@ -1982,6 +2059,8 @@
       fillTable(stage.table, limitColumns, comparedRows(picked, members), (row) => row.scenario);
     } else if (view.id === 'viewers') {
       renderViewersView();
+    } else if (view.id === 'capacity') {
+      renderFrontierView();
     } else if (view.id === 'seconds') {
       renderSecondsView(picked, scenario);
     } else {

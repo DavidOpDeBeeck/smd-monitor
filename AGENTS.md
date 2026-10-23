@@ -125,9 +125,10 @@ Before coding, name the owning package, the smallest public contract, the thread
 
 ./gradlew jmh -PjmhIncludes=... # about 40 minutes unnarrowed
 ./gradlew saturation            # open-loop saturation runs of the core scenarios, about 13 minutes; -PsaturationScenarios=all for every one
+./gradlew saturationCapacity    # the capacity frontier: how many usable open UIs at which span rate
 ./gradlew saturationViewers     # the viewer ladder: open UIs against what they get and cost, about 25 minutes
 ./gradlew saturationCheck       # checks the throughput docs/monitor.md documents
-./gradlew saturationDashboard   # adds build/saturation to docs/saturation (-PsaturationViewers: the viewer ladder); needs Python
+./gradlew saturationDashboard   # adds build/saturation to docs/saturation (-PsaturationViewers, -PsaturationCapacity); needs Python
 
 cd frontend && npm run dev      # with ./gradlew demo running
 ```

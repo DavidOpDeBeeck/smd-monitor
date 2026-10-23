@@ -3,11 +3,13 @@
 The runs, steps, seconds and scenarios files hold every run added so far; setup and profile describe how they were measured. With --add, the results of
 one run that SaturationRun wrote (<scenario>.json and <scenario>.csv in build/saturation) are merged into them first: the run becomes the next Run N, or
 replaces itself when it is already there. With --add-viewers, the points of a viewer ladder (SaturationViewerLadder, in build/saturation-viewers) become
-the next viewer run in the viewers file instead. --name gives the run added a short name the page shows instead of Run N, and --rename names a run kept by its
+the next viewer run in the viewers file instead, and with --add-capacity the frontier of span rate and open UIs (SaturationCapacity, in
+build/saturation-capacity) the next run in the capacity file. --name gives the run added a short name the page shows instead of Run N, and --rename names a run kept by its
 number. Either way the page is written again as one self-contained HTML file, the data inlined, that opens from disk.
 
 Usage: python -I docs/saturation/dashboard.py [--add build/saturation [--only <scenario,...>] [--name <name>]] [--rename <N>=<name> ...] [--keep-seconds 3]
-       [--add-viewers build/saturation-viewers [--name <name>]] [--out build/saturation/dashboard.html]
+       [--add-viewers build/saturation-viewers [--name <name>]] [--add-capacity build/saturation-capacity [--name <name>]]
+       [--out build/saturation/dashboard.html]
 """
 import argparse
 import csv
@@ -18,7 +20,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
-DATASETS = ['runs', 'steps', 'seconds', 'scenarios', 'setup', 'profile', 'viewers']
+DATASETS = ['runs', 'steps', 'seconds', 'scenarios', 'setup', 'profile', 'viewers', 'capacity']
 DATA_MARK = '/*SATURATION_DATA*/'
 
 STEP_FIELDS = {
@@ -313,6 +315,62 @@ def add_viewers(data, ladder_dir, name):
     return dict(data, viewers=kept + added), {'run': run_id, 'label': label, 'points': len(rows), 'replaced': run_id in orders}
 
 
+# A frontier's points (SaturationCapacity's capacity.json and the climbs in v-<n>, v-<n>-from-<rate>): for each number of viewers the highest rate at
+# which ingest kept up and, with viewers, their UIs stayed usable, with what the hub and the viewers measured there and what stopped the climb
+# above it; the first number of viewers with no usable rate closes the frontier without one.
+def add_capacity(data, capacity_dir, name):
+    capacity_file = capacity_dir / 'capacity.json'
+    if not capacity_file.exists():
+        fail(f'no capacity frontier (capacity.json) in {capacity_dir}')
+    capacity = read_json(capacity_file)
+    limits = {limit['viewers']: limit['rate'] for limit in capacity['limits']}
+    climbs = {}
+    for directory in sorted(capacity_dir.glob('v-*')):
+        viewers = int(directory.name.split('-')[1])
+        if (directory / 'reference.json').exists():
+            climbs.setdefault(viewers, []).append(read_json(directory / 'reference.json'))
+    points = []
+    for viewers in sorted(climbs):
+        results = climbs[viewers]
+        rate = limits.get(viewers)
+        point = {'viewers': viewers, 'rate': rate, 'machine': results[0]['machine']}
+        for result in results:
+            step = next((step for step in result['steps'] if step['rate'] == rate), None)
+            if step:
+                point.update(processCores=step['processCores'], heapMb=step['heapMaxMegabytes'])
+            usable = next((each for each in result.get('usability', []) if each['rate'] == rate), None)
+            if usable:
+                point.update(frameLagP99Ms=usable['frameLagP99Millis'], answerP99Ms=usable['answerP99Millis'], freshWorst=usable['freshWorst'])
+        point['stoppedBy'] = stopped_by(results, viewers, rate)
+        points.append(point)
+    run_id = capacity['run']
+    kept = data['capacity']
+    orders = {row['run']: row['order'] for row in kept}
+    order = orders.get(run_id, max(orders.values(), default=0) + 1)
+    name = name or next((row['name'] for row in kept if row['run'] == run_id and row.get('name')), None)
+    label = f'{name or f"Capacity {order}"}, {run_id}'
+    added = [dict({'run': run_id, 'label': label, 'order': order, **({'name': name} if name else {})}, **point) for point in points]
+    rows = [row for row in kept if row['run'] != run_id] + added
+    return dict(data, capacity=rows), {'run': run_id, 'label': label, 'points': len(points), 'replaced': run_id in orders}
+
+
+# What stopped the climbs of one number of viewers above the limit: the lowest rate at which a climb failed, its UIs not usable or, without viewers
+# or where ingest failed first, ingest; a climb again from a lower rate stops below the first climb's failure, or passes every rate it offers.
+def stopped_by(results, viewers, limit):
+    stops = sorted(stop for stop in (first_stop(result, viewers) for result in results) if stop and (limit is None or stop[0] > limit))
+    return stops[0][1] if stops else 'the highest rate offered'
+
+
+def first_stop(result, viewers):
+    unusable = next((each for each in result.get('usability', []) if not each['usable']), None)
+    failed = next((step for step in result['steps'] if step['verdict'] != 'KEEPS_UP'), None)
+    if viewers and unusable and (not failed or unusable['rate'] <= failed['rate']):
+        return unusable['rate'], f"{unusable['rate']:,} spans/s: " + ', '.join(unusable['shortfalls'])
+    if failed:
+        return failed['rate'], f"{failed['rate']:,} spans/s: ingest {failed['verdict'].lower().replace('_', ' ')}"
+    return None
+
+
 # A run is labelled by its name when it has one, and by its number otherwise, followed by when it started and the commit it ran.
 def label_of(order, name, run_id):
     return f'{name or f"Run {order}"}, {run_id}'
@@ -348,9 +406,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--add', type=Path, help='a results directory of one run to add, such as build/saturation')
     parser.add_argument('--only', default='', help='comma-separated scenario IDs to take from the results; all by default')
-    parser.add_argument('--name', help='a short name for the run --add or --add-viewers adds, which the page shows instead of its number; a run added again '
+    parser.add_argument('--name', help='a short name for the run --add, --add-viewers, or --add-capacity adds, which the page shows instead of its number; a run added again '
                                        'keeps its name')
     parser.add_argument('--add-viewers', type=Path, help='a viewer ladder to add, such as build/saturation-viewers')
+    parser.add_argument('--add-capacity', type=Path, help='a frontier of span rate and open UIs to add, such as build/saturation-capacity')
     parser.add_argument('--rename', action='append', default=[], help='<N>=<name>: names Run N of the runs kept; <N>= takes its name away')
     parser.add_argument('--keep-seconds', type=int, default=3, help='how many of the latest runs keep their seconds')
     parser.add_argument('--step-seconds', type=int, default=30, help="SaturationScenario's STEP, for results that record neither steps' seconds nor stepS")
@@ -359,10 +418,14 @@ def main():
 
     data = {name: read_json(HERE / f'{name}.json') if (HERE / f'{name}.json').exists() else [] for name in DATASETS}
     data['seconds'] = expand_seconds(data['seconds'])
-    if args.name and not args.add and not args.add_viewers:
-        fail('--name names the run --add or --add-viewers adds; name a run kept with --rename <N>=<name>')
-    if args.add and args.add_viewers:
-        fail('--add and --add-viewers add one run each; add them one after the other')
+    if args.name and not args.add and not args.add_viewers and not args.add_capacity:
+        fail('--name names the run --add, --add-viewers, or --add-capacity adds; name a run kept with --rename <N>=<name>')
+    if sum(bool(each) for each in [args.add, args.add_viewers, args.add_capacity]) > 1:
+        fail('--add, --add-viewers, and --add-capacity add one run each; add them one after the other')
+    if args.add_capacity:
+        data, summary = add_capacity(data, args.add_capacity, args.name)
+        write_rows(HERE / 'capacity.json', data['capacity'])
+        print(json.dumps(summary, indent=2, ensure_ascii=False))
     if args.add_viewers:
         data, summary = add_viewers(data, args.add_viewers, args.name)
         write_rows(HERE / 'viewers.json', data['viewers'])
