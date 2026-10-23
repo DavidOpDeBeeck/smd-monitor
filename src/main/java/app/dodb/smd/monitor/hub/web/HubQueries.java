@@ -58,11 +58,7 @@ public final class HubQueries {
     private final MonitorHub hub;
     private final QueryAnswers answers;
 
-    public HubQueries(MonitorHub hub) {
-        this(hub, QueryAnswers.MAX_RUNNING);
-    }
-
-    // A benchmark tunes how many queries run at once.
+    // At most as many queries computed at once as pages may be open: a page waits for each answer before it asks again.
     public HubQueries(MonitorHub hub, int maxRunning) {
         this.hub = requireNonNull(hub);
         this.answers = new QueryAnswers(maxRunning);

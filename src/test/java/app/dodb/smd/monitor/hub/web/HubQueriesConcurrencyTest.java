@@ -13,8 +13,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class HubQueriesConcurrencyTest {
 
+    private static final int MAX_RUNNING = 4;
     private final MonitorHub hub = new MonitorHub(HubConfig.withDefaults().build());
-    private final HubQueries queries = new HubQueries(hub);
+    private final HubQueries queries = new HubQueries(hub, MAX_RUNNING);
     private final CountDownLatch release = new CountDownLatch(1);
     private final ArrayList<Thread> running = new ArrayList<>();
 
@@ -28,17 +29,17 @@ class HubQueriesConcurrencyTest {
 
     @Test
     void tape_whileAsManyQueriesRunAsAllowed_answersTooManyRequests() throws InterruptedException {
-        runBlockedQueries(QueryAnswers.MAX_RUNNING);
+        runBlockedQueries(MAX_RUNNING);
 
         var response = tape();
 
         assertThat(response.status()).isEqualTo(429);
-        assertThat(response.body()).contains("at most " + QueryAnswers.MAX_RUNNING + " queries");
+        assertThat(response.body()).contains("at most " + MAX_RUNNING + " queries");
     }
 
     @Test
     void tape_whileFewerQueriesRunThanAllowed_answersFromTheLatestEpoch() throws InterruptedException {
-        runBlockedQueries(QueryAnswers.MAX_RUNNING - 1);
+        runBlockedQueries(MAX_RUNNING - 1);
 
         var response = tape();
 

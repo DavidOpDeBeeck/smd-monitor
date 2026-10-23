@@ -34,7 +34,7 @@ public class UiServer implements AutoCloseable {
     }
 
     UiServer(HubSettings settings, MonitorHub hub, FramePublisher publisher) {
-        this(settings, hub, publisher, new HubQueries(hub));
+        this(settings, hub, publisher, new HubQueries(hub, settings.maxViewers()));
     }
 
     UiServer(HubSettings settings, MonitorHub hub, FramePublisher publisher, HubQueries queries) {

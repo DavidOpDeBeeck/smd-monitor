@@ -21,7 +21,8 @@ class FramePublisherTest {
 
     private final ObjectMapper mapper = new ObjectMapper();
     private final SynchronousHub hub = new SynchronousHub(HubConfig.withDefaults().build());
-    private final FramePublisher publisher = new FramePublisher(hub.hub());
+    private static final int MAX_CLIENTS = 4;
+    private final FramePublisher publisher = new FramePublisher(hub.hub(), new MonitorFrames(), MAX_CLIENTS, FramePublisher::intervalFor);
 
     // Once the publisher published the frame of the hub's first epoch, which a client connecting receives at once.
     @BeforeEach
@@ -61,7 +62,7 @@ class FramePublisherTest {
     // W1: with an interval of two epochs, the epoch between two frames is left out, and the next frame carries its changes too.
     @Test
     void publish_intervalOfTwoEpochs_leavesTheEpochBetweenOutAndSendsTheChangesSinceTheFrameBefore() {
-        var spaced = new FramePublisher(hub.hub(), new MonitorFrames(), FramePublisher.MAX_CLIENTS, clients -> 2);
+        var spaced = new FramePublisher(hub.hub(), new MonitorFrames(), MAX_CLIENTS, clients -> 2);
         spaced.start();
         try {
             var sink = new RecordingSink(true);
@@ -98,7 +99,7 @@ class FramePublisherTest {
 
     @Test
     void connect_asManyClientsAsTaken_refusesTheNext() {
-        IntStream.range(0, FramePublisher.MAX_CLIENTS).forEach(index -> assertThat(publisher.connect(new RecordingSink(true))).isTrue());
+        IntStream.range(0, MAX_CLIENTS).forEach(index -> assertThat(publisher.connect(new RecordingSink(true))).isTrue());
 
         var refused = publisher.connect(new RecordingSink(true));
 
@@ -107,7 +108,7 @@ class FramePublisherTest {
 
     @Test
     void connect_aClientDisconnected_takesAnother() {
-        var sinks = IntStream.range(0, FramePublisher.MAX_CLIENTS).mapToObj(index -> new RecordingSink(true)).toList();
+        var sinks = IntStream.range(0, MAX_CLIENTS).mapToObj(index -> new RecordingSink(true)).toList();
         sinks.forEach(publisher::connect);
         publisher.disconnect(sinks.getFirst());
 

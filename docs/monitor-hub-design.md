@@ -115,7 +115,7 @@ The hub keeps four kinds of state, each with its own lifetime and bound.
 | C6  | One epoch per second: one immutable view of catalog, aggregates, specimens, and health, shared by the frame and the queries.                                                                                                                                                                                        |
 | C7  | Building an epoch costs in proportion to what changed: at most one copy of changed array chunks.                                                                                                                                                                                                                    |
 | C8  | JSON is serialized off the writer, once per epoch, and shared by every client.                                                                                                                                                                                                                                      |
-| C9  | At most 16 queries run at once; beyond that the hub answers 429.                                                                                                                                                                                                                                                    |
+| C9  | At most as many queries run at once as pages may be open (`ui.max-viewers`), as a page waits for each answer before it asks again; beyond that the hub answers 429.                                                                                                                                                 |
 | C10 | An exception in one batch drops that batch, reports it, and logs it once. The writer keeps running.                                                                                                                                                                                                                 |
 | C11 | Exports arrive on a port of their own, served by a Javalin server of its own with its own virtual threads, which serves nothing else; the page's port serves no exports. The page can be published without the endpoint, and pages never take a thread from admission.                                              |
 
@@ -225,7 +225,7 @@ Per tick, after each second:
 | Shedding thresholds      | 50% and 80% of the pool or of its half |
 | Slowest and Failures K   | 5 per type, 20 per cause (minimum 1)   |
 | Invocations per trace    | 10,000                                 |
-| Concurrent queries       | 16                                     |
+| Concurrent queries       | as many as `ui.max-viewers`            |
 | Cached answers per epoch | 256                                    |
 | WebSocket clients        | 128 (`ui.max-viewers`), 5 s send timeout|
 | Specimen chunk           | 4,096                                  |
@@ -346,7 +346,7 @@ viewing, so the hub's heap and collections are its own: each reads the frames ov
 view's query over HTTP whenever it reads a newer frame, as the page does (`SaturationPages`). The pages take the tape, the traces, the failures of the
 scope's 20 most frequent causes, and the timeline of the last minute in turn; the first four ask of the whole system and each later one of one
 application, so no two share an answer (W5) unless they share a view and a scope. For these runs the publisher takes any number of clients, and
-`-PsaturationQueryCap` sets how many queries run at once in place of C9's limit. `-PsaturationFrameInterval=5` has the publisher send a frame every 5 seconds in place of every epoch, to explore a slower tick: in a ladder at 16 queries at
+`-PsaturationQueryCap` sets how many queries run at once in place of C9's, which the saturation runs leave unbounded, as they do the viewers. `-PsaturationFrameInterval=5` has the publisher send a frame every 5 seconds in place of every epoch, to explore a slower tick: in a ladder at 16 queries at
 once on 2026-10-22, ingest then kept up through 128 viewers where it fell behind from 48 with a frame every second, as building, sending, and the
 queries pages ask after each frame all fell to a fifth. Per step the run reports the queries, those answered 429 or timed out,
 which leave a page with its last answer, the time to an answer, and the cores the viewers' JVM used, which shares the machine with the hub.

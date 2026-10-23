@@ -57,7 +57,7 @@ public class QueryBenchmark {
 
     @Setup(Level.Invocation)
     public void answerAfresh() {
-        queries = new HubQueries(hub.hub());
+        queries = new HubQueries(hub.hub(), Integer.MAX_VALUE);
     }
 
     @Benchmark

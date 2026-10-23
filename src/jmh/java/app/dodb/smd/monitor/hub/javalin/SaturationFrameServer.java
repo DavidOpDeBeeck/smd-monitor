@@ -25,11 +25,12 @@ public final class SaturationFrameServer implements AutoCloseable {
         this.server = requireNonNull(server);
     }
 
-    // The publisher takes every client the run connects, however many; the hub runs the given number of queries at once, or its own limit.
+    // The publisher takes every client the run connects, however many, and the hub runs as many queries at once, as max-viewers has it; or the
+    // given number of queries.
     public static SaturationFrameServer start(MonitorHub hub, FrameWritten written, OptionalInt queryCap) {
-        var settings = new HubSettings(0, "127.0.0.1", 0, null, List.of(), 128, HubConfig.withDefaults().build());
-        var publisher = new FramePublisher(hub, new TimedFrames(written), Integer.MAX_VALUE, frameInterval());
-        var queries = queryCap.isPresent() ? new HubQueries(hub, queryCap.getAsInt()) : new HubQueries(hub);
+        var settings = new HubSettings(0, "127.0.0.1", 0, null, List.of(), Integer.MAX_VALUE, HubConfig.withDefaults().build());
+        var publisher = new FramePublisher(hub, new TimedFrames(written), settings.maxViewers(), frameInterval());
+        var queries = new HubQueries(hub, queryCap.orElse(settings.maxViewers()));
         var server = new UiServer(settings, hub, publisher, queries);
         server.start();
         return new SaturationFrameServer(server);
