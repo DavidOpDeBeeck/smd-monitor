@@ -2,5 +2,6 @@
 
 ## Validation
 
-<!-- Show what the change solves or improves: screenshots or a short video of the page, before/after charts of the saturation page, or a
-table of the figures that moved (before → after). Name how it was run, such as the commands and the machine. -->
+<!-- Show what the change solves or improves: screenshots or a short video of the page, or a table of the figures that moved (before → after).
+Name how it was run, such as the commands and the machine. A change measured with the benchmarks adds one run per kind (docs/benchmarks/README.md)
+and compares it with main's newest run of that kind. -->

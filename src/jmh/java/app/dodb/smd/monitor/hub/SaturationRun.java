@@ -92,7 +92,7 @@ public final class SaturationRun {
     private static final int DELIVERY_COLUMNS = 13;
     // The run every scenario of one invocation belongs to, named by when it started and the commit; the parent passes it on to the JVM of each.
     private static final String RUN_PROPERTY = "saturation.run";
-    // What the run ran on, from -PsaturationMachine; described from the JVM when absent.
+    // What the run ran on, as Gradle names the machine from its hardware for every benchmark (benchmarkMachine in build.gradle.kts).
     private static final String MACHINE_PROPERTY = "saturation.machine";
 
     private final SaturationScenario scenario;
@@ -652,7 +652,7 @@ public final class SaturationRun {
         }).toList();
         var result = new LinkedHashMap<String, Object>();
         result.put("run", System.getProperty(RUN_PROPERTY));
-        result.put("machine", System.getProperty(MACHINE_PROPERTY, machine()));
+        result.put("machine", System.getProperty(MACHINE_PROPERTY, "unnamed machine"));
         result.put("recordedAt", Instant.now().truncatedTo(ChronoUnit.SECONDS).toString());
         result.put("durationS", progress.scenarioTook().toSeconds());
         result.put("scenario", scenario.id());
@@ -847,15 +847,6 @@ public final class SaturationRun {
             throw new IOException("git " + String.join(" ", arguments) + " failed: " + output);
         }
         return output;
-    }
-
-    private static String machine() {
-        var system = (com.sun.management.OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
-        var gigabyte = 1024 * MEGABYTE;
-        var processor = Optional.ofNullable(System.getenv("PROCESSOR_IDENTIFIER")).orElse(System.getProperty("os.arch"));
-        return "%s, %d threads, %d GB, %s, Java %s, %d GB heap".formatted(processor, Runtime.getRuntime().availableProcessors(),
-            Math.round((double) system.getTotalMemorySize() / gigabyte), System.getProperty("os.name"), System.getProperty("java.version"),
-            Runtime.getRuntime().maxMemory() / gigabyte);
     }
 
     private Thread writerThread() {

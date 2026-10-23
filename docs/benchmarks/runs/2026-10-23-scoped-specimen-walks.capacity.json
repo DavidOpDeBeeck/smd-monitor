@@ -1,0 +1,15 @@
+{"kind":"capacity","name":"Scoped specimen walks","run":"2026-10-23T11:27:32Z edb248a with changes","machine":"AMD Ryzen 7 5825U, 16 threads, 32 GB, Linux",
+"points":[
+{"viewers":0,"rate":200000,"machine":"AMD Ryzen 7 5825U, 16 threads, 32 GB, Linux","processCores":2.344689443789841,"heapMb":9305,"stoppedBy":"250,000 spans/s: ingest behind"},
+{"viewers":1,"rate":200000,"machine":"AMD Ryzen 7 5825U, 16 threads, 32 GB, Linux","processCores":2.715992128830996,"heapMb":9337,"frameLagP99Ms":439.132123,"answerP99Ms":215.176234,"freshWorst":1.0,"stoppedBy":"250,000 spans/s: ingest behind"},
+{"viewers":2,"rate":200000,"machine":"AMD Ryzen 7 5825U, 16 threads, 32 GB, Linux","processCores":2.717521636321956,"heapMb":9517,"frameLagP99Ms":413.761983,"answerP99Ms":239.492861,"freshWorst":1.0,"stoppedBy":"250,000 spans/s: ingest behind"},
+{"viewers":4,"rate":200000,"machine":"AMD Ryzen 7 5825U, 16 threads, 32 GB, Linux","processCores":3.014569746542886,"heapMb":9549,"frameLagP99Ms":431.718785,"answerP99Ms":207.311298,"freshWorst":1.0,"stoppedBy":"250,000 spans/s: ingest behind"},
+{"viewers":8,"rate":200000,"machine":"AMD Ryzen 7 5825U, 16 threads, 32 GB, Linux","processCores":3.335731489316477,"heapMb":9497,"frameLagP99Ms":424.876972,"answerP99Ms":362.81983,"freshWorst":1.0,"stoppedBy":"250,000 spans/s: ingest behind"},
+{"viewers":16,"rate":200000,"machine":"AMD Ryzen 7 5825U, 16 threads, 32 GB, Linux","processCores":4.66516522630718,"heapMb":9537,"frameLagP99Ms":436.971605,"answerP99Ms":434.723299,"freshWorst":1.0,"stoppedBy":"250,000 spans/s: ingest behind"},
+{"viewers":32,"rate":200000,"machine":"AMD Ryzen 7 5825U, 16 threads, 32 GB, Linux","processCores":4.836079666079567,"heapMb":9633,"frameLagP99Ms":508.592762,"answerP99Ms":541.564008,"freshWorst":1.0,"stoppedBy":"250,000 spans/s: ingest behind"},
+{"viewers":64,"rate":200000,"machine":"AMD Ryzen 7 5825U, 16 threads, 32 GB, Linux","processCores":4.84530851224006,"heapMb":9405,"frameLagP99Ms":570.986442,"answerP99Ms":821.704709,"freshWorst":1.0,"stoppedBy":"250,000 spans/s: ingest behind"},
+{"viewers":128,"rate":50000,"machine":"AMD Ryzen 7 5825U, 16 threads, 32 GB, Linux","processCores":3.231349022606209,"heapMb":5920,"frameLagP99Ms":624.391579,"answerP99Ms":873.044471,"freshWorst":1.0,"stoppedBy":"60,000 spans/s: answer p99 1,018 ms"},
+{"viewers":256,"rate":20000,"machine":"AMD Ryzen 7 5825U, 16 threads, 32 GB, Linux","processCores":2.5265335707359604,"heapMb":2623,"frameLagP99Ms":603.246656,"answerP99Ms":665.083721,"freshWorst":1.0,"stoppedBy":"30,000 spans/s: answer p99 1,245 ms"},
+{"viewers":512,"rate":null,"machine":"AMD Ryzen 7 5825U, 16 threads, 32 GB, Linux","stoppedBy":"5,000 spans/s: answer p99 1,083 ms"}
+]
+}

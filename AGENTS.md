@@ -110,7 +110,8 @@ Before coding, name the owning package, the smallest public contract, the thread
   numbers and the evidence go in the pull request, not the commit.
 - Pull requests follow `.github/pull_request_template.md`: one or two sentences on what and why, then validation, screenshots or a short video of
   the page, or before → after figures, showing what the change solves or improves.
-- Ingest, frames, or queries changed: run the affected benchmarks (`./gradlew jmh -PjmhIncludes=...`).
+- Ingest, frames, or queries changed: run the affected benchmarks and record one run per kind, as `docs/benchmarks/README.md` describes; the pull
+  request compares them with main's newest runs.
 - Documented throughput changed: keep `docs/monitor.md` and `SaturationCheck` identical.
 
 ```bash
@@ -128,7 +129,8 @@ Before coding, name the owning package, the smallest public contract, the thread
 ./gradlew saturationCapacity    # the capacity frontier: how many usable open UIs at which span rate
 ./gradlew saturationViewers     # the viewer ladder: open UIs against what they get and cost, about 25 minutes
 ./gradlew saturationCheck       # checks the throughput docs/monitor.md documents
-./gradlew saturationDashboard   # adds build/saturation to docs/saturation (-PsaturationViewers, -PsaturationCapacity); needs Python
+./gradlew benchmarkRecord -PbenchmarkName="..."  # keeps the runs of HEAD in docs/benchmarks/runs; needs Python
+./gradlew benchmarkPage         # writes the benchmarks page, build/benchmarks/page.html
 
 cd frontend && npm run dev      # with ./gradlew demo running
 ```

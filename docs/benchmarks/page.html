@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Monitor hub saturation</title>
+<title>Monitor hub benchmarks</title>
 <style>
   :root {
     color-scheme: light;
@@ -234,13 +234,8 @@
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; display: grid; gap: 12px; align-content: start; min-width: 0; }
   .lede { margin: 0; max-width: 90ch; font-size: 16px; line-height: 1.55; }
   .lede b { font-weight: 600; font-variant-numeric: tabular-nums; }
-  .profile { display: grid; gap: 10px; }
-  .profile-row { display: grid; grid-template-columns: minmax(0, 16rem) minmax(0, 1fr) 3.5rem; gap: 4px 10px; align-items: center; }
-  .profile-row code { font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
-  .profile-row .what { grid-column: 1 / -1; color: var(--muted); font-size: 12px; margin-top: -2px; }
   .bar-track { height: 10px; background: var(--grid); border-radius: 5px; overflow: hidden; }
   .bar-fill { height: 100%; border-radius: 5px; }
-  .profile-row .share { text-align: right; font-variant-numeric: tabular-nums; font-size: 12px; }
   .explain { margin: 0; max-width: 90ch; line-height: 1.55; }
   .setup td { white-space: normal; text-align: left; }
   .setup td:first-child { color: var(--muted); width: 12rem; }
@@ -265,8 +260,6 @@
     .empty-line { min-height: 400px; }
   }
   @media (max-width: 560px) {
-    .profile-row { grid-template-columns: minmax(0, 1fr) 3.5rem; }
-    .profile-row .bar-track { grid-column: 1 / -1; grid-row: 2; }
   }
 
   /* A figure, for a screenshot a pull request shows: the title, the series, the chart and its key, nothing to operate, and larger text. */
@@ -285,7 +278,7 @@
     <div class="brand">
       <svg viewBox="0 0 15 11" aria-hidden="true"><g fill="var(--fg)"><rect x="0" y="0" width="3" height="3" rx="1.5"/><rect x="4" y="0" width="3" height="3" rx="1.5"/><rect x="8" y="0" width="3" height="3" rx="1.5"/><rect x="0" y="4" width="7" height="3" rx="1.5"/><rect x="8" y="4" width="7" height="3" rx="1.5"/><rect x="0" y="8" width="7" height="3" rx="1.5"/><rect x="8" y="8" width="3" height="3" rx="1.5"/></g><rect x="12" y="8" width="3" height="3" rx="1.5" fill="var(--accent)"/></svg>
       <span><b>smd</b> monitor</span>
-      <span class="product">Hub saturation</span>
+      <span class="product">Hub benchmarks</span>
     </div>
     <div class="runs" role="group" aria-label="Runs to compare">
       <span class="runs-label">Compare</span>
@@ -363,8 +356,8 @@
         </div>
         <div class="card">
           <h3>The runs</h3>
-          <p class="note">A run climbs one ladder of rates for every scenario it ran, so its limits compare with any other run's on one scale. A commit marked with an
-            asterisk ran with uncommitted changes.</p>
+          <p class="note">One run per change and kind, as docs/benchmarks/README.md describes. A saturation run climbs one ladder of rates for every scenario it ran,
+            so its limits compare with any other run's on one scale. A commit marked with an asterisk ran with uncommitted changes.</p>
           <table id="runs-table"><thead></thead><tbody></tbody></table>
         </div>
         <div class="card">
@@ -376,21 +369,6 @@
           <h3>How it was measured</h3>
           <table class="setup" id="setup-table"><thead></thead><tbody></tbody></table>
         </div>
-        <div class="card" id="profile-card">
-          <h3>Where the writer's time goes with the most applications</h3>
-          <p class="note">Share of the writer thread's CPU samples that include each method (a sample counts for every method on its stack), over the fill and both
-            steps of a JFR recording of the baseline.</p>
-          <div class="legend">
-            <span><i class="swatch block" style="background: var(--series-1)"></i>Receiving</span>
-            <span><i class="swatch block" style="background: var(--series-2)"></i>Fitting the specimens and the span index</span>
-            <span><i class="swatch block" style="background: var(--reference)"></i>The tick</span>
-          </div>
-          <div class="profile" id="profile-list"></div>
-          <p class="explain">The hub fits its specimens into their allowance after every batch. At steady state it is always at the allowance, so each batch evicts
-            hundreds of traces, and each eviction recomputes every application's bytes, builds a map of their usage, and picks the one furthest above its fair
-            share before dropping a single trace. The span index forgets its entries the same way at every tick. Both cost evictions times applications, so the
-            ceiling falls as services are added. The other large cost is rebuilding every key's statistics for each epoch.</p>
-        </div>
       </div>
       <div class="stage-foot">
         <div class="legend" id="stage-legend"></div>
@@ -401,21 +379,21 @@
   </div>
 </div>
 
-<script id="saturation-data" type="application/json">/*SATURATION_DATA*/</script>
+<script id="benchmark-data" type="application/json">/*BENCHMARK_DATA*/</script>
 <script>
 (() => {
   let DATA;
   try {
-    DATA = JSON.parse(document.getElementById('saturation-data').textContent);
+    DATA = JSON.parse(document.getElementById('benchmark-data').textContent);
   } catch {
     document.querySelector('main').replaceChildren(Object.assign(document.createElement('p'), {
-      textContent: 'This is the page template, without data. Write the page with: python -I docs/saturation/dashboard.py',
+      textContent: 'This is the page template, without data. Write the page with: ./gradlew benchmarkPage',
     }));
     return;
   }
 
   const LOG_FLOOR = 1000;
-  // A page opened without runs picked compares the latest two: a change's before and after.
+  // A page opened without runs picked compares the latest two of each kind: main's newest run and the change's, or the last change merged and the one before.
   const DEFAULT_RUNS = 2;
   // Each run keeps one of these colors; past eight, the picker refuses more runs at once rather than reuse a color.
   const SERIES = ['--series-1', '--series-2', '--series-3', '--series-4', '--series-5', '--series-6', '--series-7', '--series-8'];
@@ -597,14 +575,15 @@
   const expandSeconds = (groups) => groups.flatMap(({ run, scenario, rates, t, ...measures }) => rates
     .flatMap(([rate, count]) => Array(count).fill(rate))
     .map((rate, index) => ({ run, scenario, t: t ? t[index] : index + 1, rate, ...Object.fromEntries(Object.entries(measures).map(([key, values]) => [key, values[index]])) })));
-  const { runs, steps, scenarios, profile, setup } = DATA;
+  const { steps, scenarios, setup } = DATA;
+  const runs = DATA.limits;
   const seconds = expandSeconds(DATA.seconds);
-  const orders = [...new Set(runs.map((run) => run.order))].sort((a, b) => a - b);
-  const allRuns = orders.map((order, index) => {
-    const row = runs.find((run) => run.order === order);
-    // A run shows its name when dashboard.py gave it one, and its number otherwise; the query string always picks runs by number.
-    return { run: row.run, order, label: row.label, machine: row.machine, name: row.name || `Run ${order}`, ...partsOf(row.run), color: `var(${SERIES[index % SERIES.length]})` };
-  });
+  // The runs of each kind in the order they started; a run keeps its color among the runs of its kind, and the query string picks it by the slug of
+  // its name, which the runs of one change share across kinds.
+  const KINDS = { saturation: 'Saturation', capacity: 'Capacity', viewers: 'Open UIs', jmh: 'JMH' };
+  const runsOfKind = (kind) => DATA.runs.filter((meta) => meta.kind === kind).sort((a, b) => a.order - b.order)
+    .map((meta, index) => ({ ...meta, ...partsOf(meta.run), color: `var(${SERIES[index % SERIES.length]})` }));
+  const allRuns = runsOfKind('saturation');
   const runById = new Map(allRuns.map((run) => [run.run, run]));
   const rowsByRun = new Map(groupsInOrder(runs, (row) => row.run));
   const rowsOf = (id) => new Map((rowsByRun.get(id) || []).map((row) => [row.scenario, row]));
@@ -636,18 +615,21 @@
   };
 
   const viewerRows = DATA.viewers || [];
-  const viewerRuns = groupsInOrder([...viewerRows].sort((a, b) => a.order - b.order), (row) => row.run).map(([run, rows]) => ({ run, order: rows[0].order,
-    name: rows[0].name || `Viewers ${rows[0].order}`, label: rows[0].label, machine: rows[0].machine, rows }));
+  const viewerRuns = runsOfKind('viewers').map((run) => ({ ...run, rows: viewerRows.filter((row) => row.run === run.run) }));
   const viewerCaps = [...new Set(viewerRows.filter((row) => row.viewers > 0).map((row) => row.cap))].sort((a, b) => a - b);
-  const viewerPicks = [...[...viewerRuns].reverse().map((run) => [`run-${run.order}`, `${run.name}: every query cap`]),
-    ...viewerCaps.map((cap) => [`cap-${cap}`, `Query cap ${cap}: every viewer run`])];
+  const viewerPicks = [...[...viewerRuns].reverse().map((run) => [`run-${run.slug}`, `${run.name}: every query cap`]),
+    ...viewerCaps.map((cap) => [`cap-${cap}`, `Query cap ${cap}: every viewer run picked`])];
 
   // The frontiers of span rate and open UIs (SaturationCapacity): for each number of viewers the highest rate at which the hub kept up and, with
   // viewers, their UIs stayed usable; a point without a rate is the first number of viewers that no rate served.
   const frontierRows = DATA.capacity || [];
-  const frontierRuns = groupsInOrder([...frontierRows].sort((a, b) => a.order - b.order), (row) => row.run).map(([run, rows], index) => ({ run, order: rows[0].order,
-    name: rows[0].name || `Capacity ${rows[0].order}`, label: rows[0].label, machine: rows[0].machine, color: `var(${SERIES[index % SERIES.length]})`,
-    rows: [...rows].sort((a, b) => a.viewers - b.viewers) }));
+  const frontierRuns = runsOfKind('capacity').map((run) => ({ ...run, rows: frontierRows.filter((row) => row.run === run.run).sort((a, b) => a.viewers - b.viewers) }));
+
+  // The JMH benchmarks: each a method with its parameters, measured by every JMH run that ran it.
+  const jmhRows = DATA.jmh || [];
+  const jmhRuns = runsOfKind('jmh').map((run) => ({ ...run, rows: jmhRows.filter((row) => row.run === run.run) }));
+  const jmhKey = (row) => `${row.benchmark}${row.params ? ` ${Object.entries(row.params).map(([key, value]) => `${key}=${value}`).join(' ')}` : ''}`;
+  const RUNS_OF = { saturation: allRuns, capacity: frontierRuns, viewers: viewerRuns, jmh: jmhRuns };
 
   // A sweep earns a view of its own when it has several points besides the reference; the overview shows the others.
   const VIEWS = [
@@ -657,11 +639,13 @@
       .map(([sweep, { title }]) => ({ id: `sweep-${sweep}`, group: 'Compare runs', title: `${title} sweep`, sweep, controls: ['limit', 'scale'] })),
     { id: 'steps', group: 'One scenario', title: 'Rate by rate', controls: ['scenario', 'measure', 'series', 'sweep', 'run', 'scale'] },
     { id: 'seconds', group: 'One scenario', title: 'Second by second', controls: ['scenario', 'seconds'] },
-    { id: 'capacity', group: 'End to end', title: 'Capacity', controls: [] },
-    { id: 'viewers', group: 'End to end', title: 'Open UIs', controls: ['vpick'] },
+    { id: 'capacity', group: 'End to end', title: 'Capacity', controls: [], kind: 'capacity' },
+    { id: 'viewers', group: 'End to end', title: 'Open UIs', controls: ['vpick'], kind: 'viewers' },
+    { id: 'jmh', group: 'Microbenchmarks', title: 'JMH', controls: [], kind: 'jmh' },
     { id: 'about', group: 'About', title: 'How it was measured', controls: [] },
   ];
   const viewOf = (id) => VIEWS.find((view) => view.id === id);
+  const kindOf = (view) => view.kind || 'saturation';
   // The top of a measure's axis: its fixed maximum, such as 100% for a share, unless every value stays below a fifth of it; then the axis zooms
   // to the values, so a share of a tenth of a percent still shows.
   const axisTop = (measure, top, headroom) => {
@@ -669,7 +653,7 @@
     return measure.max !== undefined && top >= measure.max / 5 ? measure.max : top * headroom;
   };
 
-  // The page's state lives in the query string, so a view can be linked; runs are named there by their number.
+  // The page's state lives in the query string, so a view can be linked; runs are named there by the slug of their name.
   const PARAMS = {
     view: { allowed: VIEWS.map((view) => view.id), fallback: 'change' },
     show: { allowed: ['chart', 'table'], fallback: 'chart' },
@@ -687,8 +671,8 @@
   // The verdict ladder became the strips under the rate-by-rate chart; a link to it opens that chart.
   if (query.get('view') === 'ladder') query.set('view', 'steps');
   const state = Object.fromEntries(Object.entries(PARAMS).map(([name, { allowed, fallback }]) => [name, allowed.includes(query.get(name)) ? query.get(name) : fallback]));
-  state.runs = (query.get('runs') || '').split(',').map(Number).filter((order) => order > 0);
-  state.run = Number(query.get('run')) || null;
+  state.runs = (query.get('runs') || '').split(',').filter(Boolean);
+  state.run = query.get('run') || null;
   state.step = Number(query.get('step')) || null;
   const figure = query.get('figure') === '1';
   document.documentElement.classList.toggle('figure', figure);
@@ -1398,7 +1382,7 @@
   // The series a scenario view draws: the picked runs on one scenario, or one run on the scenarios of a sweep.
   const seriesItems = (picked, scenario) => {
     if (state.series === 'scenarios') {
-      const run = picked.find((each) => each.order === state.run) || picked[picked.length - 1];
+      const run = picked.find((each) => each.slug === state.run) || picked[picked.length - 1];
       return { run, items: membersOf(state.sweep).map((member, index) => ({ key: member.scenario, name: member.name, color: `var(${SERIES[index % SERIES.length]})`,
         steps: stepsOf(run.run, member.scenario), limits: rowsOf(run.run).get(member.scenario), scenario: member })) };
     }
@@ -1438,7 +1422,7 @@
   secondsSelect.replaceChildren(...Object.entries(SECONDS).map(([key, measure]) => new Option(measure.label, key)));
   scenarioSelect.addEventListener('change', () => setState({ scenario: scenarioSelect.value, step: null }));
   sweepSelect.addEventListener('change', () => setState({ sweep: sweepSelect.value }));
-  runSelect.addEventListener('change', () => setState({ run: Number(runSelect.value) }));
+  runSelect.addEventListener('change', () => setState({ run: runSelect.value }));
   measureSelect.addEventListener('change', () => setState({ measure: measureSelect.value }));
   secondsSelect.addEventListener('change', () => setState({ seconds: secondsSelect.value }));
   const vpickSelect = document.getElementById('vpick-select');
@@ -1526,39 +1510,26 @@
     } else {
       lede.append('Each sweep changes one thing of the reference shape, so the difference between two of its points has one cause.');
     }
+    const holds = (run) => (run.kind === 'saturation' ? `${count(rowsOf(run.run).size)} scenarios`
+      : `${count(RUNS_OF[run.kind].find((each) => each.run === run.run).rows.length)} ${run.kind === 'jmh' ? 'benchmarks' : 'points'}`);
     fillTable(document.getElementById('runs-table'), [
-      { label: 'Number', value: (run) => run.order },
+      { label: 'Kind', text: true, value: (run) => KINDS[run.kind] },
       { label: 'Run', text: true, value: (run) => run.name, color: (run) => run.color },
       { label: 'Started', text: true, value: (run) => run.when },
       { label: 'Commit', text: true, value: (run) => run.short },
       { label: 'Machine', text: true, value: (run) => run.machine },
-      { label: 'Scenarios run', value: (run) => count(rowsOf(run.run).size) },
-      { label: 'Seconds kept', text: true, value: (run) => (seconds.some((row) => row.run === run.run) ? 'yes' : 'no') },
-    ], allRuns);
-    const kinds = { receive: 'var(--series-1)', fit: 'var(--series-2)', tick: 'var(--reference)' };
-    // A profile is kept only for the machine the runs ran on; without one the card has nothing to show.
-    document.getElementById('profile-card').hidden = !profile.length;
-    document.getElementById('profile-list').replaceChildren(...profile.map((row) => {
-      const item = Object.assign(document.createElement('div'), { className: 'profile-row' });
-      const track = Object.assign(document.createElement('div'), { className: 'bar-track' });
-      const fill = Object.assign(document.createElement('div'), { className: 'bar-fill' });
-      fill.style.width = `${row.share * 100}%`;
-      fill.style.background = kinds[row.kind] || 'var(--reference)';
-      track.append(fill);
-      item.append(Object.assign(document.createElement('code'), { textContent: row.method }), track,
-        Object.assign(document.createElement('span'), { className: 'share', textContent: share(row.share) }),
-        Object.assign(document.createElement('span'), { className: 'what', textContent: row.what }));
-      return item;
-    }));
+      { label: 'Holds', value: holds },
+      { label: 'Seconds kept', text: true, value: (run) => (run.kind !== 'saturation' ? '' : seconds.some((row) => row.run === run.run) ? 'yes' : 'no') },
+    ], Object.keys(KINDS).flatMap((kind) => RUNS_OF[kind]), (run) => run.kind);
     fillTable(document.getElementById('setup-table'), [{ label: 'Setting', text: true, value: (row) => row.label }, { label: 'Value', text: true, value: (row) => row.value }], setup);
     fillTable(document.getElementById('scenarios-table'), [{ label: 'Scenario', text: true, value: (row) => row.name }, { label: 'Shape', text: true, value: (row) => row.description }],
       scenarios);
   };
 
   // The picked runs, and the others behind a button, so a comparison of two runs is not lost among every run kept.
-  const renderPicker = (picked, pickedIds) => {
+  const renderPicker = (kindRuns, picked, pickedIds) => {
     const full = picked.length >= MAX_PICKED;
-    const others = allRuns.length - picked.length;
+    const others = kindRuns.length - picked.length;
     const more = Object.assign(document.createElement('button'), { type: 'button', className: 'btn more-runs',
       textContent: allRunsShown ? 'Fewer runs' : `+${others} more ${others === 1 ? 'run' : 'runs'}` });
     more.hidden = !others;
@@ -1566,13 +1537,13 @@
       allRunsShown = !allRunsShown;
       render();
     });
-    document.getElementById('run-picker').replaceChildren(...allRuns.filter((run) => allRunsShown || pickedIds.has(run.run)).map((run) => {
+    document.getElementById('run-picker').replaceChildren(...kindRuns.filter((run) => allRunsShown || pickedIds.has(run.run)).map((run) => {
       const chip = document.createElement('button');
       chip.type = 'button';
       chip.className = 'btn run-chip';
       chip.setAttribute('aria-pressed', String(pickedIds.has(run.run)));
       chip.disabled = full && !pickedIds.has(run.run);
-      chip.title = `${run.name} (run ${run.order}): started ${run.when}, commit ${run.commit}${run.changed ? ' with uncommitted changes' : ''}, on ${run.machine}. `
+      chip.title = `${run.name} (${run.slug}): started ${run.when}, commit ${run.commit}${run.changed ? ' with uncommitted changes' : ''}, on ${run.machine}. `
         + (pickedIds.has(run.run) ? 'Click to leave it out.' : full ? `At most ${MAX_PICKED} runs compare at once.` : 'Click to compare it.');
       chip.style.setProperty('--run', run.color);
       const mark = document.createElement('i');
@@ -1580,8 +1551,10 @@
       chip.append(mark, Object.assign(document.createElement('span'), { className: 'run-name', textContent: run.name }),
         Object.assign(document.createElement('span'), { className: 'run-commit', textContent: run.short }));
       chip.addEventListener('click', () => {
-        const next = pickedIds.has(run.run) ? picked.filter((each) => each !== run) : allRuns.filter((each) => pickedIds.has(each.run) || each === run);
-        if (next.length) setState({ runs: next.map((each) => each.order) });
+        const next = pickedIds.has(run.run) ? picked.filter((each) => each !== run) : kindRuns.filter((each) => pickedIds.has(each.run) || each === run);
+        // The picks of the other kinds stay as they are.
+        const mine = new Set(kindRuns.map((each) => each.slug));
+        if (next.length) setState({ runs: [...state.runs.filter((slug) => !mine.has(slug)), ...next.map((each) => each.slug)] });
       });
       return chip;
     }), more);
@@ -1812,14 +1785,15 @@
 
   // The lines the pick draws: the query caps of one viewer run, or one cap in every viewer run; each point a number of viewers, its baseline
   // the run without viewers.
-  const viewerSeries = () => {
-    const [kind, value] = state.vpick.split('-');
+  const viewerSeries = (picked) => {
+    const [kind, ...rest] = state.vpick.split('-');
+    const value = rest.join('-');
     if (kind === 'run') {
-      const run = viewerRuns.find((each) => each.order === Number(value));
+      const run = viewerRuns.find((each) => each.slug === value) || picked[picked.length - 1];
       return { runs: [run], series: viewerCaps.map((cap, index) => ({ key: `cap-${cap}`, name: `Query cap ${cap}`, color: `var(${SERIES[index % SERIES.length]})`,
         baseline: run.rows.find((row) => row.viewers === 0), rows: run.rows.filter((row) => row.viewers > 0 && row.cap === cap) })).filter((each) => each.rows.length) };
     }
-    return { runs: viewerRuns, series: viewerRuns.map((run, index) => ({ key: run.run, name: run.name, color: `var(${SERIES[index % SERIES.length]})`,
+    return { runs: picked, series: picked.map((run) => ({ key: run.run, name: run.name, color: run.color,
       baseline: run.rows.find((row) => row.viewers === 0), rows: run.rows.filter((row) => row.viewers > 0 && row.cap === Number(value)) })).filter((each) => each.rows.length) };
   };
 
@@ -1902,10 +1876,10 @@
     }
   };
 
-  const renderFrontierView = () => {
+  const renderFrontierView = (picked) => {
     stage.title.textContent = 'Capacity · how many open UIs at which span rate';
     if (!frontierRuns.length) {
-      stage.how.textContent = 'No capacity frontier was added yet: run ./gradlew saturationCapacity, then ./gradlew saturationDashboard -PsaturationCapacity.';
+      stage.how.textContent = 'No capacity frontier was recorded yet: run ./gradlew saturationCapacity, then ./gradlew benchmarkRecord -PbenchmarkName="<name>".';
       emptyLine(stage.chart, 'No capacity frontier kept.');
       return;
     }
@@ -1913,7 +1887,7 @@
       + 'the live frames and ask their view’s query. With UIs open it must also keep them usable: 99% of frames read within a second of the second '
       + 'they close (p99), 99% of queries answered within a second (p99), and the least lucky UI fresh after 95% of frames. The viewers double '
       + 'until no rate is usable, a hollow point on the bottom edge. Both axes are logarithmic, so doubling either reads alike.';
-    facts(frontierRuns.map((run) => {
+    facts(picked.map((run) => {
       const served = run.rows.filter((row) => present(row.rate));
       const most = Math.max(...served.map((row) => row.viewers));
       const none = served.find((row) => row.viewers === 0);
@@ -1921,8 +1895,8 @@
         text: ` ${none ? `${count(none.rate)} spans/s without UIs; ` : ''}up to ${count(most)} usable UIs` };
     }));
     legend(stage.legend, [{ name: 'Filled: the highest usable rate', color: 'var(--muted)' }, { name: 'Hollow: no rate usable', block: 'key-hollow' }]);
-    frontierChart(stage.chart, frontierRuns, chartHeight());
-    const rows = frontierRuns.flatMap((run) => run.rows.map((row) => ({ ...row, line: run })));
+    frontierChart(stage.chart, picked, chartHeight());
+    const rows = picked.flatMap((run) => run.rows.map((row) => ({ ...row, line: run })));
     fillTable(stage.table, [
       { label: 'Run', text: true, value: (row) => row.line.name, color: (row) => row.line.color },
       { label: 'Open UIs', value: (row) => (row.viewers ? count(row.viewers) : 'none') },
@@ -1935,14 +1909,14 @@
     ], rows, (row) => row.line.run);
   };
 
-  const renderViewersView = () => {
+  const renderViewersView = (picked) => {
     stage.title.textContent = 'Open UIs · what the viewers get and what it costs';
     if (!viewerRuns.length) {
-      stage.how.textContent = 'No viewer ladder was added yet: run ./gradlew saturationViewers, then ./gradlew saturationDashboard -PsaturationViewers.';
+      stage.how.textContent = 'No viewer ladder was recorded yet: run ./gradlew saturationViewers, then ./gradlew benchmarkRecord -PbenchmarkName="<name>".';
       emptyLine(stage.chart, 'No viewer ladder kept.');
       return;
     }
-    const { runs: shownRuns, series } = viewerSeries();
+    const { runs: shownRuns, series } = viewerSeries(picked);
     const rate = shownRuns[0].rows[0].rate;
     stage.how.textContent = `Each point is a run offering ${count(rate)} spans/s while that many open UIs, in a JVM of their own, read the live frames and ask `
       + 'their view’s query whenever a newer frame arrives. A hollow point is a load at which ingest fell behind or shed.';
@@ -1981,15 +1955,53 @@
     ], rows, (row) => row.line.key);
   };
 
+  // A table of the benchmarks the picked JMH runs ran: each run's median and 99th percentile, or its score where the mode has no percentiles, and
+  // the change of the last run picked against the first, by the median.
+  const renderJmhView = (picked) => {
+    stage.title.textContent = 'JMH · the single-threaded paths at the design target';
+    stage.chart.hidden = true;
+    stage.tableBox.hidden = false;
+    stage.show.hidden = true;
+    if (!jmhRuns.length) {
+      stage.how.textContent = 'No JMH run was recorded yet: run ./gradlew jmh -PjmhIncludes=<Benchmark>, then ./gradlew benchmarkRecord -PbenchmarkName="<name>".';
+      fillTable(stage.table, [{ label: 'Benchmark', text: true, value: () => 'No JMH run kept.' }], [{}]);
+      return;
+    }
+    stage.how.textContent = 'Time per operation in each picked run; a run that narrowed the benchmarks it ran leaves the others empty. The change compares the '
+      + 'last run picked with the first, by the median; a few percent between two runs of one commit is noise.';
+    const first = picked[0];
+    const last = picked[picked.length - 1];
+    const keys = [...new Set(picked.flatMap((run) => run.rows.map(jmhKey)))].sort();
+    const rowOf = (run, key) => run.rows.find((row) => jmhKey(row) === key);
+    const middle = (row) => (row ? row.p50 ?? row.score : null);
+    const time = (row) => (row ? `${[row.p50 ?? row.score, row.p99].filter(present).map((value) => value.toPrecision(3)).join(' / ')} ${row.unit}` : '');
+    facts(picked.map((run) => ({ key: run.run, name: run.name, title: run.label, color: run.color, text: ` ${count(run.rows.length)} benchmarks` })));
+    const columns = [
+      { label: 'Benchmark', text: true, value: (key) => key },
+      ...picked.map((run) => ({ label: `${run.name}, p50 / p99`, value: (key) => time(rowOf(run, key)) })),
+    ];
+    if (picked.length > 1) {
+      const change = (key) => {
+        const [before, after] = [middle(rowOf(first, key)), middle(rowOf(last, key))];
+        return present(before) && present(after) && before > 0 ? after / before - 1 : null;
+      };
+      // Time per operation: lower is better.
+      columns.push({ label: `Change vs ${first.name}`, value: (key) => orNone(change(key), signed) || '',
+        className: (key) => (change(key) < 0 ? 'tone-ok' : change(key) > 0 ? 'tone-bad' : '') });
+    }
+    fillTable(stage.table, columns, keys);
+  };
+
   function render() {
     for (const button of document.querySelectorAll('[data-param]')) {
       button.setAttribute('aria-pressed', String(state[button.dataset.param] === button.dataset.value));
     }
-    const wanted = allRuns.filter((run) => state.runs.includes(run.order)).slice(0, MAX_PICKED);
-    const picked = wanted.length ? wanted : allRuns.slice(-DEFAULT_RUNS);
-    const pickedIds = new Set(picked.map((run) => run.run));
-    renderPicker(picked, pickedIds);
     const view = viewOf(state.view);
+    const kindRuns = RUNS_OF[kindOf(view)];
+    const wanted = kindRuns.filter((run) => state.runs.includes(run.slug)).slice(0, MAX_PICKED);
+    const picked = wanted.length ? wanted : kindRuns.slice(-DEFAULT_RUNS);
+    const pickedIds = new Set(picked.map((run) => run.run));
+    renderPicker(kindRuns, picked, pickedIds);
     for (const button of rail.querySelectorAll('button')) button.setAttribute('aria-current', String(button.dataset.view === view.id));
     const scenario = scenarioById.get(state.scenario);
     const bySweep = view.controls.includes('series') && state.series === 'scenarios';
@@ -2003,8 +2015,10 @@
     sweepSelect.value = state.sweep;
     measureSelect.value = state.measure;
     secondsSelect.value = state.seconds;
-    runSelect.replaceChildren(...picked.map((run) => Object.assign(new Option(`${run.name} · ${run.short}`, run.order), { title: run.detail })));
-    runSelect.value = String((picked.find((run) => run.order === state.run) || picked[picked.length - 1]).order);
+    if (kindOf(view) === 'saturation') {
+      runSelect.replaceChildren(...picked.map((run) => Object.assign(new Option(`${run.name} · ${run.short}`, run.slug), { title: run.detail })));
+      runSelect.value = (picked.find((run) => run.slug === state.run) || picked[picked.length - 1]).slug;
+    }
     const about = view.id === 'about';
     const table = !about && state.show === 'table';
     stage.about.hidden = !about;
@@ -2058,9 +2072,11 @@
       drawSweep(stage.chart, view.sweep, picked, state.limit, chartHeight());
       fillTable(stage.table, limitColumns, comparedRows(picked, members), (row) => row.scenario);
     } else if (view.id === 'viewers') {
-      renderViewersView();
+      renderViewersView(picked);
     } else if (view.id === 'capacity') {
-      renderFrontierView();
+      renderFrontierView(picked);
+    } else if (view.id === 'jmh') {
+      renderJmhView(picked);
     } else if (view.id === 'seconds') {
       renderSecondsView(picked, scenario);
     } else {
