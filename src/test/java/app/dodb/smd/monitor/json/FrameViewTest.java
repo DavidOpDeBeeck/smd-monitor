@@ -12,7 +12,6 @@ import app.dodb.smd.monitor.hub.span.MessageSpan;
 import app.dodb.smd.monitor.hub.span.MessageType;
 import app.dodb.smd.monitor.hub.span.Outcome;
 import app.dodb.smd.monitor.hub.span.SessionId;
-import app.dodb.smd.monitor.hub.span.SinkSend;
 import app.dodb.smd.monitor.hub.span.SpanRef;
 import app.dodb.smd.monitor.hub.span.Stage;
 import org.junit.jupiter.api.Test;
@@ -83,25 +82,15 @@ class FrameViewTest {
         var types = application.get("types");
         assertThat(types.valueStream().map(type -> type.get("kind").asString())).containsExactly("EVENT", "COMMAND");
         assertThat(types.get(1).get("entryPoint").asBoolean()).isTrue();
-        assertThat(types.get(1).get("window").get(2).asLong()).isEqualTo(1);
-        assertThat(types.get(1).get("window").get(9).asDouble()).isEqualTo(3.0);
         assertThat(types.get(1).get("retained").asInt()).isEqualTo(1);
-        assertThat(types.get(1).get("startedPerSecond").size()).isEqualTo(30);
         var group = application.get("groups").get(0);
         assertThat(group.get("processingGroup").asString()).isEqualTo("ticket-view");
         assertThat(group.get("delivery").asString()).isEqualTo("sync");
         assertThat(group.get("handlings").get(0).get("name").asString()).isEqualTo(EVENT.name());
         assertThat(group.get("handlings").get(0).get("asynchronous").asBoolean()).isFalse();
         assertThat(group.get("handlings").get(0).get("delayP95Millis").isNull()).isTrue();
-        assertThat(application.get("links").get(0).get("parent").get("name").asString()).isEqualTo(COMMAND.name());
-        assertThat(application.get("links").get(0).get("history").asLong()).isEqualTo(1);
+        assertThat(group.get("handlings").get(0).propertyNames()).containsExactly("name", "asynchronous", "delayP95Millis");
         assertThat(application.get("crossings").isEmpty()).isTrue();
-        var route = application.get("routes").get(0);
-        assertThat(route.get("publisher").asString()).isEqualTo(TICKETS.value());
-        assertThat(route.get("event").get("name").asString()).isEqualTo(EVENT.name());
-        assertThat(route.get("processingGroup").asString()).isEqualTo("ticket-view");
-        assertThat(route.get("history").asLong()).isEqualTo(1);
-        assertThat(application.get("groupLinks").isEmpty()).isTrue();
         assertThat(application.get("kinds").valueStream().map(kind -> kind.get("kind").asString())).containsExactly("COMMAND", "QUERY", "EVENT");
         assertThat(application.get("kinds").get(0).get("startedPerSecond").size()).isEqualTo(90);
         assertThat(application.get("enteredPerSecond").size()).isEqualTo(30);
@@ -126,29 +115,14 @@ class FrameViewTest {
         assertThat(frame.get("health").get("applications").get(0).propertyNames()).containsExactly("name", "reasons", "shedding", "countingBytes", "join",
             "specimens", "retained", "completeSinceMillis", "oldestRetainedMillis", "effectiveHorizonSeconds", "slowestK", "failuresK");
         assertThat(frame.get("applications").get(0).propertyNames()).containsExactly("name", "failedReceived", "instances", "types", "groups",
-            "links", "crossings", "routes", "sinkRoutes", "groupLinks", "dispatches", "handlings", "eventDelayP95Millis", "kinds", "enteredPerSecond", "failedPerSecond",
-            "failures", "other", "provisionalFromEpochSecond");
+            "crossings", "dispatches", "handlings", "eventDelayP95Millis", "kinds", "enteredPerSecond", "failedPerSecond",
+            "other", "provisionalFromEpochSecond");
         assertThat(frame.get("applications").get(0).get("instances").get(0).propertyNames()).containsExactly("name", "sessionId", "lastReportedAtMillis",
             "silent", "clockAhead", "exportLagMillis", "dispatches", "handlings");
         assertThat(frame.get("applications").get(0).get("other").propertyNames()).containsExactly("dispatchWindow", "dispatchHistory", "handlingWindow",
             "handlingHistory", "edgeHistory", "failureHistory");
-        assertThat(frame.get("applications").get(0).get("types").get(0).propertyNames()).containsExactly("kind", "name", "entryPoint", "window", "history",
-            "retained", "startedPerSecond", "failedPerSecond");
+        assertThat(frame.get("applications").get(0).get("types").get(0).propertyNames()).containsExactly("kind", "name", "entryPoint", "retained");
         assertThat(frame.get("applications").get(0).get("crossings").get(0).propertyNames()).containsExactly("parentApplication", "link");
-    }
-
-    @Test
-    void from_publicationSentToSinks_listsEachSinkRouteWithItsDelivery() {
-        hub.receive(new SpanBatch(TICKETS, new InstanceName("tickets-1"), new SessionId("session-1"), List.of(),
-            List.of(new SinkSend(SpanRef.of(TRACE, "0000000000000005"), EVENT, new EventDelivery("shared-log"), start))));
-
-        var route = json(OptionalLong.of(HEAP)).get("applications").get(0).get("sinkRoutes").get(0);
-
-        assertThat(route.propertyNames()).containsExactly("event", "delivery", "history", "lastSecond");
-        assertThat(route.get("event").get("kind").asString()).isEqualTo("EVENT");
-        assertThat(route.get("event").get("name").asString()).isEqualTo(EVENT.name());
-        assertThat(route.get("delivery").asString()).isEqualTo("shared-log");
-        assertThat(route.get("history").asLong()).isEqualTo(1);
     }
 
     @Test
@@ -182,35 +156,6 @@ class FrameViewTest {
 
         assertThat(statistics.get(3).asLong()).isZero();
         assertThat(statistics.get(4).isNull()).isTrue();
-    }
-
-    // Statistics are positional: started, entered, failed, completed, average, floor, p50, p95, p99, max; a brief one ends at the p95.
-    @Test
-    void from_typeAndItsHistory_writesTheWindowWholeAndTheHistoryBrief() {
-        hub.receive(new SpanBatch(TICKETS, new InstanceName("tickets-1"), new SessionId("session-1"), List.of(
-            span("0000000000000001", Optional.empty(), MessageId.generate(), new Stage.Dispatch(COMMAND), new Outcome.Completed(Duration.ofMillis(2)))), List.of()));
-
-        var type = json(OptionalLong.of(HEAP)).get("applications").get(0).get("types").get(0);
-
-        assertThat(type.get("window").size()).isEqualTo(10);
-        assertThat(type.get("window").valueStream().limit(5).map(JsonNode::asString)).containsExactly("1", "1", "0", "1", "2.0");
-        assertThat(type.get("window").get(9).asDouble()).isEqualTo(2.0);
-        assertThat(type.get("history").size()).isEqualTo(5);
-        assertThat(type.get("history").valueStream().limit(4).map(JsonNode::asString)).containsExactly("1", "1", "0", "1");
-    }
-
-    @Test
-    void from_failedHandling_countsTheFailureUnderItsStageAndExceptionTypeWithItsSeconds() {
-        hub.receive(new SpanBatch(TICKETS, new InstanceName("tickets-1"), new SessionId("session-1"), List.of(
-            span("0000000000000001", Optional.empty(), MessageId.generate(), new Stage.Handling(EVENT, "ticket-view"),
-                new Outcome.Failed(Duration.ofMillis(1), "java.lang.IllegalStateException"))), List.of()));
-
-        var failure = json(OptionalLong.of(HEAP)).get("applications").get(0).get("failures").get(0);
-
-        assertThat(failure.propertyNames()).containsExactly("kind", "type", "handling", "processingGroup", "failureType", "window", "history", "windowPerSecond");
-        assertThat(failure.get("processingGroup").asString()).isEqualTo("ticket-view");
-        assertThat(failure.get("window").asLong()).isEqualTo(1);
-        assertThat(failure.get("windowPerSecond").valueStream().mapToLong(JsonNode::asLong).sum()).isEqualTo(1);
     }
 
     @Test

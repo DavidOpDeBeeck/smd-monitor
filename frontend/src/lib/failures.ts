@@ -1,6 +1,5 @@
 import { activity } from './api';
 import { failureKey, typeKey } from './format';
-import type { ScopedState } from './scope';
 import type { Activity, FailureCount, MessageKind, TypeKey } from './types';
 import type { WireFailureCause, WireFailureStep } from './wire';
 
@@ -63,16 +62,6 @@ export function causeExamples(cause: WireFailureCause): CauseExamples {
 // Whether the cause raised the failure itself in a chain, by the heuristic that a failed parent propagated its failed child's failure.
 export const raisedHere = (chain: FailureChain) => chain.causeAt === chain.steps.length - 1;
 
-// The causes that failed something over the history, the most frequent in the window first, then over the history.
-export function rankedCauses(failures: readonly FailureCount[]): FailureCount[] {
-    return failures.filter(failure => failure.history > 0).sort((a, b) => b.window - a.window || b.history - a.history || a.key.localeCompare(b.key));
-}
-
-// The causes that failed something in the window, the most frequent first.
-export function recentCauses(failures: readonly FailureCount[]): FailureCount[] {
-    return failures.filter(failure => failure.window > 0).sort((a, b) => b.window - a.window || a.key.localeCompare(b.key));
-}
-
 export interface ApplicationFailures {
     application: string;
     causes: FailureCount[];
@@ -89,15 +78,6 @@ export function causesByApplication(causes: readonly FailureCount[], scope: stri
     return [...byApplication]
         .map(([application, causes]) => ({ application, causes }))
         .sort((a, b) => Number(b.application === scope) - Number(a.application === scope) || a.application.localeCompare(b.application));
-}
-
-// How many invocations of the cause's stage started over the history: its processing group's handlings, or the dispatches of its type.
-export function stageStarted(cause: FailureCount, scoped: ScopedState): number {
-    if (cause.handling) {
-        const handling = [...scoped.handlings.values()].find(each => each.typeKey === cause.typeKey && each.processingGroup === cause.processingGroup);
-        return handling?.history.started ?? 0;
-    }
-    return scoped.types.get(cause.typeKey)?.history.started ?? 0;
 }
 
 // When the latest second of the window with an occurrence started, or null when none did; the series ends at the end.

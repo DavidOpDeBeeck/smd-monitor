@@ -11,9 +11,9 @@ import { cx } from '../lib/cx';
 import { HandlingGlyph } from '../components/Glyph';
 import { ago, count, duration, percent, rate, shortHistorySpan, shortName, STATUS_LABEL } from '../lib/format';
 import { activity, hubRequest } from '../lib/api';
-import { statistics } from '../lib/state';
+import { brief, NO_FIGURES, statistics, typeLink } from '../lib/state';
 import { ratePerSecond } from '../lib/throughput';
-import type { Activity, HandlingStatistics, TypeKey } from '../lib/types';
+import type { Activity, Brief, HandlingStatistics, TypeKey } from '../lib/types';
 import type { WireRetainedType } from '../lib/wire';
 import { createHubQuery } from '../store/hub-query';
 import { InspectorHeading, InspectorSection, StaticRelation, Stats, TypeRelation } from './parts';
@@ -36,8 +36,8 @@ function InvocationRow(props: { message: Activity }) {
     );
 }
 
-function HandlingRow(props: { handling: HandlingStatistics }) {
-    const completed = () => props.handling.history.completed;
+function HandlingRow(props: { handling: HandlingStatistics; history: Brief }) {
+    const completed = () => props.history.completed;
     return (
         <div class="grid grid-cols-[14px_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-md border px-2 py-1.5">
             <HandlingGlyph />
@@ -48,15 +48,15 @@ function HandlingRow(props: { handling: HandlingStatistics }) {
                 <DeliveryChip delivery={props.handling.delivery} class="flex-none" />
             </span>
             <span class="font-mono text-sm whitespace-nowrap text-muted">
-                ×{count(props.handling.history.started)}
-                <Show when={props.handling.history.failed > 0}>
-                    <span class="ml-1.5 text-failed" title={`${count(props.handling.history.failed)} of ${count(completed())} completed handlings failed`}>
-                        {percent(props.handling.history.failed, completed())} failed
+                ×{count(props.history.started)}
+                <Show when={props.history.failed > 0}>
+                    <span class="ml-1.5 text-failed" title={`${count(props.history.failed)} of ${count(completed())} completed handlings failed`}>
+                        {percent(props.history.failed, completed())} failed
                     </span>
                 </Show>
             </span>
             <span class="min-w-[92px] text-right font-mono text-sm whitespace-nowrap text-muted" title="Approximate p95 handling time">
-                {props.handling.history.p95Millis === null ? 'p95 —' : `p95 ${duration(props.handling.history.p95Millis)}`}
+                {props.history.p95Millis === null ? 'p95 —' : `p95 ${duration(props.history.p95Millis)}`}
             </span>
         </div>
     );
@@ -69,26 +69,29 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
     const query = createHubQuery<WireRetainedType>(store, () => hubRequest('types', { type: props.typeKey }));
     const retained = () => query.answer();
     const latest = createMemo(() => retained()?.latest.map(activity) ?? []);
-    // A type of any application, with the arrows within its application and across applications.
-    const incoming = () =>
-        app
-            .system()
-            .links.filter(link => link.child === props.typeKey)
-            .sort((a, b) => b.invocations - a.invocations);
-    const outgoing = () =>
-        app
-            .system()
-            .links.filter(link => link.parent === props.typeKey)
-            .sort((a, b) => b.invocations - a.invocations);
+    // A type of any application, with the arrows within its application and across applications, as its query answers them.
+    const incoming = createMemo(() => retained()?.incoming.map(typeLink) ?? []);
+    const outgoing = createMemo(() => retained()?.outgoing.map(typeLink) ?? []);
     const failureTypes = () => retained()?.failureTypes ?? [];
-    // Every figure of the history, which the frame carries only the counts and p95 of.
+    // Every figure of the window and the history, and its dispatches second by second, which the frame leaves out; none before its query answered.
+    const windowed = createMemo(() => {
+        const wire = retained()?.window;
+        return wire ? statistics(wire) : null;
+    });
     const history = createMemo(() => {
         const wire = retained()?.history;
         return wire ? statistics(wire) : null;
     });
+    const startedPerSecond = () => retained()?.startedPerSecond ?? [];
     const provisionalFrom = () => store.view().applications.get(type()?.application ?? '')?.provisionalFrom;
-    const completed = () => type()?.history.completed ?? 0;
+    const completed = () => history()?.completed ?? 0;
     const handlings = () => [...app.system().handlings.values()].filter(handling => handling.typeKey === props.typeKey);
+    // Its failures second by second, which its query answers as only the inspector draws them.
+    const failedPerSecond = () => retained()?.failedPerSecond ?? [];
+    // What each group's handling of the event counted, as the type's query answers it.
+    const handlingHistories = createMemo(
+        () => new Map((retained()?.handlings ?? []).map(handling => [handling.processingGroup, brief(handling.history)] as const)),
+    );
 
     return (
         <Show
@@ -108,19 +111,19 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
                     >
                         <Stats
                             stats={[
-                                { label: 'Calls', value: count(type().history.started) },
-                                { label: 'Rate', value: rate(ratePerSecond(type().window.started, store.view().windowSeconds)) },
+                                { label: 'Calls', value: count(history()?.started ?? 0) },
+                                { label: 'Rate', value: rate(ratePerSecond(windowed()?.started ?? 0, store.view().windowSeconds)) },
                                 {
                                     label: 'Failed',
-                                    value: count(type().history.failed),
-                                    detail: type().history.failed ? percent(type().history.failed, completed()) : undefined,
-                                    tone: type().history.failed ? 'text-failed' : '',
+                                    value: count(history()?.failed ?? 0),
+                                    detail: history()?.failed ? percent(history()!.failed, completed()) : undefined,
+                                    tone: history()?.failed ? 'text-failed' : '',
                                 },
                             ]}
                         />
                         <div class="relative h-10">
                             <Sparkline
-                                values={type().startedPerSecond}
+                                values={startedPerSecond()}
                                 endsAt={store.end()}
                                 provisionalFrom={provisionalFrom()}
                                 width={320}
@@ -129,9 +132,9 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
                                 lineClass={cx('stroke-[1.5]', KIND_TONE[type().kind].spark)}
                                 areaClass={KIND_TONE[type().kind].sparkArea}
                             />
-                            <Show when={type().failedPerSecond.some(Boolean)}>
+                            <Show when={failedPerSecond().some(Boolean)}>
                                 <Sparkline
-                                    values={type().failedPerSecond}
+                                    values={failedPerSecond()}
                                     endsAt={store.end()}
                                     width={320}
                                     height={40}
@@ -160,7 +163,7 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
                         <Stats
                             stats={[
                                 { label: 'p50', value: duration(history()?.p50Millis) },
-                                { label: 'p95', value: duration(history()?.p95Millis ?? type().history.p95Millis) },
+                                { label: 'p95', value: duration(history()?.p95Millis) },
                                 { label: 'p99', value: duration(history()?.p99Millis) },
                                 { label: 'Max', value: duration(history()?.maxMillis) },
                             ]}
@@ -169,7 +172,7 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
                     <InspectorSection title="Caused by" note={`last ${shortHistorySpan(store.view().historySeconds)}`}>
                         <div class="grid gap-[5px]">
                             <Show when={type().entryPoint}>
-                                <StaticRelation mark="→" label="Entry point (no parent)" invocations={type().history.entered} />
+                                <StaticRelation mark="→" label="Entry point (no parent)" invocations={history()?.entered ?? 0} />
                             </Show>
                             <Key each={incoming()} by="parent">
                                 {link => <TypeRelation typeKey={link().parent} invocations={link().invocations} from={type().application} />}
@@ -189,7 +192,12 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
                         <InspectorSection title="Handled by" note={`processing groups, last ${shortHistorySpan(store.view().historySeconds)}`}>
                             <div class="grid gap-[5px]">
                                 <Key each={handlings()} by="key">
-                                    {handling => <HandlingRow handling={handling()} />}
+                                    {handling => (
+                                        <HandlingRow
+                                            handling={handling()}
+                                            history={handlingHistories().get(handling().processingGroup) ?? NO_FIGURES.history}
+                                        />
+                                    )}
                                 </Key>
                             </div>
                         </InspectorSection>

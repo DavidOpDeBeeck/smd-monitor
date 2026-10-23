@@ -278,7 +278,8 @@ opens Flow on a type.
 - **Event delay**: how long after its publication returned a processing group started handling an event, p95. It grows when groups fall behind and names the slowest.
 - The **applications** (system scope) with their instances, rate, failures, and memory; or **upstream** and **downstream** applications (application scope).
 - The **Activity** chart: commands, queries, events, and failures per second over the history, each row on its own scale.
-- **Message types**: each type's rate, failed share, and a latency band (p50 to p95, a tick at p50, a ring at p99), sortable and filterable.
+- **Message types**: each type's rate, failed share, and a latency band (p50 to p95, a tick at p50, a ring at p99), sortable and filterable. It shows the
+  first 100 in its order, busiest first by default, and 100 more at a time.
 - **Failures, last minute**, **Processing groups** with their delivery (`sync`, `async await`, `fire and forget`, `event store`) and delay, and **Instances**.
 
 **Flow** follows one message type or processing group through the system. Pick it in the **Message** field; entry points come first. The lens shows what caused it
@@ -384,11 +385,14 @@ the endpoint answers 503 to it.
 
 **Live updates.** A page receives the whole system on one WebSocket: a snapshot when it connects, then only what changed: every second while up to 16 pages are open, every 2 seconds up to 32, and so on,
 at most every 5 seconds from 65. The page scrolls its charts at a second a second whatever the interval, and asks again for its view after each frame. At the design target the
-snapshot is about 41 MB of JSON and a delta about 1.4 MB, 290 KB compressed by `permessage-deflate`, so pages on a large hub need bandwidth to match. A client that
+snapshot is about 7 MB of JSON and a delta about 370 KB, 75 KB compressed by `permessage-deflate`, so pages on a large hub need bandwidth to match. A client that
 falls behind by a frame or three receives the changes since the frame it holds, and one further behind the next snapshot. The hub accepts 128 pages at once, or `smd.monitor.hub.ui.max-viewers`. The page reconnects with backoff, keeping its last state visible, and reloads when the hub serves
 another build.
 
-**Queries.** The page asks for retained invocations under `/api` (`tape`, `traces`, `failures`, `timeline`, `invocations`, `types`) and asks again with every
+**Queries.** The page asks for retained invocations under `/api` (`tape`, `traces`, `failures`, `timeline`, `invocations`, `types`), for how
+messages flow (`flow`) while the flow view or the live lanes show it, and for what each group's handlings counted (`handlings`) while a group is
+expanded or the failures or flow view shows them, for the failure causes the overview or the failures view lists (`causes`), and for the figures of the types the type table, the failure leaderboard, or the palette lists (`type-figures`), both ranked by the hub,
+and asks again with every
 frame while it is visible; a hidden tab asks nothing until it shows again. Every answer but the timeline's, which moves with the clock, carries an ETag of
 its content, which the page sends back, so an answer that did not change answers 304 and the page renders nothing again. The trace list and the tape ask again for their first 100 only: read from the top,
 that is the list; scrolled further down, it replaces the top while the rest stays as loaded until the list is read from the top again. Identical queries of one epoch are answered once for every page. At most 16

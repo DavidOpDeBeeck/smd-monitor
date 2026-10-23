@@ -11,8 +11,11 @@ import { cx } from '../lib/cx';
 import { activity, fetchAnswer, hubRequest } from '../lib/api';
 import { activityName, count, KIND_LABEL, rate, shortName } from '../lib/format';
 import { matchScore } from '../lib/search';
-import type { Activity, MessageKind } from '../lib/types';
-import type { WireFound } from '../lib/wire';
+import { typeFigures } from '../lib/state';
+import { ratePerSecond } from '../lib/throughput';
+import type { Activity, MessageKind, TypeStatistics } from '../lib/types';
+import type { WireFound, WireTypeFigures } from '../lib/wire';
+import { createHubQuery } from '../store/hub-query';
 
 interface PaletteResult {
     group: 'Message types' | 'Messages' | 'Applications' | 'Actions';
@@ -29,6 +32,8 @@ interface PaletteResult {
 
 const MESSAGE_ID_PREFIX = /^[0-9a-f-]{4,}$/;
 const FOUND_MESSAGES = 6;
+// Without a query, the scope's busiest types, as the hub ranks them.
+const BUSIEST_TYPES = 6;
 // Typing settles before the hub is asked.
 const FIND_DELAY_MILLIS = 120;
 
@@ -71,26 +76,36 @@ function applications(app: MonitorApp, query: string, limit: number): PaletteRes
     return results;
 }
 
-// The messages are those the hub found by the query as a message ID prefix, newest first.
-function search(app: MonitorApp, scope: PaletteScope, query: string, messages: readonly Activity[]): PaletteResult[] {
+// The messages are those the hub found by the query as a message ID prefix, newest first; the busiest are the scope's types the hub ranked so.
+function search(app: MonitorApp, scope: PaletteScope, query: string, messages: readonly Activity[], busiest: readonly TypeStatistics[]): PaletteResult[] {
     if (scope === 'applications') return applications(app, query, Infinity);
-    // Every application's types and messages, each named with its application; without a query the scope's busiest types come first.
-    const current = app.scope();
-    const preferred = (application: string) => (!query && application === current ? 1 : 0);
+    // Every application's types and messages, each named with its application; without a query the scope's busiest types.
     const results: PaletteResult[] = [];
-    const types = [...app.system().types.values()]
-        .map(type => ({ type, score: query ? matchScore(shortName(type.messageType), query) : type.history.started }))
-        .filter(entry => entry.score >= 0)
-        .sort((a, b) => preferred(b.type.application) - preferred(a.type.application) || b.score - a.score)
-        .slice(0, query ? 8 : 6);
-    for (const { type } of types) {
-        results.push({
-            group: 'Message types',
-            kind: type.kind,
-            label: shortName(type.messageType),
-            hint: `${type.application} · ${KIND_LABEL[type.kind]} · ${count(type.history.started)} calls`,
-            run: () => app.showType(type.key),
-        });
+    if (query) {
+        const types = [...app.system().types.values()]
+            .map(type => ({ type, score: matchScore(shortName(type.messageType), query) }))
+            .filter(entry => entry.score >= 0)
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 8);
+        for (const { type } of types) {
+            results.push({
+                group: 'Message types',
+                kind: type.kind,
+                label: shortName(type.messageType),
+                hint: `${type.application} · ${KIND_LABEL[type.kind]}`,
+                run: () => app.showType(type.key),
+            });
+        }
+    } else {
+        for (const type of busiest) {
+            results.push({
+                group: 'Message types',
+                kind: type.kind,
+                label: shortName(type.messageType),
+                hint: `${type.application} · ${KIND_LABEL[type.kind]} · ${rate(ratePerSecond(type.window.started, app.store.view().windowSeconds))}`,
+                run: () => app.showType(type.key),
+            });
+        }
     }
     for (const message of messages) {
         results.push({
@@ -135,13 +150,20 @@ function PaletteContent(props: { scope: PaletteScope }) {
             onCleanup(() => clearTimeout(timer));
         }),
     );
+    const ranked = createHubQuery<WireTypeFigures>(
+        app.store,
+        () => (props.scope === 'everything' ? hubRequest('type-figures', { scope: app.scope(), sort: 'rate', limit: BUSIEST_TYPES }) : null),
+        { kept: true },
+    );
+    const busiest = createMemo(() => typeFigures(ranked.answer()).types);
     // Applications refresh with every frame; the other results stay put while the query does.
     const applicationsChanged = createMemo(() => app.store.live().applications);
     const results = createMemo(() => {
         const current = normalized();
         const messages = found().query === current ? found().messages : [];
         applicationsChanged();
-        return untrack(() => search(app, props.scope, current, messages));
+        const types = busiest();
+        return untrack(() => search(app, props.scope, current, messages, types));
     });
     createEffect(on(query, () => setActive(0)));
     createEffect(() => list.querySelector(`#palette-option-${active()}`)?.scrollIntoView({ block: 'nearest' }));

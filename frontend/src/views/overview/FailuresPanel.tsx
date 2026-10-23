@@ -9,18 +9,23 @@ import { animateReorder } from '../../components/reorder';
 import { Tweened } from '../../components/tween';
 import { cx } from '../../lib/cx';
 import { hubRequest } from '../../lib/api';
-import { causeExamples, lastOccurrence, recentCauses } from '../../lib/failures';
+import { causeExamples, lastOccurrence } from '../../lib/failures';
 import { ago, lastPeriod, shortName, wholeCount } from '../../lib/format';
-import type { WireFailureCauses } from '../../lib/wire';
+import { causes } from '../../lib/state';
+import type { WireCauses, WireFailureCauses } from '../../lib/wire';
 import { createHubQuery } from '../../store/hub-query';
 
 const RECENT_CAUSES = 6;
 
-// The causes that failed most in the window, counted by the hub whatever it retains (F2); a row opens the latest retained trace of its cause.
+// The causes that failed most in the window, counted and ranked by the hub whatever it retains (F2); a row opens the latest retained trace of its
+// cause.
 export function FailuresPanel() {
     const app = useMonitorApp();
     const store = app.store;
-    const recent = createMemo(() => recentCauses(app.scoped().failures).slice(0, RECENT_CAUSES));
+    const ranked = createHubQuery<WireCauses>(store, () => hubRequest('causes', { scope: app.scope(), order: 'recent', limit: RECENT_CAUSES }), {
+        kept: true,
+    });
+    const recent = createMemo(() => causes(ranked.answer()).causes);
     const keys = createMemo(() => recent().map(cause => cause.key));
     const query = createHubQuery<WireFailureCauses>(store, () => (keys().length ? hubRequest('failures', { cause: keys() }) : null), { kept: true });
     const latest = createMemo(() => new Map((query.answer()?.causes ?? []).map(causeExamples).map(examples => [examples.key, examples.latest[0]])));
@@ -44,7 +49,15 @@ export function FailuresPanel() {
             }
         >
             <div ref={list}>
-                <Key each={recent()} by="key" fallback={<EmptyLine class="py-2 text-left">No failure in the {last()}.</EmptyLine>}>
+                <Key
+                    each={recent()}
+                    by="key"
+                    fallback={
+                        <Show when={ranked.answer()}>
+                            <EmptyLine class="py-2 text-left">No failure in the {last()}.</EmptyLine>
+                        </Show>
+                    }
+                >
                     {cause => {
                         const example = () => latest().get(cause().key);
                         const at = () => lastOccurrence(cause(), store.end());

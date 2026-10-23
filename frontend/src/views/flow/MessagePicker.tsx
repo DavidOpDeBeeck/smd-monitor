@@ -5,7 +5,7 @@ import { Glyph, HandlingGlyph } from '../../components/Glyph';
 import { Chevron, closeOnOutsidePress, FIELD_LABEL, fieldTrigger, NoMatches, openOnArrow, POPOVER } from '../../components/popover';
 import { cx } from '../../lib/cx';
 import { stepOption } from '../../lib/dropdown';
-import { groupFigures, typeFigures } from '../../lib/flow-figures';
+import { groupFigures, NO_FLOW_TYPE, typeFigures } from '../../lib/flow-figures';
 import { lensApplication, lensName, type LensKey } from '../../lib/flow-lens';
 import { count, groupKey, isTypeKey, parseTypeKey, rate } from '../../lib/format';
 
@@ -43,11 +43,17 @@ export function MessagePicker(props: { focus: LensKey | null; onPick: (key: Lens
             section: type.entryPoint ? 'Entry points' : 'Messages',
             name: lensName(type.key),
             application: type.application,
-            ...typeFigures(type, windowSeconds),
+            ...typeFigures(app.flow.types().get(type.key) ?? NO_FLOW_TYPE, windowSeconds),
         }));
         const groups = app.scoped().groups.map((group): Choice => {
             const key = groupKey(group.application, group.processingGroup);
-            return { key, section: 'Processing groups', name: group.processingGroup, application: group.application, ...groupFigures(group, windowSeconds) };
+            return {
+                key,
+                section: 'Processing groups',
+                name: group.processingGroup,
+                application: group.application,
+                ...groupFigures(group, app.handlingFigures(), windowSeconds),
+            };
         });
         return [...types, ...groups].sort(
             (a, b) =>

@@ -1,20 +1,17 @@
 import { parseTypeKey, perKind } from './format';
 import { EMPTY_TOTALS, NO_OTHER, type ApplicationState, type InstanceState, type MonitorState, type Totals } from './state';
 import { sumSeries } from './throughput';
-import type { Brief, FailureCount, GroupStatistics, HandlingKey, HandlingStatistics, Link, OtherCounts, TypeKey, TypeStatistics } from './types';
+import type { Brief, GroupStatistics, HandlingKey, HandlingStatistics, Link, OtherCounts, TypeEntry, TypeKey } from './types';
 
 // What the page shows: the whole system when application is null, or else that one application.
 export interface ScopedState {
     application: string | null;
     // Empty while the application in scope has not reported.
     applications: readonly ApplicationState[];
-    types: ReadonlyMap<TypeKey, TypeStatistics>;
+    types: ReadonlyMap<TypeKey, TypeEntry>;
     groups: readonly GroupStatistics[];
     handlings: ReadonlyMap<HandlingKey, HandlingStatistics>;
-    // Within the application, or in the system within each application and across applications.
-    links: readonly Link[];
     instances: readonly InstanceState[];
-    failures: readonly FailureCount[];
     other: OtherCounts;
     // The seconds from this moment on may still grow in some application in scope, or null without applications.
     provisionalFrom: number | null;
@@ -32,9 +29,7 @@ export function scopedState(state: MonitorState, scope: string | null): ScopedSt
         types: new Map(applications.flatMap(application => [...application.types])),
         groups: applications.flatMap(application => application.groups),
         handlings: new Map(applications.flatMap(application => [...application.handlings])),
-        links: applications.flatMap(application => (scope === null ? [...application.links, ...application.crossings] : application.links)),
         instances: applications.flatMap(application => application.instances),
-        failures: applications.flatMap(application => application.failures),
         other: combineOther(applications.map(application => application.other)),
         provisionalFrom: applications.length ? Math.min(...applications.map(application => application.provisionalFrom)) : null,
         totals: combineTotals(applications.map(application => application.totals)),

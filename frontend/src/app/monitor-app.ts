@@ -7,10 +7,12 @@ import { parseTypeKey } from '../lib/format';
 import type { LiveVisual } from '../lib/live';
 import { fetchAnswer, hubRequest } from '../lib/api';
 import { scopedState } from '../lib/scope';
+import { flowEdges, flowFailures, flowTypes, handlingFigures } from '../lib/state';
 import { traceDetail, type PinnedTrace, type TraceSummary } from '../lib/traces';
 import { everyType, type TypeSelection } from '../lib/type-selection';
 import type { TypeKey } from '../lib/types';
-import type { WireTraceDetail } from '../lib/wire';
+import type { WireFlow, WireHandlings, WireTraceDetail } from '../lib/wire';
+import { createHubQuery } from '../store/hub-query';
 import type { MonitorStore } from '../store/monitor-store';
 import { createLiveState } from '../views/live/live-state';
 import { createTracesState } from '../views/traces/traces-state';
@@ -55,7 +57,7 @@ export function createMonitorApp(store: MonitorStore, stage: () => HTMLElement) 
     const [pins, setPins] = createSignal<ReadonlyMap<string, PinnedTrace>>(new Map());
     const [seenFailures, setSeenFailures] = createSignal<ReadonlyMap<string, number>>(new Map());
     const [palette, setPalette] = createSignal<PaletteScope | null>(null);
-    const [typeSort, setTypeSort] = createSignal<TypeSort>('name');
+    const [typeSort, setTypeSort] = createSignal<TypeSort>('rate');
     const [typeFilter, setTypeFilter] = createSignal<TypeSelection>(everyType());
     const [expandedGroups, setExpandedGroups] = createSignal<ReadonlySet<string>>(new Set());
     // The card the flow's lens is on, or null before one is chosen; the lens keeps it whatever the scope.
@@ -83,7 +85,22 @@ export function createMonitorApp(store: MonitorStore, stage: () => HTMLElement) 
 
     const system = createMemo(() => scopedState(store.view(), null));
     const scoped = createMemo(() => (scope() === null ? system() : scopedState(store.view(), scope())));
-    const flowGraph = createMemo(() => lensGraph(system().applications));
+    // Only the flow view draws how messages flow, so only it asks the hub for the edges; the graph holds the frame's types and groups meanwhile.
+    const flowQuery = createHubQuery<WireFlow>(store, () => (view() === 'flow' ? hubRequest('flow') : null), { kept: true });
+    const flowGraph = createMemo(() => lensGraph(system().applications, flowEdges(flowQuery.answer())));
+    const flowFailing = createMemo(() => flowFailures(flowQuery.answer()));
+    const flowCards = createMemo(() => flowTypes(flowQuery.answer()));
+    // What each handling counted is only an expanded group's, the failures view's, and the flow view's, so only they ask the hub for it.
+    const handlingsQuery = createHubQuery<WireHandlings>(
+        store,
+        () => {
+            if (view() === 'flow') return hubRequest('handlings');
+            if (view() === 'failures' || (view() === 'overview' && expandedGroups().size > 0)) return hubRequest('handlings', { scope: scope() });
+            return null;
+        },
+        { kept: true },
+    );
+    const figures = createMemo(() => handlingFigures(handlingsQuery.answer()));
     const hues = createMemo(() => applicationHues(system().applications.map(application => application.name)));
     // The failures the hub received of each application in scope since its failures were last shown; seen per application, so looking at one
     // application's failures does not count another's as seen. The live state counts them, so the badge moves while the view is paused.
@@ -270,9 +287,15 @@ export function createMonitorApp(store: MonitorStore, stage: () => HTMLElement) 
                 });
             },
         },
+        // What each handling counted, while a view that shows it is open.
+        handlingFigures: figures,
         flow: {
             // Every application's types and processing groups with the steps between them.
             graph: flowGraph,
+            // The failures second by second of each type that failed in the window.
+            failing: flowFailing,
+            // What each type's card shows.
+            types: flowCards,
             focus: flowFocus,
             focusOn: (key: LensKey) => setFlowFocus(key),
             hops: flowHops,

@@ -161,7 +161,7 @@ The hub keeps four kinds of state, each with its own lifetime and bound.
 
 | ID | Rule                                                                                                                                                   |
 |----|--------------------------------------------------------------------------------------------------------------------------------------------------------|
-| W1 | One system-wide frame over the WebSocket every epoch for up to 16 clients, every second epoch up to 32, and so on, at most every fifth; a page's queries follow its frames. Scope stays on the client. |
+| W1 | One system-wide frame over the WebSocket every epoch for up to 16 clients, every second epoch up to 32, and so on, at most every fifth; a page's queries follow its frames. It carries what the page shows at all times, and of each message type only which it is and how many of its dispatches the hub retains; the views pull the rest as they show it. How messages flow (links, routes, sink routes, group links) and each type's card figures come from `/api/flow`, what each group's handlings counted from `/api/handlings`, the failure causes, ranked and bounded to the rows shown, from `/api/causes`, the figures of the types the type table, the failure leaderboard, and the palette list the same way from `/api/type-figures`, and a type's figures, links, handlings, and seconds from `/api/types`. Scope stays on the client. |
 | W2 | Frames are deltas against the previous epoch, found by comparing two immutable snapshots. Each names its `epoch` and `base`.                           |
 | W3 | A snapshot goes to a client on connect and to any client more than three frames behind; one that skipped fewer receives the changes since the frame it holds. Each message is serialized at most once per epoch, as UTF-8, and shared. |
 | W4 | JSON, compressed by `permessage-deflate`. Statistics travel as arrays of figures in a fixed order.                                                     |
@@ -267,7 +267,7 @@ every 5 s in shuffled batches of up to 512. Each fork first fills the hub's whol
 | Budget            | Measure                                                 | Benchmark                   | Result                                      |                     |
 |-------------------|---------------------------------------------------------|-----------------------------|---------------------------------------------|---------------------|
 | < 20 ms           | Building an epoch                                       | `FrameBenchmark.statistics` | 158 ms p99, 62 ms p50                       | missed              |
-| < 100 KB          | Delta frame, median and largest                         | `FrameBenchmark`            | 1,440 KB, 2,841 KB; 286 KB, 613 KB deflated | missed              |
+| < 100 KB          | Delta frame, median and largest                         | `FrameBenchmark`            | 366 KB, 429 KB; 73 KB, 86 KB deflated       | missed              |
 | < 50 ms p99       | Query: tape, traces, failures of 20 causes, timeline    | `QueryBenchmark`            | 20.6, 12.1, 96.6, 9.8 ms                    | missed for failures |
 | < 1 core          | One second of writer work                               | `WriterBenchmark`           | 105 ms p50, 203 ms p99                      | met                 |
 | < 1 s             | Writing an epoch's delta, on the publisher              | `FrameBenchmark.delta`      | 211 ms p50, 323 ms p99                      | met                 |
@@ -372,6 +372,11 @@ encoding each message once, kept the heap at 7 GB at every number of viewers; at
 ingest kept up with 64 viewers where it had fallen behind. With 4 queries at once, the worst of 8 viewers saw fresh data a third of the seconds and
 of 16 viewers an eighth; with 16, every viewer did up to 32 viewers, as ingest kept up, for about 5 more cores at 32 viewers. So C9 went from 4 to 16.
 
+The ladders of 2026-10-23, at 16 queries at once and frames spaced by viewers, measured the lean frame of W1: with the figures of types, the failure
+causes, how messages flow, and what handlings counted asked for by the views that show them, a delta at the design target went from 1.4 MB to 370 KB and
+a snapshot from 41 MB to 7 MB. At 64 viewers the hub used 4.5 cores in place of 7.6 and the writer kept 84% of its capacity in place of 73%; at 128,
+6.6 cores in place of 11.1 and 71% in place of 67%, and the p99 frame lag fell from 3.0 s to 0.7 s.
+
 Run 1, 2026-10-20, on a Ryzen 7 5825U (16 threads, 32 GB, Linux) at the commit before the optimizations of pull requests #1 to #3, in spans per second:
 
 | Sweep        | Scenario           | Keeps up | Holds   | Fails at         |
@@ -420,8 +425,9 @@ Budgets still missed and work deferred, with the cause found and the levers to t
   writer: at 500 applications its capacity rose by a tenth, and frames fit a second up to 40,000 spans per second where none did (runs 5 and 6 in
   `docs/saturation`). What is left: reading every field of every record by reflection to compare two frames (about a fifth of the publisher; caching the
   accessors moved that time into the reflective call). Levers: those of the delta below, and rebuilding only the records that changed.
-- **The delta frame is above 100 KB** (1.4 MB at the design target). Thousands of keys change every second as seconds enter and leave the window. Levers: refresh
-  percentiles and history counts every few seconds instead of every second, or subscribe each page to the keys of its scope and view, which reverses W1.
+- **The delta frame is above 100 KB** (370 KB at the design target, 73 KB deflated). Since the frame left out what only some views show (W1), most of it is
+  the processing groups' window counts and event delays and the instances' counts, which change every second. Levers: leave the groups' figures to the
+  views that expand them, or refresh percentiles and counts every few seconds instead of every second.
 - **The failures query takes 97 ms p99.** Each query walks every failed specimen and works out its propagation. Lever: index failed specimens by cause in the
   writer as they are retained, and their propagation as children link.
 - **Building an epoch takes 158 ms p99.** It rewrites the statistics of 27,500 types every second and snapshots the changed traces; the tail is collection pauses.
@@ -436,9 +442,9 @@ Budgets still missed and work deferred, with the cause found and the levers to t
   delta, the client read every delta and none was skipped, 250 ms later each second, until 23 s behind when the run ended; clients reading as frames come
   read them 250 to 520 ms after their second. Once the buffers fill, the snapshot of 17.7 MB that follows is slower still to read. Levers: the page
   acknowledges the epoch it applied, and the hub sends a client nothing new while its acknowledgement is more than a frame behind.
-- **Queries take the cores from 32 viewers.** Each viewer of another view costs its query once per epoch: at 32 viewers, 16 queries at once took
-  the hub from 6.5 to 11.3 cores and the writer to 68% of its capacity without viewers, and from 48 viewers ingest fell behind at 60,000 spans per second
-  (the viewer ladder, with the viewers' JVM on the same 16 threads). Levers: cheaper queries (`QueryBenchmark`, `TraceViewBenchmark`), fewer
+- **Viewers take cores.** Each viewer of another view costs its query once per epoch, and every viewer its frames: at 128 viewers the hub used 6.6
+  cores against 1.1 without, and the writer kept 71% of its capacity without viewers (the viewer ladder of 2026-10-23, with the viewers' JVM on the
+  same 16 threads). Levers: cheaper queries (`QueryBenchmark`, `TraceViewBenchmark`), fewer
   queries at once while the writer is busy, and answers shared across scopes.
 - **Shedding and the clock-ahead flag are covered by tests only.** The demo's in-process exporters never fill a queue share and share the hub's clock. Lever: a demo
   instance in another process that exports bursts, and one whose clock runs ahead.

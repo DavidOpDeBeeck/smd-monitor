@@ -8,8 +8,12 @@ import { createElementSize } from '../../components/size';
 import { cx } from '../../lib/cx';
 import { count, parseTypeKey, shortName } from '../../lib/format';
 import { liveTypeFilter } from '../../lib/live';
+import { hubRequest } from '../../lib/api';
+import { flowEdges } from '../../lib/state';
 import { laneGroups, laneRows, laneSignature, timelineTicks, type LaneRow } from '../../lib/timeline';
 import type { Activity, TypeKey } from '../../lib/types';
+import type { WireFlow } from '../../lib/wire';
+import { createHubQuery } from '../../store/hub-query';
 import { TIMELINE_LANE_HEIGHT, TimelineMark } from './TimelineMark';
 import { TickGuides, TickLabels } from './TimelineTicks';
 
@@ -67,8 +71,11 @@ export function TimelineLanes(props: { marks: Activity[]; time: number; trace: R
     const size = createElementSize(() => axis);
     const width = () => size().width;
 
-    const signature = createMemo(() => laneSignature(app.scoped().applications));
-    const groups = createMemo(on(signature, () => laneGroups(app.scoped().applications)));
+    // The lanes follow the flow of the scope, which only the flow query answers; until it does they stand in the frame's order.
+    const flow = createHubQuery<WireFlow>(app.store, () => hubRequest('flow', { scope: app.scope() }), { kept: true });
+    const flows = createMemo(() => flowEdges(flow.answer()));
+    const signature = createMemo(() => laneSignature(app.scoped().applications, flows()));
+    const groups = createMemo(on(signature, () => laneGroups(app.scoped().applications, flows())));
     const keepsType = createMemo(() => liveTypeFilter(live.filters, app.scope()));
     const rows = createMemo(() =>
         laneRows(groups(), app.scope() === null, key => {

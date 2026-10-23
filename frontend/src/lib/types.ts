@@ -67,19 +67,35 @@ export interface Linked extends Activity {
     parent: ParentRef | null;
 }
 
-export interface TypeStatistics {
+// A type an application dispatched, as the frame carries it.
+export interface TypeEntry {
     key: TypeKey;
     application: string;
     kind: MessageKind;
     messageType: string;
     entryPoint: boolean;
+    // Its dispatches the hub still retains.
+    retained: number;
+}
+
+// A type with what it counted, which the type figures query answers.
+export interface TypeStatistics extends TypeEntry {
     window: Statistics;
     // Every figure of the history is in the type's query.
     history: Brief;
-    // Its dispatches the hub still retains.
-    retained: number;
     startedPerSecond: readonly number[];
-    failedPerSecond: readonly number[];
+}
+
+// What a flow card shows of a message type, which the flow query answers.
+export interface FlowTypeFigures {
+    windowStarted: number;
+    history: Brief;
+}
+
+// What a processing group's handling of an event counted, which the handlings query answers.
+export interface HandlingFigures {
+    window: Brief;
+    history: Brief;
 }
 
 export interface HandlingStatistics {
@@ -89,8 +105,6 @@ export interface HandlingStatistics {
     messageType: string;
     processingGroup: string;
     delivery: string;
-    window: Brief;
-    history: Brief;
     // Once the group started handling one of these events after its publication returned.
     asynchronous: boolean;
     // How long after its publication returned the group started handling the event, p95 over the window, or null.
@@ -154,6 +168,8 @@ export interface FailureCount {
     window: number;
     history: number;
     windowPerSecond: readonly number[];
+    // The invocations of its stage over the history, of which the history failed.
+    started: number;
 }
 
 // What an application counted beyond the hub's caps.

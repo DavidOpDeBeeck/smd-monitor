@@ -5,15 +5,16 @@ import { LinkButton, TextButton } from '../../components/controls';
 import { Empty } from '../../components/empty';
 import { RetentionBoundary } from '../../components/RetentionBoundary';
 import { hubRequest } from '../../lib/api';
-import { causeExamples, causesByApplication, rankedCauses, stageStarted } from '../../lib/failures';
+import { causeExamples, causesByApplication } from '../../lib/failures';
 import { ago, historySpan, plural, shortHistorySpan } from '../../lib/format';
 import type { FailureCount } from '../../lib/types';
-import type { WireFailureCauses } from '../../lib/wire';
+import { causes } from '../../lib/state';
+import type { WireCauses, WireFailureCauses } from '../../lib/wire';
 import { createHubQuery } from '../../store/hub-query';
 import { FailureCauseCard } from './FailureCauseCard';
 import { FailureLeaderboard } from './FailureLeaderboard';
 
-// The view asks the hub for the retained occurrences of the causes it shows, a page at a time.
+// The view asks the hub for the causes it shows, ranked, and their retained occurrences, a page at a time.
 const PAGE = 20;
 
 function BigNumber(props: { value: string; label: string }) {
@@ -48,15 +49,17 @@ function ApplicationHeading(props: { application: string; causes: readonly Failu
 export function FailuresView() {
     const app = useMonitorApp();
     const store = app.store;
-    const ranked = createMemo(() => rankedCauses(app.scoped().failures));
     const [shown, setShown] = createSignal(PAGE);
     createEffect(on(app.scope, () => setShown(PAGE), { defer: true }));
-    const visible = createMemo(() => ranked().slice(0, shown()));
+    const query = createHubQuery<WireCauses>(store, () => hubRequest('causes', { scope: app.scope(), order: 'ranked', limit: shown() }), { kept: true });
+    const ranked = createMemo(() => causes(query.answer()));
+    const total = () => ranked().total;
+    const visible = createMemo(() => ranked().causes.slice(0, shown()));
     const groups = createMemo(() => causesByApplication(visible(), app.scope()));
     const headed = () => groups().length > 1 || (app.scope() === null && app.system().applications.length > 1);
     const keys = createMemo(() => visible().map(cause => cause.key));
-    const query = createHubQuery<WireFailureCauses>(store, () => (keys().length ? hubRequest('failures', { cause: keys() }) : null), { kept: true });
-    const examples = createMemo(() => new Map((query.answer()?.causes ?? []).map(causeExamples).map(each => [each.key, each])));
+    const occurrences = createHubQuery<WireFailureCauses>(store, () => (keys().length ? hubRequest('failures', { cause: keys() }) : null), { kept: true });
+    const examples = createMemo(() => new Map((occurrences.answer()?.causes ?? []).map(causeExamples).map(each => [each.key, each])));
     const failedSeries = () => app.scoped().totals.failedPerSecond;
     const failed = () => failedSeries().reduce((sum, value) => sum + value, 0);
     const lastFailure = () => {
@@ -72,7 +75,7 @@ export function FailuresView() {
             <div class="mx-auto max-w-[1240px] px-6 pt-[22px] pb-10">
                 <header class="flex flex-wrap items-end gap-x-10 gap-y-4 border-b pb-5">
                     <BigNumber value={failed().toLocaleString()} label={`failed invocations, last ${shortHistorySpan(history())}`} />
-                    <BigNumber value={ranked().length.toLocaleString()} label={plural(ranked().length, 'cause')} />
+                    <BigNumber value={total().toLocaleString()} label={plural(total(), 'cause')} />
                     <BigNumber value={lastFailure() === null ? '—' : ago(Math.max(0, store.secondNow() - lastFailure()!))} label="last failure" />
                     <p class="basis-full text-sm text-muted">
                         A cause is a stage, a dispatch or a handling, failing with one exception type. A failure counts at every message it failed, so one that
@@ -82,7 +85,7 @@ export function FailuresView() {
                     <RetentionBoundary applications={app.scoped().applications} class="basis-full text-sm text-warning" />
                 </header>
                 <Show
-                    when={ranked().length > 0 || other() > 0}
+                    when={query.answer() === null || total() > 0 || other() > 0}
                     fallback={
                         <Empty title="No failures" class="pt-20 pb-14">
                             Every observed bus invocation completed without a failure in the last {historySpan(history())}. Completed does not mean committed.
@@ -102,7 +105,7 @@ export function FailuresView() {
                                                 <FailureCauseCard
                                                     cause={cause()}
                                                     examples={examples().get(cause().key)}
-                                                    started={stageStarted(cause(), app.scoped())}
+                                                    started={cause().started}
                                                     end={store.end()}
                                                     windowSeconds={store.view().windowSeconds}
                                                     historySeconds={history()}
@@ -113,9 +116,9 @@ export function FailuresView() {
                                     </section>
                                 )}
                             </Key>
-                            <Show when={ranked().length > shown()}>
+                            <Show when={total() > shown()}>
                                 <TextButton wide onClick={() => setShown(count => count + PAGE)}>
-                                    Show {Math.min(PAGE, ranked().length - shown())} more of {ranked().length - shown()} causes
+                                    Show {Math.min(PAGE, total() - shown())} more of {total() - shown()} causes
                                 </TextButton>
                             </Show>
                             <Show when={other() > 0}>

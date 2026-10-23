@@ -139,16 +139,9 @@ export interface WireApplication {
     instances: WireInstance[];
     types: WireType[];
     groups: WireGroup[];
-    // Between this application's types.
-    links: WireLink[];
-    // Into this application's types from a parent type of another application.
+    // Into this application's types from a parent type of another application. Its links within, routes, sink routes, and group links come
+    // with the flow query (WireFlow).
     crossings: WireCrossing[];
-    // Events of any application reaching this application's processing groups.
-    routes: WireRoute[];
-    // This application's events sent to its sinks, by the delivery of each sink.
-    sinkRoutes: WireSinkRoute[];
-    // Messages this application's processing groups dispatched.
-    groupLinks: WireGroupLink[];
     dispatches: WireBrief;
     handlings: WireBrief;
     // The p95 over every handling of the window that started after its publication returned, or null when none did.
@@ -156,15 +149,22 @@ export interface WireApplication {
     kinds: WireKind[];
     enteredPerSecond: number[];
     failedPerSecond: number[];
-    // Every failed invocation counted under its own stage and exception type, once for every message it failed.
-    failures: WireFailure[];
+    // Its failure causes come with the causes query (WireCauses).
     other: WireOther;
     // The seconds of the window from this one on may still grow, as the application's spans arrive that late.
     provisionalFromEpochSecond: number;
 }
 
-// The processing group is null for a dispatch, and only an event has handlings. A failure idle in the window has no seconds.
-export interface WireFailure {
+// The failure causes a view shows, in the order it asked for, out of the total that match: each a stage failing with one exception type, counted
+// once for every message it failed. The frame leaves them out, as a page shows only the first few.
+export interface WireCauses extends WireAnswer {
+    total: number;
+    causes: WireCause[];
+}
+
+// The processing group is null for a dispatch, and only an event has handlings. A cause idle in the window has no seconds.
+export interface WireCause {
+    application: string;
     kind: MessageKind;
     type: string;
     handling: boolean;
@@ -173,6 +173,8 @@ export interface WireFailure {
     window: number;
     history: number;
     windowPerSecond: number[];
+    // The invocations of its stage over the history: its type's dispatches or its group's handlings of the event.
+    started: number;
 }
 
 // What the application counted beyond the hub's caps: the dispatches and handlings of the types and processing groups it did not keep apart, and
@@ -187,16 +189,26 @@ export interface WireOther {
 }
 
 // The history is brief; the type's query answers it whole.
+// A type the application dispatched; what it counted comes with the queries of the views that show it.
 export interface WireType {
     kind: MessageKind;
     name: string;
     entryPoint: boolean;
-    window: WireStatistics;
-    history: WireBrief;
     // Its dispatches the hub still retains.
     retained: number;
+}
+
+export interface WireTypeFigure extends WireType {
+    application: string;
+    window: WireStatistics;
+    history: WireBrief;
     startedPerSecond: number[];
-    failedPerSecond: number[];
+}
+
+// The figures of the message types a view shows, in the order it asked for, out of the total selected.
+export interface WireTypeFigures extends WireAnswer {
+    total: number;
+    types: WireTypeFigure[];
 }
 
 export interface WireGroup {
@@ -206,8 +218,8 @@ export interface WireGroup {
     delivery: string;
     window: WireBrief;
     // A handling is asynchronous once the group started handling one of its events after the publication returned; the delay is the p95 of how
-    // long after over the window, or null.
-    handlings: { name: string; window: WireBrief; history: WireBrief; asynchronous: boolean; delayP95Millis: number | null }[];
+    // long after over the window, or null. What it counted comes with the handlings query (WireHandlings).
+    handlings: { name: string; asynchronous: boolean; delayP95Millis: number | null }[];
 }
 
 export interface WireLink {
@@ -379,12 +391,58 @@ export interface WireMessageDetail extends WireAnswer {
     propagatedFrom: WireInvocation | null;
 }
 
-// The history holds every figure of the type, null when its application did not report it.
+// The history holds every figure of the type, null when its application did not report it. Its links in and out, across applications too,
+// most invocations first.
+// Its window and history are null, and its seconds empty, when its application did not report the type.
 export interface WireRetainedType extends WireAnswer {
+    window: WireStatistics | null;
     history: WireStatistics | null;
     retained: number;
     failureTypes: { failureType: string; count: number }[];
     latest: WireInvocation[];
+    incoming: WireTypeLink[];
+    outgoing: WireTypeLink[];
+    // An event's handlings by its application's processing groups.
+    handlings: { processingGroup: string; window: WireBrief; history: WireBrief }[];
+    // Its dispatches and its failures second by second over the window.
+    startedPerSecond: number[];
+    failedPerSecond: number[];
+}
+
+export interface WireTypeLink {
+    parentApplication: string;
+    parent: WireMessageType;
+    childApplication: string;
+    child: WireMessageType;
+    history: number;
+    lastSecond: number;
+}
+
+// What each processing group's handling of each event counted over the window and the history, which only an expanded group, the failures
+// view, and the flow view show, so the frame leaves it out.
+export interface WireHandlings extends WireAnswer {
+    handlings: { application: string; processingGroup: string; name: string; window: WireBrief; history: WireBrief }[];
+}
+
+// How messages flow within the applications asked about: only the flow view and the live lanes draw it, so the frame leaves it out.
+export interface WireFlow extends WireAnswer {
+    applications: WireFlowApplication[];
+}
+
+export interface WireFlowApplication {
+    name: string;
+    // Between this application's types.
+    links: WireLink[];
+    // Events of any application reaching this application's processing groups.
+    routes: WireRoute[];
+    // This application's events sent to its sinks, by the delivery of each sink.
+    sinkRoutes: WireSinkRoute[];
+    // Messages this application's processing groups dispatched.
+    groupLinks: WireGroupLink[];
+    // What a card shows of each type: the dispatches of the window, and the counts and p95 of the history.
+    types: { type: WireMessageType; windowStarted: number; history: WireBrief }[];
+    // The types that failed in the window, with their failures second by second.
+    failingTypes: { type: WireMessageType; failedPerSecond: number[] }[];
 }
 
 // Newest first.

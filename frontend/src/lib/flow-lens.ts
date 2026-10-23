@@ -1,5 +1,5 @@
 import { groupKey, isInProcessDelivery, isTypeKey, parseGroupKey, parseTypeKey, shortName } from './format';
-import type { ApplicationState } from './state';
+import { NO_EDGES, type ApplicationState, type FlowEdges } from './state';
 import type { GroupKey, Link, TypeKey } from './types';
 
 // A card of a flow: a message type, or a processing group between the events it handles and the messages it dispatches.
@@ -43,7 +43,7 @@ export interface LensGraph {
     signature: string;
 }
 
-export type LensSource = Pick<ApplicationState, 'name' | 'types' | 'groups' | 'links' | 'crossings' | 'routes' | 'sinkRoutes' | 'groupLinks'>;
+export type LensSource = Pick<ApplicationState, 'name' | 'types' | 'groups' | 'crossings'>;
 
 export const lensApplication = (key: LensKey) => (isTypeKey(key) ? parseTypeKey(key).application : parseGroupKey(key).application);
 export const lensName = (key: LensKey) => (isTypeKey(key) ? shortName(parseTypeKey(key).messageType) : parseGroupKey(key).processingGroup);
@@ -60,7 +60,7 @@ const push = <K, V>(map: Map<K, V[]>, key: K, value: V) => {
 // through the groups that handled it, so the event's own links within its application are left to the groups' links; a crossing is a message
 // another application dispatched again or handed on, and is kept whatever its parent. A group that reads its events from elsewhere names the
 // medium by its delivery, so applications naming the same delivery share one medium.
-export function lensGraph(applications: readonly LensSource[]): LensGraph {
+export function lensGraph(applications: readonly LensSource[], flows: ReadonlyMap<string, FlowEdges>): LensGraph {
     const keys = new Set<LensKey>();
     const deliveries = new Map<GroupKey, string>();
     for (const application of applications) {
@@ -83,9 +83,10 @@ export function lensGraph(applications: readonly LensSource[]): LensGraph {
         add({ parent: link.parent, child: link.child, invocations: link.invocations, lastSecond: link.lastSecond, hop: true, medium: null, delivery: null });
     const sends = new Map<string, LensSend>();
     for (const application of applications) {
-        for (const link of application.links) if (parseTypeKey(link.parent).kind !== 'EVENT') dispatched(link);
+        const flow = flows.get(application.name) ?? NO_EDGES;
+        for (const link of flow.links) if (parseTypeKey(link.parent).kind !== 'EVENT') dispatched(link);
         for (const link of application.crossings) dispatched(link);
-        for (const route of application.routes) {
+        for (const route of flow.routes) {
             const delivery = deliveries.get(route.group) ?? null;
             const medium = delivery !== null && !isInProcessDelivery(delivery) ? delivery : null;
             add({
@@ -98,10 +99,10 @@ export function lensGraph(applications: readonly LensSource[]): LensGraph {
                 delivery: medium === null ? delivery : null,
             });
         }
-        for (const link of application.groupLinks) {
+        for (const link of flow.groupLinks) {
             add({ parent: link.group, child: link.child, invocations: link.invocations, lastSecond: link.lastSecond, hop: true, medium: null, delivery: null });
         }
-        for (const route of application.sinkRoutes) {
+        for (const route of flow.sinkRoutes) {
             if (isInProcessDelivery(route.delivery)) continue;
             const id = sendId(route.event, route.delivery);
             sends.set(id, { id, event: route.event, medium: route.delivery, invocations: route.invocations, lastSecond: route.lastSecond });

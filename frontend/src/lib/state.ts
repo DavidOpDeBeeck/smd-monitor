@@ -2,8 +2,10 @@ import { failureKey, groupKey, handlingKey, keyedApplication, perKind, typeKey }
 import type {
     Brief,
     FailureCount,
+    FlowTypeFigures,
     GroupLink,
     GroupStatistics,
+    HandlingFigures,
     HandlingKey,
     HandlingStatistics,
     Link,
@@ -12,6 +14,7 @@ import type {
     Route,
     SinkRoute,
     Statistics,
+    TypeEntry,
     TypeKey,
     TypeStatistics,
 } from './types';
@@ -20,13 +23,19 @@ import type {
     WireApplication,
     WireApplicationHealth,
     WireBrief,
+    WireCauses,
     WireHealth,
     WireInstance,
     WireLink,
     WireMessageType,
     WireOther,
+    WireFlow,
+    WireHandlings,
     WireStatistics,
     WireType,
+    WireTypeFigure,
+    WireTypeFigures,
+    WireTypeLink,
 } from './wire';
 
 export interface Totals {
@@ -105,21 +114,11 @@ export interface ApplicationState {
     // How long after its publication returned a group started handling an event, p95 over the window, or null when none did.
     eventDelayP95Millis: number | null;
     instances: readonly InstanceState[];
-    types: ReadonlyMap<TypeKey, TypeStatistics>;
+    types: ReadonlyMap<TypeKey, TypeEntry>;
     groups: readonly GroupStatistics[];
     handlings: ReadonlyMap<HandlingKey, HandlingStatistics>;
-    // Between this application's types.
-    links: readonly Link[];
     // Into this application's types from a parent type of another application.
     crossings: readonly Link[];
-    // Events of any application reaching this application's processing groups.
-    routes: readonly Route[];
-    // This application's events sent to its sinks.
-    sinkRoutes: readonly SinkRoute[];
-    // Messages this application's processing groups dispatched.
-    groupLinks: readonly GroupLink[];
-    // Every failed invocation by its stage and exception type, once for every message it failed.
-    failures: readonly FailureCount[];
     other: OtherCounts;
     // The seconds of the window from this moment on may still grow, as the application's spans arrive that late.
     provisionalFrom: number;
@@ -192,6 +191,152 @@ export function mergeFrame(frame: MonitorFrame, receivedAt: number): MonitorStat
     };
 }
 
+// How messages flow within an application, which the flow query answers: its links between its types, the routes of any application's events
+// to its processing groups, its events sent to its sinks, and the messages its groups dispatched.
+export interface FlowEdges {
+    links: readonly Link[];
+    routes: readonly Route[];
+    sinkRoutes: readonly SinkRoute[];
+    groupLinks: readonly GroupLink[];
+}
+
+export const NO_EDGES: FlowEdges = { links: [], routes: [], sinkRoutes: [], groupLinks: [] };
+
+// Each application's flow from the flow query's answer, or none before it answered.
+export function flowEdges(flow: WireFlow | null): ReadonlyMap<string, FlowEdges> {
+    return new Map(
+        (flow?.applications ?? []).map(application => {
+            const name = application.name;
+            const keyOf = (type: WireMessageType, owner = name) => typeKey(owner, type.kind, type.name);
+            return [
+                name,
+                {
+                    links: application.links.map(link => ({
+                        parent: keyOf(link.parent),
+                        child: keyOf(link.child),
+                        invocations: link.history,
+                        lastSecond: link.lastSecond,
+                    })),
+                    routes: application.routes.map(route => ({
+                        publisher: route.publisher,
+                        event: keyOf(route.event, route.publisher),
+                        group: groupKey(name, route.processingGroup),
+                        invocations: route.history,
+                        lastSecond: route.lastSecond,
+                    })),
+                    sinkRoutes: application.sinkRoutes.map(route => ({
+                        event: keyOf(route.event),
+                        delivery: route.delivery,
+                        invocations: route.history,
+                        lastSecond: route.lastSecond,
+                    })),
+                    groupLinks: application.groupLinks.map(link => ({
+                        group: groupKey(name, link.processingGroup),
+                        child: keyOf(link.child),
+                        invocations: link.history,
+                        lastSecond: link.lastSecond,
+                    })),
+                },
+            ];
+        }),
+    );
+}
+
+// What each type's card shows, from the flow query's answer.
+export function flowTypes(flow: WireFlow | null): ReadonlyMap<TypeKey, FlowTypeFigures> {
+    return new Map(
+        (flow?.applications ?? []).flatMap(application =>
+            application.types.map(
+                each =>
+                    [typeKey(application.name, each.type.kind, each.type.name), { windowStarted: each.windowStarted, history: brief(each.history) }] as const,
+            ),
+        ),
+    );
+}
+
+// The failures second by second of each type that failed in the window, from the flow query's answer.
+export function flowFailures(flow: WireFlow | null): ReadonlyMap<TypeKey, readonly number[]> {
+    return new Map(
+        (flow?.applications ?? []).flatMap(application =>
+            application.failingTypes.map(failing => [typeKey(application.name, failing.type.kind, failing.type.name), failing.failedPerSecond] as const),
+        ),
+    );
+}
+
+export interface Causes {
+    // That match the query, of which it answered the first.
+    total: number;
+    causes: readonly FailureCount[];
+}
+
+export const NO_CAUSES: Causes = { total: 0, causes: [] };
+
+// The failure causes from the causes query's answer, in its order, or none before it answered.
+export function causes(answer: WireCauses | null): Causes {
+    if (!answer) return NO_CAUSES;
+    return {
+        total: answer.total,
+        causes: answer.causes.map(cause => {
+            const type = typeKey(cause.application, cause.kind, cause.type);
+            return {
+                key: failureKey(type, cause.handling, cause.processingGroup, cause.failureType),
+                application: cause.application,
+                typeKey: type,
+                kind: cause.kind,
+                messageType: cause.type,
+                handling: cause.handling,
+                processingGroup: cause.processingGroup,
+                failureType: cause.failureType,
+                window: cause.window,
+                history: cause.history,
+                windowPerSecond: cause.windowPerSecond,
+                started: cause.started,
+            };
+        }),
+    };
+}
+
+export interface TypeFigures {
+    // That the query selected, of which it answered the first.
+    total: number;
+    types: readonly TypeStatistics[];
+}
+
+export const NO_TYPE_FIGURES: TypeFigures = { total: 0, types: [] };
+
+// The figures of the types from the type figures query's answer, in its order, or none before it answered.
+export function typeFigures(answer: WireTypeFigures | null): TypeFigures {
+    if (!answer) return NO_TYPE_FIGURES;
+    return {
+        total: answer.total,
+        types: answer.types.map(typeStatistics),
+    };
+}
+
+// What each handling counted, by its key, from the handlings query's answer, or nothing before it answered.
+export function handlingFigures(answer: WireHandlings | null): ReadonlyMap<HandlingKey, HandlingFigures> {
+    return new Map(
+        (answer?.handlings ?? []).map(handling => [
+            handlingKey(typeKey(handling.application, 'EVENT', handling.name), handling.processingGroup),
+            { window: brief(handling.window), history: brief(handling.history) },
+        ]),
+    );
+}
+
+// What a handling counted while its figures have not arrived: nothing yet.
+export const NO_FIGURES: HandlingFigures = {
+    window: { started: 0, entered: 0, failed: 0, completed: 0, p95Millis: null },
+    history: { started: 0, entered: 0, failed: 0, completed: 0, p95Millis: null },
+};
+
+// A link into or out of a type, as the type query answers it, each end named with its application.
+export const typeLink = (link: WireTypeLink): Link => ({
+    parent: typeKey(link.parentApplication, link.parent.kind, link.parent.name),
+    child: typeKey(link.childApplication, link.child.kind, link.child.name),
+    invocations: link.history,
+    lastSecond: link.lastSecond,
+});
+
 function applicationState(application: WireApplication, health: WireApplicationHealth | null): ApplicationState {
     const name = application.name;
     const keyOf = (type: WireMessageType, owner = name) => typeKey(owner, type.kind, type.name);
@@ -216,8 +361,6 @@ function applicationState(application: WireApplication, health: WireApplicationH
                 messageType: handling.name,
                 processingGroup: group.processingGroup,
                 delivery: group.delivery,
-                window: brief(handling.window),
-                history: brief(handling.history),
                 asynchronous: handling.asynchronous,
                 delayP95Millis: handling.delayP95Millis,
             };
@@ -239,46 +382,10 @@ function applicationState(application: WireApplication, health: WireApplicationH
         failedReceived: application.failedReceived,
         eventDelayP95Millis: application.eventDelayP95Millis,
         instances: application.instances.map(instance => instanceState(name, instance)),
-        types: new Map(application.types.map(type => [keyOf(type), typeStatistics(name, keyOf(type), type)])),
+        types: new Map(application.types.map(type => [keyOf(type), typeEntry(name, keyOf(type), type)])),
         groups,
         handlings: new Map(groups.flatMap(group => group.handlings.map(handling => [handling.key, handling]))),
-        links: application.links.map(link => linkOf(link, name)),
         crossings: application.crossings.map(crossing => linkOf(crossing.link, crossing.parentApplication)),
-        routes: application.routes.map(route => ({
-            publisher: route.publisher,
-            event: keyOf(route.event, route.publisher),
-            group: groupKey(name, route.processingGroup),
-            invocations: route.history,
-            lastSecond: route.lastSecond,
-        })),
-        sinkRoutes: application.sinkRoutes.map(route => ({
-            event: keyOf(route.event),
-            delivery: route.delivery,
-            invocations: route.history,
-            lastSecond: route.lastSecond,
-        })),
-        groupLinks: application.groupLinks.map(link => ({
-            group: groupKey(name, link.processingGroup),
-            child: keyOf(link.child),
-            invocations: link.history,
-            lastSecond: link.lastSecond,
-        })),
-        failures: application.failures.map(failure => {
-            const type = typeKey(name, failure.kind, failure.type);
-            return {
-                key: failureKey(type, failure.handling, failure.processingGroup, failure.failureType),
-                application: name,
-                typeKey: type,
-                kind: failure.kind,
-                messageType: failure.type,
-                handling: failure.handling,
-                processingGroup: failure.processingGroup,
-                failureType: failure.failureType,
-                window: failure.window,
-                history: failure.history,
-                windowPerSecond: failure.windowPerSecond,
-            };
-        }),
         other: otherCounts(application.other),
         provisionalFrom: application.provisionalFromEpochSecond * 1000,
         totals: {
@@ -295,18 +402,17 @@ function applicationState(application: WireApplication, health: WireApplicationH
     };
 }
 
-function typeStatistics(application: string, key: TypeKey, type: WireType): TypeStatistics {
+function typeEntry(application: string, key: TypeKey, type: WireType): TypeEntry {
+    return { key, application, kind: type.kind, messageType: type.name, entryPoint: type.entryPoint, retained: type.retained };
+}
+
+function typeStatistics(type: WireTypeFigure): TypeStatistics {
+    const key = typeKey(type.application, type.kind, type.name);
     return {
-        key,
-        application,
-        kind: type.kind,
-        messageType: type.name,
-        entryPoint: type.entryPoint,
+        ...typeEntry(type.application, key, type),
         window: statistics(type.window),
         history: brief(type.history),
-        retained: type.retained,
         startedPerSecond: type.startedPerSecond,
-        failedPerSecond: type.failedPerSecond,
     };
 }
 
@@ -315,7 +421,7 @@ export function statistics(wire: WireStatistics): Statistics {
     return { started, entered, failed, completed, averageMillis, floorMillis, p50Millis, p95Millis, p99Millis, maxMillis };
 }
 
-function brief(wire: WireBrief): Brief {
+export function brief(wire: WireBrief): Brief {
     const [started, entered, failed, completed, p95Millis] = wire;
     return { started, entered, failed, completed, p95Millis };
 }

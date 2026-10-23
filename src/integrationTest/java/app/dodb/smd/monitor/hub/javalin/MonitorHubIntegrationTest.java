@@ -221,6 +221,61 @@ class MonitorHubIntegrationTest {
     }
 
     @Test
+    void api_flow_answersTheRoutesOfTheApplicationInScope() throws Exception {
+        openTicket();
+        awaitInvocation(TICKETS, invocation -> invocation.processingGroup().isPresent());
+
+        var response = query("/api/flow?scope=tickets");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        var application = new ObjectMapper().readTree(response.body()).get("applications").get(0);
+        assertThat(application.get("name").asString()).isEqualTo("tickets");
+        assertThat(application.get("routes").isEmpty()).isFalse();
+    }
+
+    @Test
+    void api_handlings_answersWhatTheGroupsOfTheApplicationInScopeHandled() throws Exception {
+        openTicket();
+        awaitInvocation(TICKETS, invocation -> invocation.processingGroup().isPresent());
+
+        var response = query("/api/handlings?scope=tickets");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        var handling = new ObjectMapper().readTree(response.body()).get("handlings").get(0);
+        assertThat(handling.get("application").asString()).isEqualTo("tickets");
+        assertThat(handling.propertyNames()).containsExactly("application", "processingGroup", "name", "window", "history");
+    }
+
+    @Test
+    void api_causes_answersTheRankedCausesAndHowManyFailed() throws Exception {
+        var response = query("/api/causes?order=ranked&limit=20");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(new ObjectMapper().readTree(response.body()).propertyNames()).containsExactly("hubSession", "sequence", "total", "causes");
+    }
+
+    @Test
+    void api_typeFigures_answersTheSelectedTypesFigures() throws Exception {
+        openTicket();
+        awaitInvocation(TICKETS, invocation -> invocation.processingGroup().isEmpty());
+
+        var response = query("/api/type-figures?scope=tickets&kind=COMMAND&sort=rate");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        var answer = new ObjectMapper().readTree(response.body());
+        assertThat(answer.get("total").asInt()).isPositive();
+        assertThat(answer.get("types").get(0).get("kind").asString()).isEqualTo("COMMAND");
+    }
+
+    @Test
+    void api_causesInAnUnknownOrder_answersABadRequestNamingTheOrders() throws Exception {
+        var response = query("/api/causes?order=newest");
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(response.body()).contains("recent or ranked", "newest");
+    }
+
+    @Test
     void api_typeNotNamedAsAType_answersABadRequestWithContext() throws Exception {
         var response = query("/api/types?type=OpenTicket");
 

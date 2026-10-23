@@ -16,6 +16,8 @@ import app.dodb.smd.monitor.hub.span.SpanRef;
 import app.dodb.smd.monitor.hub.span.Stage;
 import app.dodb.smd.monitor.json.Protocol;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -29,12 +31,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class HubQueriesTest {
 
     private static final ApplicationName TICKETS = new ApplicationName("tickets");
+    private static final ApplicationName BILLING = new ApplicationName("billing");
     private static final String TRACE = "0000000000000000000000000000000a";
 
     private final SynchronousHub hub = new SynchronousHub(HubConfig.withDefaults().build());
     private static final QueryFilter EVERY_INVOCATION = new QueryFilter(null, List.of(), List.of(), List.of(), List.of(), null);
 
     private final HubQueries queries = new HubQueries(hub.hub());
+    private final ObjectMapper mapper = new ObjectMapper();
 
     @Test
     void answer_sameQueryTwiceInOneEpoch_computesItOnce() {
@@ -248,6 +252,237 @@ class HubQueriesTest {
         assertThat(answer.eTag()).isNull();
     }
 
+    @Test
+    void flow_scopeNamingAnApplication_answersThatApplicationsFlowOnly() {
+        receive(TICKETS, span("0000000000000001", Optional.empty()));
+        receive(BILLING, span("0000000000000002", Optional.empty()));
+
+        var flow = mapper.readTree(queries.flow("billing").body());
+
+        assertThat(flow.get("applications").valueStream().map(application -> application.get("name").asString())).containsExactly("billing");
+    }
+
+    @Test
+    void flow_noScope_answersEveryApplication() {
+        receive(TICKETS, span("0000000000000001", Optional.empty()));
+        receive(BILLING, span("0000000000000002", Optional.empty()));
+
+        var flow = mapper.readTree(queries.flow(null).body());
+
+        assertThat(flow.get("applications").valueStream().map(application -> application.get("name").asString())).containsExactlyInAnyOrder("billing", "tickets");
+    }
+
+    @Test
+    void handlings_eventHandledInAScope_answersWhatEachGroupsHandlingCounted() {
+        receive(TICKETS, handling("0000000000000001", "ticket-view"));
+        receive(BILLING, span("0000000000000002", Optional.empty()));
+
+        var handlings = mapper.readTree(queries.handlings("tickets").body()).get("handlings");
+
+        assertThat(handlings.size()).isEqualTo(1);
+        assertThat(handlings.get(0).get("processingGroup").asString()).isEqualTo("ticket-view");
+        assertThat(handlings.get(0).get("name").asString()).isEqualTo("TicketOpened");
+        assertThat(handlings.get(0).get("history").get(0).asLong()).isEqualTo(1);
+    }
+
+    @Test
+    void type_commandThatFailed_answersItsFailuresSecondBySecond() {
+        receive(TICKETS, new MessageSpan(SpanRef.of(TRACE, "0000000000000001"), Optional.empty(), MessageId.generate(),
+            new Stage.Dispatch(new MessageType(MessageKind.COMMAND, "OpenTicket")), Optional.empty(), Instant.now().minusSeconds(10), "main",
+            new Outcome.Failed(Duration.ofMillis(1), "java.lang.IllegalStateException")));
+
+        var failed = mapper.readTree(queries.type("tickets::COMMAND:OpenTicket").body()).get("failedPerSecond");
+
+        assertThat(failed.valueStream().mapToLong(JsonNode::asLong).sum()).isEqualTo(1);
+    }
+
+    @Test
+    void type_eventHandledByAGroup_answersThatGroupsHandling() {
+        receive(TICKETS, handling("0000000000000001", "ticket-view"));
+
+        var event = mapper.readTree(queries.type("tickets::EVENT:TicketOpened").body());
+
+        assertThat(event.get("handlings").get(0).get("processingGroup").asString()).isEqualTo("ticket-view");
+        assertThat(event.get("handlings").get(0).get("history").get(0).asLong()).isEqualTo(1);
+    }
+
+    // The type inspector shows the links into the type and out of it, across applications too, which the frame no longer carries.
+    @Test
+    void type_commandContinuedInAnotherApplication_answersTheLinkOutOfItAndIntoTheOther() {
+        receive(TICKETS, span("0000000000000001", Optional.empty()));
+        receive(BILLING, new MessageSpan(SpanRef.of(TRACE, "0000000000000002"), Optional.of(SpanRef.of(TRACE, "0000000000000001")), MessageId.generate(),
+            new Stage.Dispatch(new MessageType(MessageKind.COMMAND, "CreateInvoice")), Optional.empty(), Instant.now(), "main",
+            new Outcome.Completed(Duration.ofMillis(1))));
+
+        var open = mapper.readTree(queries.type("tickets::COMMAND:OpenTicket").body());
+        var invoice = mapper.readTree(queries.type("billing::COMMAND:CreateInvoice").body());
+
+        assertThat(open.get("outgoing").get(0).get("childApplication").asString()).isEqualTo("billing");
+        assertThat(open.get("outgoing").get(0).get("child").get("name").asString()).isEqualTo("CreateInvoice");
+        assertThat(open.get("incoming").isEmpty()).isTrue();
+        assertThat(invoice.get("incoming").get(0).get("parentApplication").asString()).isEqualTo("tickets");
+        assertThat(invoice.get("incoming").get(0).get("parent").get("name").asString()).isEqualTo("OpenTicket");
+    }
+
+    @Test
+    void causes_failedHandling_answersItsStageExceptionTypeAndSeconds() {
+        receive(failed("0000000000000001", new Stage.Handling(new MessageType(MessageKind.EVENT, "TicketOpened"), "ticket-view"), settled()));
+
+        var answer = mapper.readTree(queries.causes(null, "recent", null).body());
+
+        var cause = answer.get("causes").get(0);
+        assertThat(answer.get("total").asInt()).isEqualTo(1);
+        assertThat(cause.propertyNames()).containsExactly("application", "kind", "type", "handling", "processingGroup", "failureType", "window", "history",
+            "windowPerSecond", "started");
+        assertThat(cause.get("application").asString()).isEqualTo("tickets");
+        assertThat(cause.get("started").asLong()).isEqualTo(1);
+        assertThat(cause.get("processingGroup").asString()).isEqualTo("ticket-view");
+        assertThat(cause.get("window").asLong()).isEqualTo(1);
+        assertThat(cause.get("windowPerSecond").valueStream().mapToLong(JsonNode::asLong).sum()).isEqualTo(1);
+    }
+
+    @Test
+    void causes_recentWithALimit_answersTheMostFailedInTheWindowFirstOutOfAllThatFailed() {
+        receive(failed("0000000000000001", new Stage.Dispatch(new MessageType(MessageKind.COMMAND, "OpenTicket")), settled()));
+        receive(failed("0000000000000002", new Stage.Dispatch(new MessageType(MessageKind.COMMAND, "CloseTicket")), settled()));
+        receive(failed("0000000000000003", new Stage.Dispatch(new MessageType(MessageKind.COMMAND, "CloseTicket")), settled()));
+
+        var answer = mapper.readTree(queries.causes(null, "recent", "1").body());
+
+        assertThat(answer.get("total").asInt()).isEqualTo(2);
+        assertThat(answer.get("causes").size()).isEqualTo(1);
+        assertThat(answer.get("causes").get(0).get("type").asString()).isEqualTo("CloseTicket");
+    }
+
+    // The overview lists what fails now, the failures view what failed over the history.
+    @Test
+    void causes_failedOnlyBeforeTheWindow_answersItRankedButNotRecent() {
+        receive(failed("0000000000000001", new Stage.Dispatch(new MessageType(MessageKind.COMMAND, "OpenTicket")), Instant.now().minusSeconds(120)));
+
+        var recent = mapper.readTree(queries.causes(null, "recent", null).body());
+        var ranked = mapper.readTree(queries.causes(null, "ranked", null).body());
+
+        assertThat(recent.get("total").asInt()).isZero();
+        assertThat(ranked.get("total").asInt()).isEqualTo(1);
+        assertThat(ranked.get("causes").get(0).get("history").asLong()).isEqualTo(1);
+    }
+
+    @Test
+    void causes_scopeNamingAnApplication_answersThatApplicationsCausesOnly() {
+        receive(TICKETS, failed("0000000000000001", new Stage.Dispatch(new MessageType(MessageKind.COMMAND, "OpenTicket")), settled()));
+        receive(BILLING, failed("0000000000000002", new Stage.Dispatch(new MessageType(MessageKind.COMMAND, "CreateInvoice")), settled()));
+
+        var causes = mapper.readTree(queries.causes("billing", "recent", null).body()).get("causes");
+
+        assertThat(causes.size()).isEqualTo(1);
+        assertThat(causes.get(0).get("application").asString()).isEqualTo("billing");
+    }
+
+    @Test
+    void causes_unknownOrder_failsNamingTheOrders() {
+        hub.epoch();
+
+        assertThatThrownBy(() -> queries.causes(null, "newest", null))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("The query parameter order must be recent or ranked; got 'newest'");
+    }
+
+    @Test
+    void causes_limitBelowOne_failsNamingTheParameter() {
+        hub.epoch();
+
+        assertThatThrownBy(() -> queries.causes(null, "ranked", "0"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("The query parameter limit must be at least 1; got '0'");
+    }
+
+    @Test
+    void typeFigures_limitBelowOne_failsNamingTheParameter() {
+        hub.epoch();
+
+        assertThatThrownBy(() -> queries.typeFigures(null, List.of(), List.of(), "rate", "-1"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("The query parameter limit must be at least 1; got '-1'");
+    }
+
+    @Test
+    void causes_orderMissing_failsNamingTheParameter() {
+        hub.epoch();
+
+        assertThatThrownBy(() -> queries.causes(null, null, null))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("order");
+    }
+
+    @Test
+    void typeFigures_rateWithALimit_answersTheBusiestFirstOutOfAllSelected() {
+        receive(dispatch("0000000000000001", "OpenTicket"));
+        receive(dispatch("0000000000000002", "CloseTicket"));
+        receive(dispatch("0000000000000003", "CloseTicket"));
+
+        var answer = mapper.readTree(queries.typeFigures(null, List.of(), List.of(), "rate", "1").body());
+
+        assertThat(answer.get("total").asInt()).isEqualTo(2);
+        assertThat(answer.get("types").size()).isEqualTo(1);
+        assertThat(answer.get("types").get(0).get("name").asString()).isEqualTo("CloseTicket");
+        assertThat(answer.get("types").get(0).get("window").get(0).asLong()).isEqualTo(2);
+    }
+
+    @Test
+    void typeFigures_anyType_hasTheFieldsOfTheWireContract() {
+        receive(dispatch("0000000000000001", "OpenTicket"));
+
+        var type = mapper.readTree(queries.typeFigures(null, List.of(), List.of(), "name", null).body()).get("types").get(0);
+
+        assertThat(type.propertyNames()).containsExactly("application", "kind", "name", "entryPoint", "window", "history", "retained", "startedPerSecond");
+    }
+
+    // Statistics are positional: started, entered, failed, completed, average, floor, p50, p95, p99, max; a brief one ends at the p95.
+    @Test
+    void typeFigures_completedDispatch_writesTheWindowWholeAndTheHistoryBrief() {
+        receive(new MessageSpan(SpanRef.of(TRACE, "0000000000000001"), Optional.empty(), MessageId.generate(),
+            new Stage.Dispatch(new MessageType(MessageKind.COMMAND, "OpenTicket")), Optional.empty(), settled(), "main", new Outcome.Completed(Duration.ofMillis(2))));
+
+        var type = mapper.readTree(queries.typeFigures(null, List.of(), List.of(), "rate", null).body()).get("types").get(0);
+
+        assertThat(type.get("window").size()).isEqualTo(10);
+        assertThat(type.get("window").valueStream().limit(5).map(JsonNode::asString)).containsExactly("1", "1", "0", "1", "2.0");
+        assertThat(type.get("window").get(9).asDouble()).isEqualTo(2.0);
+        assertThat(type.get("history").size()).isEqualTo(5);
+        assertThat(type.get("history").valueStream().limit(4).map(JsonNode::asString)).containsExactly("1", "1", "0", "1");
+    }
+
+    @Test
+    void typeFigures_kindSelected_answersTheTypesOfThatKindOnly() {
+        receive(dispatch("0000000000000001", new MessageType(MessageKind.COMMAND, "OpenTicket")));
+        receive(dispatch("0000000000000002", new MessageType(MessageKind.QUERY, "FindTicket")));
+
+        var types = mapper.readTree(queries.typeFigures("tickets", List.of("QUERY"), List.of(), "name", null).body()).get("types");
+
+        assertThat(types.size()).isEqualTo(1);
+        assertThat(types.get(0).get("kind").asString()).isEqualTo("QUERY");
+    }
+
+    @Test
+    void typeFigures_typeSelected_answersThatTypeOnly() {
+        receive(TICKETS, dispatch("0000000000000001", "OpenTicket"));
+        receive(BILLING, dispatch("0000000000000002", "OpenTicket"));
+
+        var types = mapper.readTree(queries.typeFigures(null, List.of(), List.of("billing::COMMAND:OpenTicket"), "rate", null).body()).get("types");
+
+        assertThat(types.size()).isEqualTo(1);
+        assertThat(types.get(0).get("application").asString()).isEqualTo("billing");
+    }
+
+    @Test
+    void typeFigures_unknownSort_failsNamingTheSorts() {
+        hub.epoch();
+
+        assertThatThrownBy(() -> queries.typeFigures(null, List.of(), List.of(), "busiest", null))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("The query parameter sort must be rate, failed, failures, p50, p95, p99, or name; got 'busiest'");
+    }
+
     private void receive(MessageSpan span) {
         receive(TICKETS, span);
     }
@@ -255,6 +490,34 @@ class HubQueriesTest {
     private void receive(ApplicationName application, MessageSpan span) {
         hub.receive(new SpanBatch(application, new InstanceName("tickets-1"), new SessionId("session"), List.of(span), List.of()));
         hub.epoch();
+    }
+
+    private static MessageSpan handling(String spanId, String processingGroup) {
+        return new MessageSpan(SpanRef.of(TRACE, spanId), Optional.empty(), MessageId.generate(),
+            new Stage.Handling(new MessageType(MessageKind.EVENT, "TicketOpened"), processingGroup), Optional.of(EventDelivery.SYNC),
+            // Old enough that its second settled into the history.
+            Instant.now().minusSeconds(10), "main",
+            new Outcome.Completed(Duration.ofMillis(1)));
+    }
+
+    // Old enough that its second settled into the counts.
+    private static Instant settled() {
+        return Instant.now().minusSeconds(10);
+    }
+
+    private static MessageSpan failed(String spanId, Stage stage, Instant startedAt) {
+        var delivery = stage instanceof Stage.Handling ? Optional.of(EventDelivery.SYNC) : Optional.<EventDelivery>empty();
+        return new MessageSpan(SpanRef.of(TRACE, spanId), Optional.empty(), MessageId.generate(), stage, delivery, startedAt, "main",
+            new Outcome.Failed(Duration.ofMillis(1), "java.lang.IllegalStateException"));
+    }
+
+    private static MessageSpan dispatch(String spanId, String command) {
+        return dispatch(spanId, new MessageType(MessageKind.COMMAND, command));
+    }
+
+    private static MessageSpan dispatch(String spanId, MessageType type) {
+        return new MessageSpan(SpanRef.of(TRACE, spanId), Optional.empty(), MessageId.generate(), new Stage.Dispatch(type), Optional.empty(), settled(), "main",
+            new Outcome.Completed(Duration.ofMillis(1)));
     }
 
     private static MessageSpan span(String spanId, Optional<String> continues) {

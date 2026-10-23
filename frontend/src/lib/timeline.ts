@@ -1,7 +1,7 @@
 import { causalOrder, lensGraph } from './flow-lens';
 import { isTypeKey, keyedApplication } from './format';
 import { activity } from './api';
-import type { ApplicationState } from './state';
+import type { ApplicationState, FlowEdges } from './state';
 import type { Activity, TypeKey } from './types';
 import type { WireTimeline } from './wire';
 
@@ -20,11 +20,11 @@ interface LaneGroup {
     lanes: TypeKey[];
 }
 
-export const laneSignature = (applications: readonly ApplicationState[]) => lensGraph(applications).signature;
+export const laneSignature = (applications: readonly ApplicationState[], flows: ReadonlyMap<string, FlowEdges>) => lensGraph(applications, flows).signature;
 
 // The lanes of each application in causal order: each type after the types it follows from, then in the order its flows reach it.
-export function laneGroups(applications: readonly ApplicationState[]): LaneGroup[] {
-    const lanes = causalOrder(lensGraph(applications)).filter(isTypeKey);
+export function laneGroups(applications: readonly ApplicationState[], flows: ReadonlyMap<string, FlowEdges>): LaneGroup[] {
+    const lanes = causalOrder(lensGraph(applications, flows)).filter(isTypeKey);
     return applications.map(application => ({ application: application.name, lanes: lanes.filter(key => application.types.has(key)) }));
 }
 
