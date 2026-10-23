@@ -358,7 +358,23 @@ time, frames received and their lag) and what it cost the hub (writer capacity a
 ingest kept up. `saturationDashboard -PsaturationViewers` adds it to `docs/saturation/viewers.json`, and the page's *End to end* › *Open UIs* view draws
 it: the caps of one ladder, or one cap across ladders, to compare a change.
 
+The capacity frontier asks how many open UIs the hub serves at which span rate. Without viewers it climbs the reference scenario's rates until the
+hub no longer keeps up without shedding. Then it doubles the viewers, 1, 2, 4, and so on, and for each climbs from two rates below the last limit
+until the UIs are no longer usable: 99% of the frames read, with a p99 lag of at most a second from the end of the second they close, 99% of the
+queries answered, with a p99 answer of at most a second, and the least lucky viewer's view fresh after 95% of the frames (`SaturationUsability`).
+The run judges each step a few seconds after it ends and stops at the first that is not usable, so no step is offered past the frontier. Once even
+the ladder's first rate is not usable, the viewers before were the most the hub serves; a change that serves more shows as viewers further right,
+and no run spends time on viewers beyond the limit. `saturationDashboard -PsaturationCapacity` adds it to `docs/saturation/capacity.json`, and the
+page's *End to end* › *Capacity* view draws each run's frontier.
+
+The first frontier, on 2026-10-23 at the lean frame (W1), took 30 minutes: without viewers and with up to 8 the hub kept up with 200,000 spans per
+second, with 16 and 32 with 150,000, both limited by ingest, and with 64 viewers with 40,000, 128 with 10,000, and 256 with 20,000; with 512 not
+even 5,000 was usable. From 64 viewers the limit is the queries, not ingest: their p99 answer sat between 1.1 and 1.5 s at every rate, just above
+the second the UIs are given, so which rate passes there is close to chance, as 128 falling below 256 shows.
+
 ```bash
+./gradlew saturationCapacity                           # the capacity frontier: span rate against open UIs
+./gradlew saturationDashboard -PsaturationCapacity     # adds build/saturation-capacity to docs/saturation
 ./gradlew saturationViewers                            # the viewer ladder, about 25 minutes; -PsaturationViewerCounts=1,16,64 -PsaturationQueryCaps=4,64
 ./gradlew saturationDashboard -PsaturationViewers      # adds build/saturation-viewers to docs/saturation
 ```

@@ -197,7 +197,7 @@ tasks.register<JavaExec>("saturation") {
 }
 
 // Adds the run in build/saturation to the runs kept in docs/saturation and writes build/saturation/dashboard.html (docs/saturation/dashboard.py); with
-// -PsaturationViewers, adds the viewer ladder in build/saturation-viewers instead.
+// -PsaturationViewers, adds the viewer ladder in build/saturation-viewers instead, and with -PsaturationCapacity the frontier in build/saturation-capacity.
 // Take some scenarios of the results only with -PsaturationOnly=reference,applications-500, and name the run on the page with
 // -PsaturationName="Reserved queue room" instead of Run N. Runs Python with the py launcher on Windows, where
 // python often opens the Microsoft Store instead, and python3 elsewhere; choose another with -PsaturationPython=/path/to/python.
@@ -209,12 +209,15 @@ tasks.register<Exec>("saturationDashboard") {
     val only = providers.gradleProperty("saturationOnly").orElse("")
     val name = providers.gradleProperty("saturationName")
     val viewers = providers.gradleProperty("saturationViewers").isPresent
-    val results = layout.buildDirectory.dir(if (viewers) "saturation-viewers" else "saturation")
+    val capacity = providers.gradleProperty("saturationCapacity").isPresent
+    val results = layout.buildDirectory.dir(if (capacity) "saturation-capacity" else if (viewers) "saturation-viewers" else "saturation")
     workingDir = layout.projectDirectory.asFile
     executable = python.get()
     argumentProviders.add(CommandLineArgumentProvider {
         listOf("-I", "docs/saturation/dashboard.py") +
-                (if (viewers) listOf("--add-viewers", results.get().asFile.path) else listOf("--add", results.get().asFile.path, "--only", only.get())) +
+                (if (capacity) listOf("--add-capacity", results.get().asFile.path)
+                else if (viewers) listOf("--add-viewers", results.get().asFile.path)
+                else listOf("--add", results.get().asFile.path, "--only", only.get())) +
                 (name.orNull?.let { listOf("--name", it) } ?: emptyList())
     })
 }
@@ -232,6 +235,17 @@ tasks.register<JavaExec>("saturationViewers") {
     val caps = providers.gradleProperty("saturationQueryCaps").orElse("")
     val rate = providers.gradleProperty("saturationViewerRate").orElse("")
     argumentProviders.add(CommandLineArgumentProvider { listOf(output.get().asFile.path, counts.get(), caps.get(), rate.get()) })
+}
+
+// How many open UIs the hub serves at which span rate (SaturationCapacity): the highest rate it keeps up with without viewers, then for 1, 2, 4, and
+// so on viewers the highest at which their UIs stay usable, until even the lowest is not; each climb fills a minute of the reference scenario,
+// into build/saturation-capacity. Then ./gradlew saturationDashboard -PsaturationCapacity adds it to the saturation page.
+tasks.register<JavaExec>("saturationCapacity") {
+    description = "Finds the frontier of span rate and open UIs the hub serves usably"
+    val output = layout.buildDirectory.dir("saturation-capacity")
+    saturationJvm(output)
+    mainClass.set("app.dodb.smd.monitor.hub.SaturationCapacity")
+    argumentProviders.add(CommandLineArgumentProvider { listOf(output.get().asFile.path) })
 }
 
 // Checks the throughput docs/monitor.md documents for the reference machine, scenario by scenario (SaturationCheck); about 40 minutes on a quiet
