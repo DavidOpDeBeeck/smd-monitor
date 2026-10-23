@@ -5,6 +5,7 @@ import app.dodb.smd.monitor.json.Frame;
 import app.dodb.smd.monitor.json.FrameView;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.List;
 import java.util.OptionalLong;
 
 // Open to the saturation runs, which time the frames they publish.
@@ -16,7 +17,7 @@ public class MonitorFrames {
     // The frame of an epoch, published after the given one, which may be absent: what every page receives, whole or as the changes since.
     public PublishedFrame publish(Epoch epoch, PublishedFrame previous) {
         var frame = new Frame(epoch.sequence(), FrameView.from(epoch.at(), epoch.statistics(), epoch.health(), maxHeapBytes()));
-        return new PublishedFrame(frame, previous == null ? null : previous.frame(), mapper);
+        return new PublishedFrame(frame, previous == null ? List.of() : previous.basesOfNext(), mapper);
     }
 
     private static OptionalLong maxHeapBytes() {

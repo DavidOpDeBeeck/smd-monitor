@@ -2,21 +2,23 @@
 
 The runs, steps, seconds and scenarios files hold every run added so far; setup and profile describe how they were measured. With --add, the results of
 one run that SaturationRun wrote (<scenario>.json and <scenario>.csv in build/saturation) are merged into them first: the run becomes the next Run N, or
-replaces itself when it is already there. --name gives the run added a short name the page shows instead of Run N, and --rename names a run kept by its
+replaces itself when it is already there. With --add-viewers, the points of a viewer ladder (SaturationViewerLadder, in build/saturation-viewers) become
+the next viewer run in the viewers file instead. --name gives the run added a short name the page shows instead of Run N, and --rename names a run kept by its
 number. Either way the page is written again as one self-contained HTML file, the data inlined, that opens from disk.
 
 Usage: python -I docs/saturation/dashboard.py [--add build/saturation [--only <scenario,...>] [--name <name>]] [--rename <N>=<name> ...] [--keep-seconds 3]
-       [--out build/saturation/dashboard.html]
+       [--add-viewers build/saturation-viewers [--name <name>]] [--out build/saturation/dashboard.html]
 """
 import argparse
 import csv
 import json
+import math
 import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
-DATASETS = ['runs', 'steps', 'seconds', 'scenarios', 'setup', 'profile']
+DATASETS = ['runs', 'steps', 'seconds', 'scenarios', 'setup', 'profile', 'viewers']
 DATA_MARK = '/*SATURATION_DATA*/'
 
 STEP_FIELDS = {
@@ -46,6 +48,8 @@ STEP_FIELDS = {
 }
 SCENARIO_FIELDS = ['scenario', 'name', 'sweep', 'description', 'applications', 'instances', 'exporters', 'typesPerApplication', 'groupsPerApplication',
                    'memoryMb', 'historyS', 'queueSpans']
+# The answers of the OTLP server, for runs that exported over OTLP/HTTP (-PsaturationTransport).
+EXPORT_FIELDS = {'exportP50Ms': 'answerP50Millis', 'exportP99Ms': 'answerP99Millis'}
 SECOND_FIELDS = ['offered', 'processed', 'busy', 'queued', 'shed', 'writerCpuMs', 'horizonS', 'historyS']
 # The frame of each second as clients read it, for runs with clients (-PsaturationClients): the parts of its lag up to the frame, then for the fast
 # clients and the slow ones its send, which adds up to the lag of the client in the middle, that lag and the most of a client, and how many read it
@@ -165,6 +169,9 @@ def add_run(data, results_dir, only, name, keep_seconds, step_seconds):
     order = orders.get(run_id, max(orders.values(), default=0) + 1)
     name = name or next((run['name'] for run in data['runs'] if run['run'] == run_id and run.get('name')), None)
     label = label_of(order, name, run_id)
+    transport = results[0].get('transport', 'direct')
+    if transport != 'direct':
+        label = f'{label}, over {"OTLP/HTTP, gzipped" if transport == "otlp-gzip" else "OTLP/HTTP"}'
 
     runs = [run for run in data['runs'] if run['run'] != run_id]
     steps = [step for step in data['steps'] if step['run'] != run_id]
@@ -192,10 +199,16 @@ def add_run(data, results_dir, only, name, keep_seconds, step_seconds):
             'queueSpans': result['queueSpans'],
             # The clients a run with -PsaturationClients served its frames to.
             **({'delivery': {field: result['delivery'][field] for field in ['clients', 'slowClients', 'slowCharsPerSecond']}} if 'delivery' in result else {}),
+            # How a run offered its batches when not directly (-PsaturationTransport), and the viewers open (-PsaturationViewers).
+            **({'transport': result['transport']} if result.get('transport', 'direct') != 'direct' else {}),
+            **({'viewers': result['viewers']['count']} if 'viewers' in result else {}),
         })
+        exports = {export['rate']: export for export in result.get('exports', {}).get('steps', [])}
         for step in result['steps']:
+            export = exports.get(step['rate'])
             steps.append({'run': run_id, 'scenario': result['scenario'], 'rate': step['rate'],
-                          **{field: step[source] for field, source in STEP_FIELDS.items()}})
+                          **{field: step[source] for field, source in STEP_FIELDS.items()},
+                          **({field: export[source] for field, source in EXPORT_FIELDS.items()} if export else {})})
         seconds.extend(seconds_of(result, results_dir / f"{result['scenario']}.csv", step_seconds))
         scenario = dict(result, exporters=result['applications'] * result['instances'])
         by_scenario[result['scenario']] = {field: scenario[field] for field in SCENARIO_FIELDS}
@@ -228,6 +241,76 @@ def add_run(data, results_dir, only, name, keep_seconds, step_seconds):
         'runs': len({run['run'] for run in runs}),
         'secondsDroppedFor': dropped,
     }
+
+
+# The measures of one point of a viewer ladder: one rate offered while the viewers were open, over the seconds after the step settled. A viewer's
+# page is fresh in a second when the hub answered the query it asked after that second's epoch.
+def viewer_point(directory, baseline_capacity):
+    result = read_json(directory / 'reference.json')
+    step = result['steps'][0]
+    first, last = step['firstSecond'] + 5, step['lastSecond']
+    capacity = step['processedPerSecond'] / step['writerCpu'] if step['writerCpu'] else None
+    point = {
+        'scenario': result['scenario'], 'rate': step['rate'], 'verdict': step['verdict'], 'machine': result['machine'],
+        'capacity': capacity, 'capacityShare': capacity / baseline_capacity if capacity and baseline_capacity else None,
+        'processCores': step['processCores'], 'heapMb': step['heapMaxMegabytes'], 'gcMsPerS': step['gcMillisPerSecond'],
+        'epochLagMs': step['epochLagP99Millis'],
+    }
+    queries = directory / 'reference-queries.csv'
+    if 'queries' in result and queries.exists():
+        viewers = result['queries']['viewers']
+        with open(queries, encoding='utf-8') as file:
+            rows = [row for row in csv.DictReader(file) if first <= int(row['second']) <= last]
+        # A page asks after every frame it reads, so the seconds some page asked after are the frames published: every second, or every few when
+        # the publisher sends a frame less often. A page is fresh for a frame when the hub answered the query it asked after it.
+        published = {int(row['second']) for row in rows} or {first}
+        fresh = {page: set() for page in range(viewers)}
+        for row in rows:
+            if row['answer'] in ('answered', 'unchanged'):
+                fresh[int(row['page'])].add(int(row['second']))
+        shares = sorted(len(seconds) / len(published) for seconds in fresh.values())
+        answered = sorted(float(row['answerMs']) for row in rows if row['answer'] in ('answered', 'unchanged'))
+        point.update({
+            'viewers': viewers, 'cap': result['queries']['queryCap'],
+            'answered': sum(row['answer'] in ('answered', 'unchanged') for row in rows) / len(rows) if rows else None,
+            'freshMedian': shares[len(shares) // 2] if shares else None, 'freshWorst': shares[0] if shares else None,
+            'answerP50Ms': percentile(answered, 0.5), 'answerP99Ms': percentile(answered, 0.99),
+        })
+    if 'viewers' in result:
+        point['viewerCores'] = result['viewers']['steps'][0]['cores']
+    if 'delivery' in result:
+        clients = result['delivery']['steps'][0]['fast']
+        point.update({'framesReceived': clients['received'] / clients['expected'] if clients['expected'] else None,
+                      'frameLagP99Ms': clients['lagP99Millis'] if clients['received'] else None, 'snapshots': clients['snapshots']})
+    return result['run'], point
+
+
+def percentile(values, quantile):
+    return values[min(len(values) - 1, max(0, math.ceil(quantile * len(values)) - 1))] if values else None
+
+
+# A viewer ladder's points (cap-<c>/v-<n>) and the run without viewers (baseline) become the next viewer run, or replace it when added again.
+def add_viewers(data, ladder_dir, name):
+    baseline_dir = ladder_dir / 'baseline'
+    points = sorted(ladder_dir.glob('cap-*/v-*/reference.json'))
+    if not points or not (baseline_dir / 'reference.json').exists():
+        fail(f'no viewer ladder (baseline/ and cap-<c>/v-<n>/ with reference.json) in {ladder_dir}')
+    base_id, baseline = viewer_point(baseline_dir, None)
+    rows = []
+    for path in points:
+        _, point = viewer_point(path.parent, baseline['capacity'])
+        rows.append(point)
+    run_id = base_id
+    viewers = data['viewers']
+    orders = {row['run']: row['order'] for row in viewers}
+    order = orders.get(run_id, max(orders.values(), default=0) + 1)
+    name = name or next((row['name'] for row in viewers if row['run'] == run_id and row.get('name')), None)
+    label = f'{name or f"Viewers {order}"}, {run_id}'
+    kept = [row for row in viewers if row['run'] != run_id]
+    added = [dict({'run': run_id, 'label': label, 'order': order, **({'name': name} if name else {})}, viewers=0, cap=None, **baseline)]
+    added += [dict({'run': run_id, 'label': label, 'order': order, **({'name': name} if name else {})}, **point) for point in rows]
+    added.sort(key=lambda row: (row['cap'] or 0, row['viewers']))
+    return dict(data, viewers=kept + added), {'run': run_id, 'label': label, 'points': len(rows), 'replaced': run_id in orders}
 
 
 # A run is labelled by its name when it has one, and by its number otherwise, followed by when it started and the commit it ran.
@@ -265,17 +348,25 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--add', type=Path, help='a results directory of one run to add, such as build/saturation')
     parser.add_argument('--only', default='', help='comma-separated scenario IDs to take from the results; all by default')
-    parser.add_argument('--name', help='a short name for the run --add adds, which the page shows instead of Run N; a run added again keeps its name')
+    parser.add_argument('--name', help='a short name for the run --add or --add-viewers adds, which the page shows instead of its number; a run added again '
+                                       'keeps its name')
+    parser.add_argument('--add-viewers', type=Path, help='a viewer ladder to add, such as build/saturation-viewers')
     parser.add_argument('--rename', action='append', default=[], help='<N>=<name>: names Run N of the runs kept; <N>= takes its name away')
     parser.add_argument('--keep-seconds', type=int, default=3, help='how many of the latest runs keep their seconds')
     parser.add_argument('--step-seconds', type=int, default=30, help="SaturationScenario's STEP, for results that record neither steps' seconds nor stepS")
     parser.add_argument('--out', type=Path, default=ROOT / 'build' / 'saturation' / 'dashboard.html')
     args = parser.parse_args()
 
-    data = {name: read_json(HERE / f'{name}.json') for name in DATASETS}
+    data = {name: read_json(HERE / f'{name}.json') if (HERE / f'{name}.json').exists() else [] for name in DATASETS}
     data['seconds'] = expand_seconds(data['seconds'])
-    if args.name and not args.add:
-        fail('--name names the run --add adds; name a run kept with --rename <N>=<name>')
+    if args.name and not args.add and not args.add_viewers:
+        fail('--name names the run --add or --add-viewers adds; name a run kept with --rename <N>=<name>')
+    if args.add and args.add_viewers:
+        fail('--add and --add-viewers add one run each; add them one after the other')
+    if args.add_viewers:
+        data, summary = add_viewers(data, args.add_viewers, args.name)
+        write_rows(HERE / 'viewers.json', data['viewers'])
+        print(json.dumps(summary, indent=2, ensure_ascii=False))
     if args.add:
         only = {each.strip() for each in args.only.split(',') if each.strip()}
         data, summary = add_run(data, args.add, only, args.name, args.keep_seconds, args.step_seconds)

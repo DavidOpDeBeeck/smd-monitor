@@ -6,6 +6,8 @@ import app.dodb.smd.monitor.hub.budget.MemoryBudget;
 import app.dodb.smd.monitor.hub.health.ApplicationHealth;
 import app.dodb.smd.monitor.hub.health.HealthReason;
 import app.dodb.smd.monitor.hub.intake.SpanBatch;
+import app.dodb.smd.monitor.hub.javalin.SaturationFrameServer;
+import app.dodb.smd.monitor.hub.span.ApplicationName;
 import app.dodb.smd.monitor.json.Frame;
 import app.dodb.smd.monitor.json.FrameView;
 import tools.jackson.core.type.TypeReference;
@@ -59,6 +61,11 @@ import static java.util.Objects.requireNonNull;
 // With clients (FrameClients), the hub's own WebSocket publishes the frames instead, and the run also measures what the clients read of them and
 // how late. Clients that read frames as they come connect before the run's clock starts and read the filled hub's snapshot; slow ones connect as it
 // starts, as a page that opens on a busy hub.
+//
+// Over OTLP/HTTP (SaturationExporters), the run offers each batch as its instance's exporter sends it to the hub's own OTLP server instead of
+// submitting it, and also measures how long the hub takes to answer; the fill still submits, as it only sets up the state the steps measure.
+// With viewers (SaturationViewers), open pages in a JVM of their own read the frames from the hub's WebSocket in place of the clients, and each
+// asks its view of the hub's query API whenever it reads a frame of a later epoch; the run then also measures how long the hub takes to answer.
 public final class SaturationRun {
 
     private static final long SEED = 20261017;
@@ -98,7 +105,16 @@ public final class SaturationRun {
     private final Map<Long, Long> generatorLateNanos = new ConcurrentHashMap<>();
     private final Map<Long, FrameSample> frames = new ConcurrentHashMap<>();
     private final List<Sample> samples = new CopyOnWriteArrayList<>();
-    private final FrameClients.Audience audience = FrameClients.configured();
+    private final int viewerCount = SaturationViewers.configured();
+    // The viewers read the frames as they come in place of the clients.
+    private final FrameClients.Audience audience = viewerCount > 0
+        ? new FrameClients.Audience(viewerCount, 0, FrameClients.configured().slowCharsPerSecond()) : FrameClients.configured();
+    private final SaturationExporters.Transport transport = SaturationExporters.configured();
+    // Set before the submitters and the viewers start.
+    private Optional<SaturationExporters> exporters = Optional.empty();
+    private Optional<SaturationViewers> viewers = Optional.empty();
+    // Read from the viewers as the run ends.
+    private List<SaturationPages.Query> viewerQueries = List.of();
     private final List<FrameReceipt> receipts = new CopyOnWriteArrayList<>();
     // Read from the clients as the run ends, before they close.
     private long fastDisconnects;
@@ -116,26 +132,24 @@ public final class SaturationRun {
         this.partitions = partitions(scenario, schedule, origin.getEpochSecond() + fillSeconds);
     }
 
-    // Arguments: the comma-separated scenario selection (default "all"; see SaturationScenario.selected), the output directory (default build/saturation), how long a history
+    // Arguments: the comma-separated scenario selection (default "core"; see SaturationScenario.selected), the output directory (default build/saturation), how long a history
     // to fill before measuring as an ISO-8601 duration such as PT2M ("-" or blank: the scenario's whole history), and optionally the
     // comma-separated rates to offer instead of the scenario's. Several scenarios run one after the other, each in a JVM of its own with this
     // JVM's options, so one run's heap and compiled code never shape the next.
     public static void main(String[] args) throws Exception {
         // The tables group thousands with commas, as the design doc does, whatever the machine's locale.
         Locale.setDefault(Locale.ROOT);
-        var scenarios = SaturationScenario.selected(args.length > 0 ? args[0] : "all");
+        var scenarios = SaturationScenario.selected(args.length > 0 ? args[0] : "core");
         var output = Path.of(args.length > 1 ? args[1] : "build/saturation");
         var fill = args.length > 2 && !args[2].equals("-") ? args[2] : "";
         var rates = args.length > 3 ? args[3] : "";
         Files.createDirectories(output);
-        if (System.getProperty(RUN_PROPERTY) == null) {
-            System.setProperty(RUN_PROPERTY, Instant.now().truncatedTo(ChronoUnit.SECONDS) + " " + commit());
-        }
+        nameRun();
         if (scenarios.size() > 1) {
             var plan = new SaturationPlan(scenarios, output);
             for (var index = 0; index < scenarios.size(); index++) {
                 var progress = plan.progressOf(index);
-                runInOwnJvm(scenarios.get(index), output, fill, rates, progress);
+                runInOwnJvm(scenarios.get(index), output, fill, rates, progress, List.of());
                 plan.finished(progress);
             }
             return;
@@ -146,8 +160,16 @@ public final class SaturationRun {
         run.write(run.run());
     }
 
-    // The classpath goes through an argument file, as it can exceed the length of a Windows command line.
-    static void runInOwnJvm(SaturationScenario scenario, Path output, String fill, String rates, SaturationProgress progress)
+    // Names the run every JVM of this invocation belongs to, by when it started and the commit, unless the parent JVM named it.
+    static void nameRun() {
+        if (System.getProperty(RUN_PROPERTY) == null) {
+            System.setProperty(RUN_PROPERTY, Instant.now().truncatedTo(ChronoUnit.SECONDS) + " " + commit());
+        }
+    }
+
+    // The classpath goes through an argument file, as it can exceed the length of a Windows command line. The properties follow this JVM's
+    // options, so they win over the same ones among them.
+    static void runInOwnJvm(SaturationScenario scenario, Path output, String fill, String rates, SaturationProgress progress, List<String> properties)
         throws IOException, InterruptedException {
         var java = ProcessHandle.current().info().command()
             .orElseThrow(() -> new IllegalStateException("Saturation run " + scenario.id() + " cannot find the java command of this JVM to start its own"));
@@ -157,6 +179,7 @@ public final class SaturationRun {
         command.addAll(ManagementFactory.getRuntimeMXBean().getInputArguments());
         command.add("-D" + RUN_PROPERTY + "=" + System.getProperty(RUN_PROPERTY));
         command.add(progress.jvmArgument());
+        command.addAll(properties);
         command.addAll(List.of("@" + classpath, SaturationRun.class.getName(), scenario.id(), output.toString(), fill.isBlank() ? "-" : fill));
         if (!rates.isBlank()) {
             command.add(rates);
@@ -186,9 +209,10 @@ public final class SaturationRun {
         return List.copyOf(partitions);
     }
 
-    private List<SaturationStep> run() throws InterruptedException {
-        System.out.printf("%n== %s (%s)%n%s; queues of %,d spans (%,d per application), %d generators%n", scenario.name(), scenario.id(),
-            scenario.description(), queueCapacity, queueCapacity / scenario.profile().applications(), partitions.size());
+    private List<SaturationStep> run() throws InterruptedException, IOException {
+        System.out.printf("%n== %s (%s)%n%s; queues of %,d spans (%,d per application), %d generators, offered %s%s%n", scenario.name(), scenario.id(),
+            scenario.description(), queueCapacity, queueCapacity / scenario.profile().applications(), partitions.size(), transport.key(),
+            viewerCount > 0 ? ", " + viewerCount + " viewers" : "");
         progress.report(output, "filling %d s of history, then up to %d rates from %,d spans/s".formatted(fillSeconds, scenario.rates().size(),
             scenario.rates().getFirst()));
         hub.start();
@@ -200,17 +224,25 @@ public final class SaturationRun {
             partition.ahead.put(partition.generate());
             threads.add(Thread.ofPlatform().name("saturation-generator-" + threads.size()).daemon().start(partition::generateAhead));
         }
-        var clients = audience.any() ? Optional.of(FrameClients.serve(hub, audience, this::written, receipts::add)) : Optional.<FrameClients>empty();
-        var submitters = Executors.newFixedThreadPool(SUBMITTERS, Thread.ofPlatform().name("saturation-submitter-", 0).daemon().factory());
+        var server = audience.any() ? Optional.of(SaturationFrameServer.start(hub, this::written, SaturationPages.queryCap())) : Optional.<SaturationFrameServer>empty();
+        var clients = audience.any() && viewerCount == 0
+            ? Optional.of(FrameClients.of(server.get().live(), audience.slowCharsPerSecond(), receipts::add)) : Optional.<FrameClients>empty();
+        exporters = transport == SaturationExporters.Transport.DIRECT ? Optional.empty() : Optional.of(SaturationExporters.start(hub, transport));
+        var submitters = exporters.map(SaturationExporters::executor)
+            .orElseGet(() -> Executors.newFixedThreadPool(SUBMITTERS, Thread.ofPlatform().name("saturation-submitter-", 0).daemon().factory()));
         try {
             if (clients.isPresent()) {
                 clients.get().connect(audience.fast(), false);
                 clients.get().awaitFirstFrames();
             }
+            if (viewerCount > 0) {
+                progress.report(output, "connecting %,d viewers".formatted(viewerCount));
+                viewers = Optional.of(SaturationViewers.start(server.get().live(), server.get().api(), SaturationPages.plan(hub.epoch(), viewerCount), output));
+            }
             clock.start();
             clients.ifPresent(each -> each.connect(audience.slow(), true));
             threads.add(Thread.ofPlatform().name("saturation-sampler").daemon().start(() -> sample(writer)));
-            if (clients.isEmpty()) {
+            if (server.isEmpty()) {
                 threads.add(Thread.ofPlatform().name("saturation-publisher").daemon().start(this::publish));
             }
             return offer(submitters);
@@ -221,11 +253,23 @@ public final class SaturationRun {
                 thread.join();
             }
             submitters.awaitTermination(5, TimeUnit.SECONDS);
+            if (viewers.isPresent()) {
+                try {
+                    var viewed = viewers.get().stop();
+                    receipts.addAll(viewed.frames());
+                    viewerQueries = viewed.queries();
+                    fastDisconnects = viewers.get().disconnects();
+                } finally {
+                    viewers.get().close();
+                }
+            }
+            exporters.ifPresent(SaturationExporters::close);
             clients.ifPresent(each -> {
                 fastDisconnects = each.disconnects(false);
                 slowDisconnects = each.disconnects(true);
                 each.close();
             });
+            server.ifPresent(SaturationFrameServer::close);
             hub.close();
         }
     }
@@ -268,6 +312,10 @@ public final class SaturationRun {
         var steps = new ArrayList<SaturationStep>();
         var last = scenario.rates().size() - 1;
         for (var second = 0L; ; second++) {
+            var fault = exporters.flatMap(SaturationExporters::fault).or(() -> viewers.flatMap(SaturationViewers::fault));
+            if (fault.isPresent()) {
+                throw new IllegalStateException("Saturation run " + scenario.id() + " stopped, as its " + fault.get());
+            }
             offerSecond(runSecond(second), submitters);
             var step = schedule.stepAt(second);
             var first = schedule.firstSecondOf(step);
@@ -310,7 +358,7 @@ public final class SaturationRun {
             var due = releaseStart + SPREAD_NANOS * batchIndex / batches.size();
             parkUntil(due);
             offered.add(batch.size());
-            submitters.execute(() -> submit(batch, due));
+            submitters.execute(() -> submit(batch, second, due));
         }
     }
 
@@ -319,9 +367,9 @@ public final class SaturationRun {
         return fillSeconds + 1 + second;
     }
 
-    private void submit(SpanBatch batch, long due) {
+    private void submit(SpanBatch batch, long second, long due) {
         submitLateNanos.accumulateAndGet(System.nanoTime() - due, Math::max);
-        switch (hub.submit(batch)) {
+        switch (exporters.isPresent() ? exporters.get().export(batch, second) : hub.submit(batch)) {
             case Submission.Accepted(var refusal) -> {
                 var refusedSpans = refusal.map(each -> each.spans()).orElse(0);
                 accepted.add(batch.size() - refusedSpans);
@@ -372,7 +420,8 @@ public final class SaturationRun {
                     health.applications().stream().mapToLong(ApplicationHealth::retained).sum(),
                     health.applications().stream().mapToLong(application -> application.effectiveHorizon().toSeconds()).min().orElse(0),
                     health.effectiveHistory().toSeconds(),
-                    health.memory().bytes()));
+                    health.memory().bytes(),
+                    viewers.map(SaturationViewers::cpuNanos).orElse(0L)));
             }
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
@@ -491,12 +540,18 @@ public final class SaturationRun {
         if (audience.any()) {
             writeReceipts();
         }
-        writeResult(steps, deliveries);
+        var exports = exporters.map(each -> steps.stream()
+            .map(step -> each.summarize(step.rate(), step.firstSecond() + SETTLING_SECONDS, step.lastSecond())).toList()).orElse(List.of());
+        var queries = viewers.isPresent() ? steps.stream().map(this::queries).toList() : List.<SaturationQueries>of();
+        if (viewers.isPresent()) {
+            writeQueries();
+        }
+        writeResult(steps, deliveries, exports, queries);
         var summary = new ArrayList<String>();
         summary.add("## " + scenario.name() + " (" + scenario.id() + ")");
         summary.add("");
-        summary.add("%s, filled %d s; queues of %,d spans; run %s, recorded %s".formatted(scenario.description(), fillSeconds, queueCapacity,
-            System.getProperty(RUN_PROPERTY), Instant.now()));
+        summary.add("%s, filled %d s; queues of %,d spans; offered %s; run %s, recorded %s".formatted(scenario.description(), fillSeconds, queueCapacity,
+            transport.key(), System.getProperty(RUN_PROPERTY), Instant.now()));
         summary.add("");
         summary.add(SaturationStep.HEADER);
         summary.add(SaturationStep.SEPARATOR);
@@ -514,13 +569,31 @@ public final class SaturationRun {
             deliveries.forEach(delivery -> summary.add(delivery.row()));
             summary.add("");
         }
+        if (!exports.isEmpty()) {
+            summary.add("Exports over OTLP/HTTP%s, one request per batch; answer from the request sent to the answer read".formatted(
+                transport == SaturationExporters.Transport.OTLP_GZIP ? ", gzipped" : ""));
+            summary.add("");
+            summary.add(SaturationExport.HEADER);
+            summary.add(SaturationExport.SEPARATOR);
+            exports.forEach(export -> summary.add(export.row()));
+            summary.add("");
+        }
+        if (!queries.isEmpty()) {
+            summary.add("Queries of %d viewers' pages, each asking its view whenever its viewer reads a later frame".formatted(viewerCount));
+            summary.add("");
+            summary.add(SaturationQueries.HEADER);
+            summary.add(SaturationQueries.SEPARATOR);
+            queries.forEach(query -> summary.add(query.row()));
+            summary.add("");
+        }
         Files.write(output.resolve("summary.md"), summary, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         progress.report(output, SaturationStep.verdictOf(steps));
     }
 
     // The run's result for the saturation page: the run, the scenario's shape, its limits against the ladder's maximum, and every step with its
     // verdict.
-    private void writeResult(List<SaturationStep> steps, List<SaturationDelivery> deliveries) throws IOException {
+    private void writeResult(List<SaturationStep> steps, List<SaturationDelivery> deliveries, List<SaturationExport> exports, List<SaturationQueries> queries)
+        throws IOException {
         var mapper = new ObjectMapper();
         var profile = scenario.profile();
         var keptUpTo = SaturationStep.keptUpTo(steps);
@@ -538,6 +611,7 @@ public final class SaturationRun {
         result.put("recordedAt", Instant.now().truncatedTo(ChronoUnit.SECONDS).toString());
         result.put("durationS", progress.scenarioTook().toSeconds());
         result.put("scenario", scenario.id());
+        result.put("transport", transport.key());
         result.put("name", scenario.name());
         result.put("sweep", scenario.sweep().key());
         result.put("description", scenario.description());
@@ -565,6 +639,14 @@ public final class SaturationRun {
             delivery.put("slowDisconnects", slowDisconnects);
             delivery.put("steps", deliveries);
             result.put("delivery", delivery);
+        }
+        if (!exports.isEmpty()) {
+            result.put("exports", Map.of("steps", exports));
+        }
+        if (!queries.isEmpty()) {
+            var cap = SaturationPages.queryCap();
+            result.put("viewers", Map.of("count", viewerCount, "steps", steps.stream().map(step -> Map.of("rate", step.rate(), "cores", viewerCores(step))).toList()));
+            result.put("queries", Map.of("viewers", viewerCount, "queryCap", cap.isPresent() ? cap.getAsInt() : "hub", "steps", queries));
         }
         Files.writeString(output.resolve(scenario.id() + ".json"), mapper.writerWithDefaultPrettyPrinter().writeValueAsString(result));
     }
@@ -619,6 +701,50 @@ public final class SaturationRun {
                 receipt.receivedNanos() - frame.writtenNanos());
         }).toList();
         return SaturationDelivery.of(step.rate(), published.size(), audience, reads);
+    }
+
+    // What the viewers' pages asked after the epochs of the step's seconds after it settled.
+    private SaturationQueries queries(SaturationStep step) {
+        var secondOf = secondsOfEpochs();
+        var firstSecond = step.firstSecond() + SETTLING_SECONDS;
+        return SaturationQueries.of(step.rate(), viewerQueries.stream().filter(query -> {
+            var second = secondOf.get(query.epoch());
+            return second != null && second >= firstSecond && second <= step.lastSecond();
+        }).toList());
+    }
+
+    // Every query a viewer's page asked after an epoch ticked once the clock ran, with the second its epoch closes, as the CSV of the seconds counts
+    // them.
+    private void writeQueries() throws IOException {
+        var secondOf = secondsOfEpochs();
+        var rows = new ArrayList<String>();
+        rows.add("second,epoch,page,view,scope,answer,answerMs,bytes");
+        for (var query : viewerQueries) {
+            var second = secondOf.get(query.epoch());
+            if (second == null || second < fillSeconds) {
+                continue;
+            }
+            rows.add(String.join(",", List.of(String.valueOf(second), String.valueOf(query.epoch()), String.valueOf(query.page()), query.view().key(),
+                query.scope().map(ApplicationName::value).orElse("system"), query.answer().key(), "%.3f".formatted(query.nanos() / 1e6),
+                String.valueOf(query.bytes()))));
+        }
+        Files.write(output.resolve(scenario.id() + "-queries.csv"), rows);
+    }
+
+    // Cores the viewers' JVM used over the step's seconds after it settled: it shares the machine with the hub.
+    private double viewerCores(SaturationStep step) {
+        var firstSecond = step.firstSecond() + SETTLING_SECONDS;
+        var measured = samples.stream().filter(sample -> sample.second() >= firstSecond - 1 && sample.second() <= step.lastSecond()).toList();
+        if (measured.size() < 2) {
+            return 0;
+        }
+        var first = measured.getFirst();
+        var last = measured.getLast();
+        return (double) (last.viewerCpuNanos() - first.viewerCpuNanos()) / Math.max(1, last.receivedNanos() - first.receivedNanos());
+    }
+
+    private Map<Long, Long> secondsOfEpochs() {
+        return samples.stream().collect(Collectors.toMap(Sample::sequence, Sample::second, (first, second) -> first));
     }
 
     // Every frame a client read of an epoch ticked once the clock ran, with the second its epoch closes, as the CSV of the seconds counts them.
@@ -740,7 +866,7 @@ public final class SaturationRun {
     private record Sample(long sequence, long second, long receivedNanos, long offered, long accepted, long busy, long refused, long queued,
                           long drained, long shedUnretained, long shedUnjoined, long writerCpuNanos, long writerIdleNanos, long processCpuNanos,
                           long tickLateNanos, long publishLagNanos, long gcMillis, long heapBytes, long retained, long horizonSeconds, long historySeconds,
-                          long accountedBytes) {
+                          long accountedBytes, long viewerCpuNanos) {
     }
 
     // The frame of an epoch, ticked at the given instant: when the publisher had written it, how long that took, its size, and the epochs skipped before it.

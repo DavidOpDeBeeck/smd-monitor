@@ -3,6 +3,7 @@ package app.dodb.smd.monitor.hub.javalin;
 import app.dodb.smd.monitor.hub.MonitorHub;
 import app.dodb.smd.monitor.hub.web.FramePublisher;
 import app.dodb.smd.monitor.hub.web.HubQueries;
+import app.dodb.smd.monitor.hub.web.MonitorFrames;
 import app.dodb.smd.monitor.hub.web.Origins;
 import app.dodb.smd.monitor.hub.web.QueryAnswer;
 import app.dodb.smd.monitor.hub.web.QueryFilter;
@@ -10,9 +11,13 @@ import io.javalin.Javalin;
 import io.javalin.http.Context;
 import io.javalin.http.ForbiddenResponse;
 import org.eclipse.jetty.session.NullSessionCacheFactory;
-import org.eclipse.jetty.websocket.api.Callback;
+import org.eclipse.jetty.util.Callback;
 import org.eclipse.jetty.websocket.api.Session;
+import org.eclipse.jetty.websocket.common.WebSocketSession;
+import org.eclipse.jetty.websocket.core.Frame;
+import org.eclipse.jetty.websocket.core.OpCode;
 
+import java.nio.ByteBuffer;
 import java.util.function.Consumer;
 
 import static io.javalin.http.staticfiles.Location.CLASSPATH;
@@ -25,12 +30,15 @@ public class UiServer implements AutoCloseable {
     private final Javalin javalin;
 
     UiServer(HubSettings settings, MonitorHub hub) {
-        this(settings, hub, new FramePublisher(hub));
+        this(settings, hub, new FramePublisher(hub, new MonitorFrames(), settings.maxViewers(), FramePublisher::intervalFor));
     }
 
     UiServer(HubSettings settings, MonitorHub hub, FramePublisher publisher) {
+        this(settings, hub, publisher, new HubQueries(hub));
+    }
+
+    UiServer(HubSettings settings, MonitorHub hub, FramePublisher publisher, HubQueries queries) {
         this.publisher = requireNonNull(publisher);
-        var queries = new HubQueries(hub);
         javalin = Javalin.create(config -> {
             config.concurrency.useVirtualThreads = true;
             config.startup.showJavalinBanner = false;
@@ -97,11 +105,15 @@ public class UiServer implements AutoCloseable {
         }
     }
 
+    // Sends the publisher's UTF-8 text as it is, a text frame of the core session, so the clients share one encoding of each message; each send
+    // wraps the bytes on its own, as the frame reads them, and Jetty deflates a frame on the thread that sends it.
     private record JettySink(Session session) implements FramePublisher.Sink {
 
         @Override
-        public void send(String message, Consumer<Boolean> sent) {
-            Thread.startVirtualThread(() -> session.sendText(message, Callback.from(() -> sent.accept(true), failure -> sent.accept(false))));
+        public void send(byte[] message, Consumer<Boolean> sent) {
+            var core = ((WebSocketSession) session).getCoreSession();
+            Thread.startVirtualThread(() -> core.sendFrame(new Frame(OpCode.TEXT, ByteBuffer.wrap(message)),
+                Callback.from(() -> sent.accept(true), failure -> sent.accept(false)), false));
         }
 
         @Override

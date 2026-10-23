@@ -38,7 +38,7 @@ public final class SaturationCheck {
             var expectation = expectations.get(index);
             var scenario = plan.scenarios().get(index);
             var progress = plan.progressOf(index);
-            SaturationRun.runInOwnJvm(scenario, output, "", String.valueOf(expectation.spansPerSecond()), progress);
+            SaturationRun.runInOwnJvm(scenario, output, "", String.valueOf(expectation.spansPerSecond()), progress, List.of());
             plan.finished(progress);
             var verdict = Files.readAllLines(output.resolve(scenario.id() + ".verdicts")).getLast().split(",")[1];
             var line = "%s at %,d spans/s: %s".formatted(scenario.id(), expectation.spansPerSecond(), verdict);

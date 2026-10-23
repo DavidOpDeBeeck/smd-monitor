@@ -33,7 +33,7 @@ class HubQueriesConcurrencyTest {
         var response = tape();
 
         assertThat(response.status()).isEqualTo(429);
-        assertThat(response.body()).contains("at most 4 queries");
+        assertThat(response.body()).contains("at most " + QueryAnswers.MAX_RUNNING + " queries");
     }
 
     @Test

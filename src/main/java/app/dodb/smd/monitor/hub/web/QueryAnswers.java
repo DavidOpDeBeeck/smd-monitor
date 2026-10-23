@@ -17,11 +17,26 @@ import static java.util.Objects.requireNonNull;
 final class QueryAnswers {
 
     static final int MAX_ANSWERS = 256;
-    static final int MAX_RUNNING = 4;
-    private static final QueryAnswer BUSY = QueryAnswer.busy("The SMD monitor hub answers at most " + MAX_RUNNING + " queries at once; ask again shortly");
+    // As many as the design target's 16 viewers ask at once when each looks at another view; fewer refused every viewer but four most
+    // seconds in the viewer ladder of docs/monitor-hub-design.md, at no cost the ladder could tell.
+    static final int MAX_RUNNING = 16;
 
-    private final Semaphore running = new Semaphore(MAX_RUNNING);
+    private final Semaphore running;
+    private final QueryAnswer busy;
     private volatile Answers answers = new Answers(-1, null);
+
+    QueryAnswers() {
+        this(MAX_RUNNING);
+    }
+
+    // A benchmark tunes how many run at once.
+    QueryAnswers(int maxRunning) {
+        if (maxRunning < 1) {
+            throw new IllegalArgumentException("QueryAnswers runs at least one query at once; got " + maxRunning);
+        }
+        this.running = new Semaphore(maxRunning);
+        this.busy = QueryAnswer.busy("The SMD monitor hub answers at most " + maxRunning + " queries at once; ask again shortly");
+    }
 
     // The answer of the query for the epoch, computed by the supplier unless known.
     QueryAnswer answer(Epoch epoch, Object query, Supplier<QueryAnswer> compute) {
@@ -33,8 +48,8 @@ final class QueryAnswers {
             return known.join();
         }
         try {
-            var answer = running.tryAcquire() ? computeReleasing(compute) : BUSY;
-            if (answer == BUSY) {
+            var answer = running.tryAcquire() ? computeReleasing(compute) : busy;
+            if (answer == busy) {
                 current.byQuery.remove(query, mine);
             }
             mine.complete(answer);

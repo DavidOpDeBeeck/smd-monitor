@@ -72,7 +72,7 @@ class MonitorHubIntegrationTest {
     // Free ports on the loopback address, and a page behind a proxy that rewrites the Host header.
     @BeforeEach
     void startHubAndTickets() {
-        hub = MonitorHubServer.start(new HubSettings(0, "127.0.0.1", 0, "127.0.0.1", List.of("https://monitor.example"), HubConfig.withDefaults().build()));
+        hub = MonitorHubServer.start(new HubSettings(0, "127.0.0.1", 0, "127.0.0.1", List.of("https://monitor.example"), 128, HubConfig.withDefaults().build()));
         tickets = exporting(TicketApplication.class, "tickets");
     }
 

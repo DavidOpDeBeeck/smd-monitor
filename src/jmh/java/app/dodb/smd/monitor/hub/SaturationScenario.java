@@ -24,6 +24,7 @@ record SaturationScenario(String id, String name, Sweep sweep, LoadProfile profi
     private static final Duration STEP = Duration.ofSeconds(30);
     private static final List<Integer> LADDER = List.of(2_000, 5_000, 10_000, 20_000, 30_000, 40_000, 50_000, 60_000, 80_000, 100_000, 125_000, 150_000, 200_000,
         250_000, 300_000);
+    private static final List<String> CORE = List.of("reference", "applications-500", "budget-256mb");
     // The highest rate a run offers; four generator threads keep up with it on the reference machine.
     static final int MAX_RATE = LADDER.getLast();
     // The rate every scenario fills its history at and starts its climb from: the limit a run finds depends on the state the fill leaves, so
@@ -60,12 +61,14 @@ record SaturationScenario(String id, String name, Sweep sweep, LoadProfile profi
         }
     }
 
-    // The scenarios the comma-separated names select: "all"; "quick", the reference and the profiles; a sweep, such as "applications", with the
-    // reference it varies; "profiles"; or a scenario's ID, such as "applications-500".
+    // The scenarios the comma-separated names select: "core", the reference, 500 applications, and the 256 MB budget, the three that told runs
+    // apart in the runs kept, where the others moved with the reference within a few percent; "all"; "quick", the reference and the profiles; a
+    // sweep, such as "applications", with the reference it varies; "profiles"; or a scenario's ID, such as "applications-500".
     static List<SaturationScenario> selected(String names) {
         var selected = new LinkedHashSet<SaturationScenario>();
         for (var name : Arrays.stream(names.split(",")).map(String::strip).filter(each -> !each.isEmpty()).toList()) {
             selected.addAll(switch (name) {
+                case "core" -> ALL.stream().filter(scenario -> CORE.contains(scenario.id())).toList();
                 case "all" -> ALL;
                 case "quick" -> ALL.stream().filter(scenario -> scenario.sweep() == Sweep.REFERENCE || scenario.sweep() == Sweep.PROFILE).toList();
                 case "profiles" -> ALL.stream().filter(scenario -> scenario.sweep() == Sweep.PROFILE).toList();
@@ -73,7 +76,7 @@ record SaturationScenario(String id, String name, Sweep sweep, LoadProfile profi
             });
         }
         if (selected.isEmpty()) {
-            throw new IllegalArgumentException("SaturationScenario selects scenarios by 'all', 'quick', 'profiles', a sweep " + Arrays.stream(Sweep.values())
+            throw new IllegalArgumentException("SaturationScenario selects scenarios by 'core', 'all', 'quick', 'profiles', a sweep " + Arrays.stream(Sweep.values())
                 .filter(Sweep::varies).map(Sweep::key).toList() + ", or an ID " + ALL.stream().map(SaturationScenario::id).toList() + "; got '" + names + "'");
         }
         return new ArrayList<>(selected);

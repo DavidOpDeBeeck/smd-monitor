@@ -21,8 +21,8 @@ public class HeapBenchmark {
 
     private static final long MEGABYTE = 1024 * 1024;
 
-    // The budget in megabytes.
-    @Param({"1024", "2048", "4096"})
+    // The budget in megabytes: the design target's; -p budgetMegabytes=1024,4096 measures others.
+    @Param({"2048"})
     public long budgetMegabytes;
 
     @Setup(Level.Trial)

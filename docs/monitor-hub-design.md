@@ -73,7 +73,6 @@ What the hub is tested and benchmarked at (`LoadProfile.STANDALONE`), and what t
 
 | Measure                                 | Budget      |
 |-----------------------------------------|-------------|
-| Writer time per 512-span batch, decoded | < 5 ms p99  |
 | Building an epoch                       | < 20 ms     |
 | Delta frame, uncompressed               | < 100 KB    |
 | Query                                   | < 50 ms p99 |
@@ -116,7 +115,7 @@ The hub keeps four kinds of state, each with its own lifetime and bound.
 | C6  | One epoch per second: one immutable view of catalog, aggregates, specimens, and health, shared by the frame and the queries.                                                                                                                                                                                        |
 | C7  | Building an epoch costs in proportion to what changed: at most one copy of changed array chunks.                                                                                                                                                                                                                    |
 | C8  | JSON is serialized off the writer, once per epoch, and shared by every client.                                                                                                                                                                                                                                      |
-| C9  | At most 4 queries run at once; beyond that the hub answers 429.                                                                                                                                                                                                                                                     |
+| C9  | At most 16 queries run at once; beyond that the hub answers 429.                                                                                                                                                                                                                                                    |
 | C10 | An exception in one batch drops that batch, reports it, and logs it once. The writer keeps running.                                                                                                                                                                                                                 |
 | C11 | Exports arrive on a port of their own, served by a Javalin server of its own with its own virtual threads, which serves nothing else; the page's port serves no exports. The page can be published without the endpoint, and pages never take a thread from admission.                                              |
 
@@ -162,9 +161,9 @@ The hub keeps four kinds of state, each with its own lifetime and bound.
 
 | ID | Rule                                                                                                                                                   |
 |----|--------------------------------------------------------------------------------------------------------------------------------------------------------|
-| W1 | One system-wide frame per epoch over the WebSocket. Scope stays on the client.                                                                         |
+| W1 | One system-wide frame over the WebSocket every epoch for up to 16 clients, every second epoch up to 32, and so on, at most every fifth; a page's queries follow its frames. Scope stays on the client. |
 | W2 | Frames are deltas against the previous epoch, found by comparing two immutable snapshots. Each names its `epoch` and `base`.                           |
-| W3 | A snapshot goes to a client on connect and to any client that missed a delta. Each is serialized at most once per epoch.                               |
+| W3 | A snapshot goes to a client on connect and to any client more than three frames behind; one that skipped fewer receives the changes since the frame it holds. Each message is serialized at most once per epoch, as UTF-8, and shared. |
 | W4 | JSON, compressed by `permessage-deflate`. Statistics travel as arrays of figures in a fixed order.                                                     |
 | W5 | Specimens are pulled over HTTP from the epoch, by a visible page as the retained sequence moves; a list asks again for its first page only. Identical queries of an epoch are answered once; every answer but the timeline's, which moves with the clock, carries an ETag of its content but the sequence, which the page sends back to receive 304. |
 | W6 | Frames and answers carry a protocol version and a build ID; the page reloads when either differs.                                                      |
@@ -184,7 +183,7 @@ The hub keeps four kinds of state, each with its own lifetime and bound.
  (own port)                                                             │   snapshot to clients that missed one
      └──────────► Admission ──► IntakeQueues ──► HubWriter ──► Epochs ──┤
                   limits,       per application,  drains round-robin,   │
-                  skew,         bounded,          ticks each second,    └─► HubQueries: at most 4 at once,
+                  skew,         bounded,          ticks each second,    └─► HubQueries: at most 16 at once,
                   liveness      shedding level    owns Hub                  per-epoch cache, ETag
                                                     │
                                 Hub (single-threaded core)
@@ -226,9 +225,9 @@ Per tick, after each second:
 | Shedding thresholds      | 50% and 80% of the pool or of its half |
 | Slowest and Failures K   | 5 per type, 20 per cause (minimum 1)   |
 | Invocations per trace    | 10,000                                 |
-| Concurrent queries       | 4                                      |
+| Concurrent queries       | 16                                     |
 | Cached answers per epoch | 256                                    |
-| WebSocket clients        | 64, with a 5 s send timeout            |
+| WebSocket clients        | 128 (`ui.max-viewers`), 5 s send timeout|
 | Specimen chunk           | 4,096                                  |
 | Request body             | 16 MB, inflated or not                 |
 | `Retry-After`            | 2 s                                    |
@@ -267,11 +266,9 @@ every 5 s in shuffled batches of up to 512. Each fork first fills the hub's whol
 
 | Budget            | Measure                                                 | Benchmark                   | Result                                      |                     |
 |-------------------|---------------------------------------------------------|-----------------------------|---------------------------------------------|---------------------|
-| < 5 ms p99        | Writer time per 512-span batch, with admission          | `ReceiveBenchmark`          | 5.6 ms p99, 1.5 ms p50                      | missed              |
 | < 20 ms           | Building an epoch                                       | `FrameBenchmark.statistics` | 158 ms p99, 62 ms p50                       | missed              |
 | < 100 KB          | Delta frame, median and largest                         | `FrameBenchmark`            | 1,440 KB, 2,841 KB; 286 KB, 613 KB deflated | missed              |
 | < 50 ms p99       | Query: tape, traces, failures of 20 causes, timeline    | `QueryBenchmark`            | 20.6, 12.1, 96.6, 9.8 ms                    | missed for failures |
-| < 50 ms p99       | First query of an epoch                                 | `RelinkBenchmark`           | 24.0 ms                                     | met                 |
 | < 1 core          | One second of writer work                               | `WriterBenchmark`           | 105 ms p50, 203 ms p99                      | met                 |
 | < 1 s             | Writing an epoch's delta, on the publisher              | `FrameBenchmark.delta`      | 211 ms p50, 323 ms p99                      | met                 |
 | Within the budget | Heap of the hub after a collection                      | `HeapBenchmark`             | 1,660 MB of 2,048 MB; 1,681 MB accounted    | met                 |
@@ -283,6 +280,12 @@ while tape, failures, and timeline stayed within noise of each other, run back t
 
 Before the rework, the same load took about 24 cores, 4.5 GB of heap without a bound, and 48 MB per frame. [Open items](#open-items) lists the levers for the
 budgets still missed.
+
+Two benchmarks of this run were removed on 2026-10-22, as others cover what they measured. `ReceiveBenchmark` timed the writer on one 512-span batch
+(5.6 ms p99, a budget of 5 ms): `WriterBenchmark` times the same work a second at a time, and what a slow batch does to the page, delay the tick, shows as
+*Tick late* in a saturation run, so its budget went with it. `RelinkBenchmark` timed the first tape of an epoch (24.0 ms) for when that query linked what
+the epoch retained; since S4 the writer links as spans arrive, and the first query costs what `QueryBenchmark.tape` does. `HeapBenchmark` measures the
+design target's 2 GB budget only; `-p budgetMegabytes=1024,4096` measures others.
 
 Correctness under load is covered by tests rather than benchmarks: `MonitorHubInvariantsTest` (linking in any arrival order, within and across applications,
 duplicates), `CountingRecountTest` (every figure against T1 to T3, in any order and with late spans), `MonitorHubBudgetTest` (the degradation order and TR9), and
@@ -299,8 +302,15 @@ reference: 50 applications × 10 instances, 200 types and 50 groups each, 2 GB, 
 so that sweep has three points (5, 100, 500); the instances (100), types (1,000), and budget (256 MB) sweeps keep only the point where their dimension costs
 most, as the points between tracked the reference. With the design target that makes eight scenarios.
 
+A run takes the **core** scenarios by default: the reference, 500 applications, and the 256 MB budget, about 13 minutes. In the six runs kept by
+2026-10-22, the change in writer capacity from one run to the next of 5 and 100 applications, 100 instances, and the standalone profile stayed within 2
+percentage points of the reference's, while 500 applications moved by up to 11 points more and the 256 MB budget fails another way, refusing when a pause
+outlasts its small queues. The other five stay for `-PsaturationScenarios=all` and for `saturationCheck`, which checks the throughput `monitor.md`
+documents.
+
 ```bash
-./gradlew saturation                                   # every scenario, about 35 minutes
+./gradlew saturation                                   # the core scenarios, about 13 minutes
+./gradlew saturation -PsaturationScenarios=all         # every scenario, about 35 minutes
 ./gradlew saturation -PsaturationScenarios=quick       # the reference and the profiles; or a sweep, or IDs such as applications-500
 ./gradlew saturation -PsaturationScenarios=applications-500 -PsaturationRates=40000,50000 -PsaturationJfr=build/saturation/a500.jfr
 ./gradlew saturationDashboard                          # adds build/saturation to docs/saturation and writes build/saturation/dashboard.html
@@ -324,6 +334,43 @@ scenario, the JSON a `delivery` object, and `<scenario>-frames.csv` lists every 
 the page's parsing. On the saturation page, *Second by second* › *Frame delivery* stacks each second's lag in its parts (tick, epoch build, publisher wait,
 frame write, and send and read), which add up to the lag of the fast or, toggled, the slow client in the middle, and marks the seconds a client read as a
 snapshot or never read. Picked runs get a panel each, on shared axes, as every second-by-second measure does.
+
+Two more options make a run end to end; they combine with each other. With `-PsaturationTransport=otlp`, or `otlp-gzip`, the run
+exports each batch to `OtlpServer` on the loopback address instead of submitting it (`SaturationExporters`): one OTLP/HTTP request per batch, written by
+the OTLP exporter's own encoder (`OtlpExports`, which `OtlpExportsTest` checks against the hub's decoder), each on a virtual thread of its own, so a slow
+answer holds up no other export. The receiving threads then read, inflate, decode, and admit as they do in production, and a 503 counts as busy. The
+fill still submits directly, as it only sets up the state the steps measure. Per step the run also reports the requests, those answered busy, the time
+from sending a request to reading its answer, and a request's size; the saturation page shows the answer time as *OTLP answer* among the measures
+of *Rate by rate*. With `-PsaturationViewers=64`, that many open UIs run in a JVM of their own (`SaturationViewers`), as on the machines of the people
+viewing, so the hub's heap and collections are its own: each reads the frames over the hub's WebSocket in place of the clients, and its page asks its
+view's query over HTTP whenever it reads a newer frame, as the page does (`SaturationPages`). The pages take the tape, the traces, the failures of the
+scope's 20 most frequent causes, and the timeline of the last minute in turn; the first four ask of the whole system and each later one of one
+application, so no two share an answer (W5) unless they share a view and a scope. For these runs the publisher takes any number of clients, and
+`-PsaturationQueryCap` sets how many queries run at once in place of C9's limit. `-PsaturationFrameInterval=5` has the publisher send a frame every 5 seconds in place of every epoch, to explore a slower tick: in a ladder at 16 queries at
+once on 2026-10-22, ingest then kept up through 128 viewers where it fell behind from 48 with a frame every second, as building, sending, and the
+queries pages ask after each frame all fell to a fifth. Per step the run reports the queries, those answered 429 or timed out,
+which leave a page with its last answer, the time to an answer, and the cores the viewers' JVM used, which shares the machine with the hub.
+
+The viewer ladder asks how many open UIs the hub serves while it ingests, and at what cost: a run without viewers, then one per number of viewers (1, 8,
+16, 32, 48, 64, and 128) and query cap (4, 16, 64), each filling a minute of the reference scenario and offering 60,000 spans per second for one step,
+about 25 minutes. For each it keeps what the viewers got (queries answered, the share of seconds the worst and the median viewer saw fresh data, the answer
+time, frames received and their lag) and what it cost the hub (writer capacity against the run without viewers, cores, heap, and collections), and whether
+ingest kept up. `saturationDashboard -PsaturationViewers` adds it to `docs/saturation/viewers.json`, and the page's *End to end* › *Open UIs* view draws
+it: the caps of one ladder, or one cap across ladders, to compare a change.
+
+```bash
+./gradlew saturationViewers                            # the viewer ladder, about 25 minutes; -PsaturationViewerCounts=1,16,64 -PsaturationQueryCaps=4,64
+./gradlew saturationDashboard -PsaturationViewers      # adds build/saturation-viewers to docs/saturation
+```
+
+The first two ladders, on 2026-10-22 on the Ryzen 7 5825U, measured what changed W3 and C9. Before, at the commit after pull request #8, a client
+still sending a frame skipped the next and then received the snapshot, about 25 MB of JSON against a delta's 2.6 MB, encoded to UTF-8 and deflated
+again for every client. From 48 viewers clients fell further behind with every snapshot: at 48 viewers and 16 queries at once, a profile of the hub
+found the publisher writing snapshots for a third of the samples and the sends encoding text for a fifth, clients read 41% of the frames, 287 of 307 of
+them snapshots, and the heap reached 11.5 GB of 12 GB. Sending a client that skipped up to three frames the changes since the frame it holds, and
+encoding each message once, kept the heap at 7 GB at every number of viewers; at 48 viewers clients read 81% of the frames, and with 4 queries at once
+ingest kept up with 64 viewers where it had fallen behind. With 4 queries at once, the worst of 8 viewers saw fresh data a third of the seconds and
+of 16 viewers an eighth; with 16, every viewer did up to 32 viewers, as ingest kept up, for about 5 more cores at 32 viewers. So C9 went from 4 to 16.
 
 Run 1, 2026-10-20, on a Ryzen 7 5825U (16 threads, 32 GB, Linux) at the commit before the optimizations of pull requests #1 to #3, in spans per second:
 
@@ -380,7 +427,8 @@ Budgets still missed and work deferred, with the cause found and the levers to t
 - **Building an epoch takes 158 ms p99.** It rewrites the statistics of 27,500 types every second and snapshots the changed traces; the tail is collection pauses.
   Counts that did not change are shared with the previous epoch already, but a key's record is new every second, as its sparkline moves with the window. Lever:
   rebuild only the keys that counted or changed, with a sparkline that moves without a copy, which also shortens the publisher's comparison.
-- **The batch time is 5.6 ms p99.** The tail is collection pauses on a 2 GB live set. Levers: fewer allocations in decoding; a pause-time goal.
+- **Collection pauses delay the tick.** A pause on a 2 GB live set holds up the writer's batch and so its tick (*Tick late* in a saturation run).
+  Levers: fewer allocations in decoding; a pause-time goal.
 - **The span index takes about 300 bytes per fact**, so at small budgets the horizon shrinks first. Levers: compact facts the way `Specimen` is, or a lower
   specimen floor.
 - **A slow page falls behind unseen.** A client is busy, and skips to a snapshot, only while its send is unfinished, and a send finishes once the kernel's
@@ -388,5 +436,9 @@ Budgets still missed and work deferred, with the cause found and the levers to t
   delta, the client read every delta and none was skipped, 250 ms later each second, until 23 s behind when the run ended; clients reading as frames come
   read them 250 to 520 ms after their second. Once the buffers fill, the snapshot of 17.7 MB that follows is slower still to read. Levers: the page
   acknowledges the epoch it applied, and the hub sends a client nothing new while its acknowledgement is more than a frame behind.
+- **Queries take the cores from 32 viewers.** Each viewer of another view costs its query once per epoch: at 32 viewers, 16 queries at once took
+  the hub from 6.5 to 11.3 cores and the writer to 68% of its capacity without viewers, and from 48 viewers ingest fell behind at 60,000 spans per second
+  (the viewer ladder, with the viewers' JVM on the same 16 threads). Levers: cheaper queries (`QueryBenchmark`, `TraceViewBenchmark`), fewer
+  queries at once while the writer is busy, and answers shared across scopes.
 - **Shedding and the clock-ahead flag are covered by tests only.** The demo's in-process exporters never fill a queue share and share the hub's clock. Lever: a demo
   instance in another process that exports bursts, and one whose clock runs ahead.

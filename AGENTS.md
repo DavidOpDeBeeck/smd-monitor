@@ -124,9 +124,10 @@ Before coding, name the owning package, the smallest public contract, the thread
 ./gradlew installDist           # the runnable hub in build/install/smd-monitor-hub
 
 ./gradlew jmh -PjmhIncludes=... # about 40 minutes unnarrowed
-./gradlew saturation            # open-loop saturation runs; -PsaturationScenarios=quick to narrow
+./gradlew saturation            # open-loop saturation runs of the core scenarios, about 13 minutes; -PsaturationScenarios=all for every one
+./gradlew saturationViewers     # the viewer ladder: open UIs against what they get and cost, about 25 minutes
 ./gradlew saturationCheck       # checks the throughput docs/monitor.md documents
-./gradlew saturationDashboard   # adds build/saturation to docs/saturation; needs Python
+./gradlew saturationDashboard   # adds build/saturation to docs/saturation (-PsaturationViewers: the viewer ladder); needs Python
 
 cd frontend && npm run dev      # with ./gradlew demo running
 ```

@@ -7,6 +7,7 @@ smd:
         port: 8080
         # address: 127.0.0.1   unset, the page's port listens on every address
         # allowed-origins: https://monitor.example, https://ops.example
+        max-viewers: 128       # pages open at once; frames go out a second apart per 16 of them, at most 5 seconds
       otlp:
         port: 4318
         # address: 127.0.0.1   unset, the OTLP port listens on every address
