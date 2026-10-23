@@ -1,5 +1,7 @@
 package app.dodb.smd.monitor.hub.specimen;
 
+import app.dodb.smd.monitor.hub.span.ApplicationName;
+
 import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -48,9 +50,15 @@ public final class SpecimenView {
 
     // Oldest first.
     public void forEach(Consumer<Specimen> action) {
+        forEach(Optional.empty(), action);
+    }
+
+    // Oldest first, of the application when one is given.
+    public void forEach(Optional<ApplicationName> application, Consumer<Specimen> action) {
+        var only = application.orElse(null);
         for (var chunk : chunks) {
             for (var offset = 0; offset < chunk.size; offset++) {
-                var specimen = chunk.specimens[offset];
+                var specimen = in(chunk, offset, only);
                 if (specimen != null) {
                     action.accept(specimen);
                 }
@@ -58,28 +66,36 @@ public final class SpecimenView {
         }
     }
 
-    // Newest first, until the visitor answers false.
-    public void forEachNewest(Predicate<Specimen> visitor) {
-        for (var index = chunks.length - 1; index >= 0; index--) {
-            var chunk = chunks[index];
-            for (var offset = chunk.size - 1; offset >= 0; offset--) {
-                var specimen = chunk.specimens[offset];
-                if (specimen != null && !visitor.test(specimen)) {
-                    return;
+    // Oldest first, the failed only.
+    public void forEachFailed(Consumer<Specimen> action) {
+        for (var chunk : chunks) {
+            for (var word = 0; word < chunk.failed.length; word++) {
+                for (var bits = chunk.failed[word]; bits != 0; bits &= bits - 1) {
+                    var specimen = chunk.specimens[word * Long.SIZE + Long.numberOfTrailingZeros(bits)];
+                    if (specimen != null) {
+                        action.accept(specimen);
+                    }
                 }
             }
         }
     }
 
-    // Newest first, over the chunks that hold a specimen completed at or after the time; the visitor still sees older ones of those chunks.
-    public void forEachNewestCompletedFrom(long fromNanos, Predicate<Specimen> visitor) {
+    // Newest first, of the application when one is given, until the visitor answers false.
+    public void forEachNewest(Optional<ApplicationName> application, Predicate<Specimen> visitor) {
+        forEachNewestCompletedFrom(Long.MIN_VALUE, application, visitor);
+    }
+
+    // Newest first, of the application when one is given, over the chunks that hold a specimen completed at or after the time; the visitor still sees
+    // older ones of those chunks.
+    public void forEachNewestCompletedFrom(long fromNanos, Optional<ApplicationName> application, Predicate<Specimen> visitor) {
+        var only = application.orElse(null);
         for (var index = chunks.length - 1; index >= 0; index--) {
             var chunk = chunks[index];
             if (chunk.latestCompletedNanos < fromNanos) {
                 continue;
             }
             for (var offset = chunk.size - 1; offset >= 0; offset--) {
-                var specimen = chunk.specimens[offset];
+                var specimen = in(chunk, offset, only);
                 if (specimen != null && !visitor.test(specimen)) {
                     return;
                 }
@@ -100,6 +116,11 @@ public final class SpecimenView {
     // The chunks shared with the writer, which later epochs share too until the writer changes them.
     SpecimenChunk[] chunks() {
         return chunks;
+    }
+
+    // The slot's specimen when it holds one of the application, or of any when none is given; the others are passed over without reading them.
+    private static Specimen in(SpecimenChunk chunk, int offset, ApplicationName only) {
+        return only == null || only.equals(chunk.applications[offset]) ? chunk.specimens[offset] : null;
     }
 
     private SpecimenChunk chunkOf(long id) {

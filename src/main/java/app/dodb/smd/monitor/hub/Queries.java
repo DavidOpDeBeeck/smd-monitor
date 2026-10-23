@@ -46,10 +46,7 @@ final class Queries {
         var page = new ArrayList<RetainedInvocation>();
         var counts = new long[]{0, 0, -1};
         var more = new boolean[1];
-        view.forEachNewest(specimen -> {
-            if (!filter.inScope(specimen)) {
-                return true;
-            }
+        view.forEachNewest(filter.scope(), specimen -> {
             counts[0]++;
             if (!filter.matches(specimen) || specimen.durationNanos() < minNanos) {
                 return true;
@@ -78,7 +75,7 @@ final class Queries {
         var counts = new int[buckets];
         var tally = new int[2];
         var thresholdNanos = threshold.toNanos();
-        view.forEach(specimen -> {
+        view.forEach(filter.scope(), specimen -> {
             if (filter.matches(specimen)) {
                 tally[0]++;
                 tally[1] += specimen.durationNanos() >= thresholdNanos ? 1 : 0;
@@ -148,11 +145,7 @@ final class Queries {
     // parents it propagated to, down to the invocation that raised it, which no failed retained child failed.
     Failures failures(List<FailureCause.Step> asked) {
         var failed = new ArrayList<Specimen>();
-        view.forEach(specimen -> {
-            if (specimen.failed()) {
-                failed.add(specimen);
-            }
-        });
+        view.forEachFailed(failed::add);
         // In ascending sequence, as the view walks them, so a failed parent is found among them by its ID.
         var failedIds = failed.stream().mapToLong(Specimen::id).toArray();
         // The failed child whose failure each failed parent most likely propagated: the one that completed last.
@@ -210,8 +203,8 @@ final class Queries {
         var newest = Comparator.comparingLong(Specimen::startedAtNanos).thenComparingLong(Specimen::id).reversed();
         var latest = new PriorityQueue<>(newest.reversed());
         // Newest first, so once the limit is reached most of the rest started earlier than every one kept and is passed over at once.
-        view.forEachNewestCompletedFrom(fromNanos, specimen -> {
-            if (specimen.handling() || !query.filter().inScope(specimen) || specimen.startedAtNanos() > nowNanos || specimen.completedAtNanos() < fromNanos) {
+        view.forEachNewestCompletedFrom(fromNanos, query.filter().scope(), specimen -> {
+            if (specimen.handling() || specimen.startedAtNanos() > nowNanos || specimen.completedAtNanos() < fromNanos) {
                 return true;
             }
             tally[0]++;
@@ -258,8 +251,8 @@ final class Queries {
 
     RetainedType type(ApplicationType type) {
         var dispatches = new ArrayList<Specimen>();
-        view.forEach(specimen -> {
-            if (!specimen.handling() && specimen.application().equals(type.application()) && specimen.type().equals(type.type())) {
+        view.forEach(Optional.of(type.application()), specimen -> {
+            if (!specimen.handling() && specimen.type().equals(type.type())) {
                 dispatches.add(specimen);
             }
         });
@@ -277,8 +270,8 @@ final class Queries {
     List<Invocation> withMessageIdPrefix(Optional<ApplicationName> scope, String prefix, int limit) {
         var lowercase = prefix.toLowerCase(Locale.ROOT);
         var found = new ArrayList<Invocation>();
-        view.forEachNewest(specimen -> {
-            if ((scope.isEmpty() || scope.get().equals(specimen.application())) && specimen.messageId().value().toString().startsWith(lowercase)) {
+        view.forEachNewest(scope, specimen -> {
+            if (specimen.messageId().value().toString().startsWith(lowercase)) {
                 found.add(specimen.invocation());
             }
             return found.size() < limit;
