@@ -19,8 +19,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -43,14 +43,15 @@ final class SaturationPages implements AutoCloseable {
     private static final Duration TIMEOUT = Duration.ofSeconds(30);
 
     private final URI api;
+    private final Consumer<Query> asked;
     private final HttpClient client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).connectTimeout(TIMEOUT).build();
-    private final ConcurrentLinkedQueue<Query> queries = new ConcurrentLinkedQueue<>();
     private final AtomicReference<String> fault = new AtomicReference<>();
     private final List<Latest> latest = new ArrayList<>();
     private final List<Thread> pages = new ArrayList<>();
 
-    private SaturationPages(URI api) {
+    private SaturationPages(URI api, Consumer<Query> asked) {
         this.api = requireNonNull(api);
+        this.asked = requireNonNull(asked);
     }
 
     // How many queries -Dsaturation.queryCap lets the hub run at once; the hub's own limit when absent.
@@ -93,9 +94,9 @@ final class SaturationPages implements AutoCloseable {
             .map(fields -> new Plan(Integer.parseInt(fields[0]), View.of(fields[1]), scope(fields[2]), fields[3])).toList();
     }
 
-    // Opens a page per plan, each asking once its viewer read a frame.
-    static SaturationPages open(URI api, List<Plan> plans) {
-        var pages = new SaturationPages(api);
+    // Opens a page per plan, each asking once its viewer read a frame, and handing each query to the listener as it is answered or fails.
+    static SaturationPages open(URI api, List<Plan> plans, Consumer<Query> asked) {
+        var pages = new SaturationPages(api, asked);
         for (var plan : plans) {
             var latest = new Latest();
             pages.latest.add(latest);
@@ -114,14 +115,6 @@ final class SaturationPages implements AutoCloseable {
     }
 
     // Every query a page asked, by the epoch it asked after.
-    void write(Path file) throws IOException {
-        Files.write(file, queries.stream().map(Query::line).toList());
-    }
-
-    static List<Query> readQueries(Path file) throws IOException {
-        return Files.readAllLines(file).stream().map(Query::parse).toList();
-    }
-
     @Override
     public void close() throws InterruptedException {
         pages.forEach(Thread::interrupt);
@@ -156,9 +149,9 @@ final class SaturationPages implements AutoCloseable {
                         fault.compareAndSet(null, "query " + uri + " answered " + response.statusCode() + ": " + new String(response.body(), StandardCharsets.UTF_8));
                         return;
                     }
-                    queries.add(new Query(asked, plan.page(), plan.view(), plan.scope(), answer, nanos, response.body().length));
+                    this.asked.accept(new Query(asked, plan.page(), plan.view(), plan.scope(), answer, nanos, response.body().length));
                 } catch (IOException failure) {
-                    queries.add(new Query(asked, plan.page(), plan.view(), plan.scope(), Answer.FAILED, System.nanoTime() - started, 0));
+                    this.asked.accept(new Query(asked, plan.page(), plan.view(), plan.scope(), Answer.FAILED, System.nanoTime() - started, 0));
                 }
             }
         } catch (InterruptedException interrupted) {
@@ -300,12 +293,12 @@ final class SaturationPages implements AutoCloseable {
             requireNonNull(answer);
         }
 
-        private String line() {
+        String line() {
             return String.join(",", String.valueOf(epoch), String.valueOf(page), view.key(), scopeKey(scope), answer.key(), String.valueOf(nanos),
                 String.valueOf(bytes));
         }
 
-        private static Query parse(String line) {
+        static Query parse(String line) {
             var fields = line.split(",");
             return new Query(Long.parseLong(fields[0]), Integer.parseInt(fields[1]), View.of(fields[2]), SaturationPages.scope(fields[3]), Answer.of(fields[4]),
                 Long.parseLong(fields[5]), Long.parseLong(fields[6]));

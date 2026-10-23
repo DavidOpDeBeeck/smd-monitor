@@ -27,16 +27,20 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.Queue;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -47,6 +51,7 @@ import java.util.concurrent.locks.LockSupport;
 import java.util.function.ToDoubleFunction;
 import java.util.function.ToLongFunction;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static java.util.Objects.requireNonNull;
@@ -65,7 +70,9 @@ import static java.util.Objects.requireNonNull;
 // Over OTLP/HTTP (SaturationExporters), the run offers each batch as its instance's exporter sends it to the hub's own OTLP server instead of
 // submitting it, and also measures how long the hub takes to answer; the fill still submits, as it only sets up the state the steps measure.
 // With viewers (SaturationViewers), open pages in a JVM of their own read the frames from the hub's WebSocket in place of the clients, and each
-// asks its view of the hub's query API whenever it reads a frame of a later epoch; the run then also measures how long the hub takes to answer.
+// asks its view of the hub's query API whenever it reads a frame of a later epoch; the run then also measures how long the hub takes to answer,
+// judges a few seconds after each step whether the viewers' UIs were usable in it (SaturationUsability), and ends at the first step they were not.
+// Each step then runs its whole length, as a few seconds hold too few frames and queries to judge.
 public final class SaturationRun {
 
     private static final long SEED = 20261017;
@@ -77,6 +84,8 @@ public final class SaturationRun {
     // A step that keeps up over its first seconds after settling, with the writer never busy half of a second, ends as soon as the generators
     // allow: a writer that waits for batches that often drains its queues, so the rest of the step would measure the same.
     private static final int PROBE_SECONDS = 5;
+    // A step's last frames and queries arrive after it ends; those later than this are late by any measure the run judges.
+    private static final int JUDGED_AFTER_SECONDS = 3;
     private static final double EASY_WRITER_BUSY = 0.5;
     private static final long GENERATOR_LATE_NANOS = Duration.ofMillis(250).toNanos();
     private static final long MEGABYTE = 1024 * 1024;
@@ -113,9 +122,10 @@ public final class SaturationRun {
     // Set before the submitters and the viewers start.
     private Optional<SaturationExporters> exporters = Optional.empty();
     private Optional<SaturationViewers> viewers = Optional.empty();
-    // Read from the viewers as the run ends.
-    private List<SaturationPages.Query> viewerQueries = List.of();
-    private final List<FrameReceipt> receipts = new CopyOnWriteArrayList<>();
+    // Reported by the clients or the viewers as they read and ask.
+    private final Queue<SaturationPages.Query> viewerQueries = new ConcurrentLinkedQueue<>();
+    private final Queue<FrameReceipt> receipts = new ConcurrentLinkedQueue<>();
+    private final List<SaturationUsability> usabilities = new ArrayList<>();
     // Read from the clients as the run ends, before they close.
     private long fastDisconnects;
     private long slowDisconnects;
@@ -237,7 +247,8 @@ public final class SaturationRun {
             }
             if (viewerCount > 0) {
                 progress.report(output, "connecting %,d viewers".formatted(viewerCount));
-                viewers = Optional.of(SaturationViewers.start(server.get().live(), server.get().api(), SaturationPages.plan(hub.epoch(), viewerCount), output));
+                viewers = Optional.of(SaturationViewers.start(server.get().live(), server.get().api(), SaturationPages.plan(hub.epoch(), viewerCount), output,
+                    receipts::add, viewerQueries::add));
             }
             clock.start();
             clients.ifPresent(each -> each.connect(audience.slow(), true));
@@ -255,9 +266,7 @@ public final class SaturationRun {
             submitters.awaitTermination(5, TimeUnit.SECONDS);
             if (viewers.isPresent()) {
                 try {
-                    var viewed = viewers.get().stop();
-                    receipts.addAll(viewed.frames());
-                    viewerQueries = viewed.queries();
+                    viewers.get().stop();
                     fastDisconnects = viewers.get().disconnects();
                 } finally {
                     viewers.get().close();
@@ -326,7 +335,10 @@ public final class SaturationRun {
                     return steps;
                 }
             }
-            if (step < last && second == first + SETTLING_SECONDS + PROBE_SECONDS + 1 && keepsUpEasily(step)) {
+            if (viewers.isPresent() && step > 0 && second == first + JUDGED_AFTER_SECONDS && !judge(steps.getLast())) {
+                return steps;
+            }
+            if (viewers.isEmpty() && step < last && second == first + SETTLING_SECONDS + PROBE_SECONDS + 1 && keepsUpEasily(step)) {
                 schedule.endStepAfter(step, second);
             }
             if (step == last && second == schedule.lastSecondOf(last)) {
@@ -335,7 +347,34 @@ public final class SaturationRun {
         }
         parkUntil(clock.nanoTimeAt(origin.plusSeconds(runSecond(schedule.lastSecondOf(last)) + 2).plus(HubWriter.TICK_OFFSET).plusMillis(500)));
         steps.add(summarize(last));
+        if (viewers.isPresent()) {
+            parkUntil(System.nanoTime() + Duration.ofSeconds(JUDGED_AFTER_SECONDS).toNanos());
+            judge(steps.getLast());
+        }
         return steps;
+    }
+
+    // Whether the viewers' UIs were usable in the step, as far as their frames and queries arrived.
+    private boolean judge(SaturationStep step) {
+        var clients = delivery(step).fast();
+        var asked = stepQueries(step);
+        var answered = asked.stream().filter(query -> query.answer() == SaturationPages.Answer.ANSWERED || query.answer() == SaturationPages.Answer.UNCHANGED)
+            .toList();
+        var secondOf = secondsOfEpochs();
+        // A page asks after every frame it reads, so the seconds some page asked after are those of the frames published. A page is fresh for a
+        // frame when the hub answered the query it asked after it.
+        var published = asked.stream().map(query -> secondOf.get(query.epoch())).collect(Collectors.toSet());
+        var fresh = new HashMap<Integer, Set<Long>>();
+        for (var query : answered) {
+            fresh.computeIfAbsent(query.page(), page -> new HashSet<>()).add(secondOf.get(query.epoch()));
+        }
+        var freshWorst = published.isEmpty() ? 0 : IntStream.range(0, viewerCount)
+            .mapToDouble(page -> (double) fresh.getOrDefault(page, Set.of()).size() / published.size()).min().orElse(0);
+        var usability = new SaturationUsability(step.rate(), step.verdict(), share(clients.received(), clients.expected()), clients.lagP99Millis(),
+            share(answered.size(), asked.size()), percentile(answered, SaturationPages.Query::nanos, 0.99) / 1e6, freshWorst);
+        usabilities.add(usability);
+        progress.report(output, usability.line());
+        return usability.usable();
     }
 
     // The step's first seconds after settling, judged as a step of their own.
@@ -585,6 +624,12 @@ public final class SaturationRun {
             summary.add(SaturationQueries.SEPARATOR);
             queries.forEach(query -> summary.add(query.row()));
             summary.add("");
+            summary.add("Whether the viewers' UIs were usable, judged as each step ended");
+            summary.add("");
+            summary.add(SaturationUsability.HEADER);
+            summary.add(SaturationUsability.SEPARATOR);
+            usabilities.forEach(usability -> summary.add(usability.row()));
+            summary.add("");
         }
         Files.write(output.resolve("summary.md"), summary, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         progress.report(output, SaturationStep.verdictOf(steps));
@@ -647,6 +692,13 @@ public final class SaturationRun {
             var cap = SaturationPages.queryCap();
             result.put("viewers", Map.of("count", viewerCount, "steps", steps.stream().map(step -> Map.of("rate", step.rate(), "cores", viewerCores(step))).toList()));
             result.put("queries", Map.of("viewers", viewerCount, "queryCap", cap.isPresent() ? cap.getAsInt() : "hub", "steps", queries));
+            result.put("usability", usabilities.stream().map(usability -> {
+                var row = new LinkedHashMap<String, Object>(mapper.convertValue(usability, new TypeReference<Map<String, Object>>() {
+                }));
+                row.put("usable", usability.usable());
+                row.put("shortfalls", usability.shortfalls());
+                return row;
+            }).toList());
         }
         Files.writeString(output.resolve(scenario.id() + ".json"), mapper.writerWithDefaultPrettyPrinter().writeValueAsString(result));
     }
@@ -703,14 +755,18 @@ public final class SaturationRun {
         return SaturationDelivery.of(step.rate(), published.size(), audience, reads);
     }
 
-    // What the viewers' pages asked after the epochs of the step's seconds after it settled.
     private SaturationQueries queries(SaturationStep step) {
+        return SaturationQueries.of(step.rate(), stepQueries(step));
+    }
+
+    // What the viewers' pages asked after the epochs of the step's seconds after it settled.
+    private List<SaturationPages.Query> stepQueries(SaturationStep step) {
         var secondOf = secondsOfEpochs();
         var firstSecond = step.firstSecond() + SETTLING_SECONDS;
-        return SaturationQueries.of(step.rate(), viewerQueries.stream().filter(query -> {
+        return viewerQueries.stream().filter(query -> {
             var second = secondOf.get(query.epoch());
             return second != null && second >= firstSecond && second <= step.lastSecond();
-        }).toList());
+        }).toList();
     }
 
     // Every query a viewer's page asked after an epoch ticked once the clock ran, with the second its epoch closes, as the CSV of the seconds counts
