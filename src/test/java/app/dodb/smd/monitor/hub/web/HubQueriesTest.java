@@ -388,6 +388,24 @@ class HubQueriesTest {
     }
 
     @Test
+    void causes_limitBelowOne_failsNamingTheParameter() {
+        hub.epoch();
+
+        assertThatThrownBy(() -> queries.causes(null, "ranked", "0"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("The query parameter limit must be at least 1; got '0'");
+    }
+
+    @Test
+    void typeFigures_limitBelowOne_failsNamingTheParameter() {
+        hub.epoch();
+
+        assertThatThrownBy(() -> queries.typeFigures(null, List.of(), List.of(), "rate", "-1"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessage("The query parameter limit must be at least 1; got '-1'");
+    }
+
+    @Test
     void causes_orderMissing_failsNamingTheParameter() {
         hub.epoch();
 

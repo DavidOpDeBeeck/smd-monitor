@@ -12,6 +12,7 @@ import { activity, fetchAnswer, hubRequest } from '../lib/api';
 import { activityName, count, KIND_LABEL, rate, shortName } from '../lib/format';
 import { matchScore } from '../lib/search';
 import { typeFigures } from '../lib/state';
+import { ratePerSecond } from '../lib/throughput';
 import type { Activity, MessageKind, TypeStatistics } from '../lib/types';
 import type { WireFound, WireTypeFigures } from '../lib/wire';
 import { createHubQuery } from '../store/hub-query';
@@ -101,7 +102,7 @@ function search(app: MonitorApp, scope: PaletteScope, query: string, messages: r
                 group: 'Message types',
                 kind: type.kind,
                 label: shortName(type.messageType),
-                hint: `${type.application} · ${KIND_LABEL[type.kind]} · ${count(type.history.started)} calls`,
+                hint: `${type.application} · ${KIND_LABEL[type.kind]} · ${rate(ratePerSecond(type.window.started, app.store.view().windowSeconds))}`,
                 run: () => app.showType(type.key),
             });
         }

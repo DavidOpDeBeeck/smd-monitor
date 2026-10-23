@@ -137,7 +137,7 @@ public final class HubQueries {
         var selection = new TypeSelection(kinds.stream().map(QueryNames::kind).collect(Collectors.toSet()),
             types.stream().map(QueryNames::type).collect(Collectors.toSet()));
         var order = typeOrder(required("sort", sort));
-        var count = limit(limit);
+        var count = ranked(limit);
         return answer(List.of("typeFigures", application, selection, sort, count), epoch -> {
             var selected = epoch.statistics().applications().stream()
                 .filter(statistics -> application.isEmpty() || application.get().equals(statistics.application()))
@@ -167,7 +167,7 @@ public final class HubQueries {
             case "ranked" -> false;
             default -> throw new IllegalArgumentException("The query parameter order must be recent or ranked; got '" + order + "'");
         };
-        var count = limit(limit);
+        var count = ranked(limit);
         return answer(List.of("causes", application, recent, count), epoch -> {
             record Counted(ApplicationStatistics application, RaisedFailureStatistics failure) {
             }
@@ -290,6 +290,15 @@ public final class HubQueries {
 
     private static int limit(String limit) {
         return limit == null ? DEFAULT_LIMIT : number("limit", limit);
+    }
+
+    // How many of a ranking to answer; a view asks for more as it shows more, so only the least is bounded.
+    private static int ranked(String limit) {
+        var count = limit(limit);
+        if (count < 1) {
+            throw new IllegalArgumentException("The query parameter limit must be at least 1; got '" + limit + "'");
+        }
+        return count;
     }
 
     private static Duration minDuration(String minDurationMillis) {
