@@ -170,6 +170,8 @@ fun JavaExec.saturationJvm(output: Provider<Directory>) {
     // -PsaturationViewerHeap, 4g by default.
     providers.gradleProperty("saturationViewers").orNull?.let { jvmArgs("-Dsaturation.viewers=$it") }
     providers.gradleProperty("saturationViewerHeap").orNull?.let { jvmArgs("-Dsaturation.viewerHeap=$it") }
+    // For example -PsaturationViewerJfr=build/viewers.jfr, to record the viewers' JVM as -PsaturationJfr records the hub's.
+    providers.gradleProperty("saturationViewerJfr").orNull?.let { jvmArgs("-Dsaturation.viewerJfr=$it") }
     // For example -PsaturationQueryCap=16, to let the hub run that many queries at once instead of its own limit, to tune it.
     providers.gradleProperty("saturationQueryCap").orNull?.let { jvmArgs("-Dsaturation.queryCap=$it") }
     // For example -PsaturationFrameInterval=5, to have the publisher send a frame every 5 seconds in place of every second, to explore a slower tick.

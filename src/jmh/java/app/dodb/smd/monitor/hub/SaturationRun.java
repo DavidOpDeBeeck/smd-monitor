@@ -774,7 +774,7 @@ public final class SaturationRun {
     private void writeQueries() throws IOException {
         var secondOf = secondsOfEpochs();
         var rows = new ArrayList<String>();
-        rows.add("second,epoch,page,view,scope,answer,answerMs,bytes");
+        rows.add("second,epoch,page,view,scope,answer,answerMs,headersMs,bytes");
         for (var query : viewerQueries) {
             var second = secondOf.get(query.epoch());
             if (second == null || second < fillSeconds) {
@@ -782,7 +782,7 @@ public final class SaturationRun {
             }
             rows.add(String.join(",", List.of(String.valueOf(second), String.valueOf(query.epoch()), String.valueOf(query.page()), query.view().key(),
                 query.scope().map(ApplicationName::value).orElse("system"), query.answer().key(), "%.3f".formatted(query.nanos() / 1e6),
-                String.valueOf(query.bytes()))));
+                "%.3f".formatted(query.headersNanos() / 1e6), String.valueOf(query.bytes()))));
         }
         Files.write(output.resolve(scenario.id() + "-queries.csv"), rows);
     }
