@@ -7,8 +7,9 @@ import type { FrameMessage, MonitorFrame } from '../lib/wire';
 
 const CLOCK_INTERVAL = 250;
 const HEARTBEAT_CHECK_INTERVAL = 5000;
-// The hub sends a frame every second.
-const HEARTBEAT_TIMEOUT = 10_000;
+// The hub sends a frame every second, or up to 5 seconds apart with many pages open, and skips one for a page still reading the last: three
+// of the longest intervals without one, the page takes the hub for gone.
+const HEARTBEAT_TIMEOUT = 15_000;
 
 export type ConnectionStatus = 'connecting' | 'live' | 'paused' | 'reconnecting' | 'paused-offline';
 

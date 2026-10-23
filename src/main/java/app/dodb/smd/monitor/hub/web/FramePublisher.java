@@ -23,7 +23,7 @@ public final class FramePublisher implements AutoCloseable {
     // clients in the viewer ladder.
     static final int MAX_CLIENTS = 128;
     // The frame interval (W1): an epoch, a second, for up to 16 clients, and one more for each 16 more, at most 5. Each client re-sends its
-    // queries after every frame, so the interval spaces out the frames and the queries alike. Past 10 seconds the page would take the hub for gone.
+    // queries after every frame, so the interval spaces out the frames and the queries alike. Past 15 seconds the page would take the hub for gone.
     static final int CLIENTS_PER_EPOCH = 16;
     static final int MAX_INTERVAL = 5;
     private static final Logger LOGGER = LoggerFactory.getLogger(FramePublisher.class);
