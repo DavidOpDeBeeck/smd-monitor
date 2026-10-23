@@ -1,0 +1,106 @@
+name: Benchmarks page
+
+# Publishes the benchmarks page (docs/benchmarks/README.md) to GitHub Pages, from the gh-pages branch: main's at the root, and each pull request's
+# under pr-preview/pr-<number>/ while it is open, with a comment that links it and shows the views of the kinds of runs it adds.
+on:
+  push:
+    branches: [ main ]
+    paths: [ 'docs/benchmarks/**' ]
+  pull_request:
+    types: [ opened, reopened, synchronize, closed ]
+    paths: [ 'docs/benchmarks/**' ]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: benchmarks-page-${{ github.event.pull_request.number || 'main' }}
+
+jobs:
+  main:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Write the page
+        run: |
+          python3 -I docs/benchmarks/benchmarks.py page --out site/index.html
+          touch site/.nojekyll
+
+      # The previews of open pull requests stay as they are.
+      - uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: site
+          branch: gh-pages
+          clean-exclude: pr-preview/
+          force: false
+
+  preview:
+    # A pull request from a fork has no token that may push the preview.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    env:
+      PREVIEW: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/pr-preview/pr-${{ github.event.pull_request.number }}/
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Write the page
+        if: github.event.action != 'closed'
+        run: python3 -I docs/benchmarks/benchmarks.py page --out site/index.html
+
+      # The views of the kinds of runs the pull request adds, as the page opens them: main's newest run against the pull request's. Chrome comes
+      # with the runner, so Playwright downloads no browser.
+      - name: Screenshot the views it changes
+        if: github.event.action != 'closed'
+        id: shots
+        env:
+          BASE: origin/${{ github.base_ref }}
+          CHROMIUM: /usr/bin/google-chrome
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: |
+          kinds=$(git diff --name-only --diff-filter=A "$BASE...HEAD" -- docs/benchmarks/runs | grep -v '\.seconds\.json$' \
+            | sed -E 's/.*\.([a-z]+)\.json$/\1/' | sort -u | tr '\n' ' ')
+          shots=()
+          for kind in $kinds; do
+            case $kind in
+              saturation) shots+=("change=view=change" "overview=view=overview") ;;
+              *) shots+=("$kind=view=$kind") ;;
+            esac
+          done
+          echo "names=${shots[*]%%=*}" >> "$GITHUB_OUTPUT"
+          if [ ${#shots[@]} -gt 0 ]; then
+            npm install --silent --prefix "$RUNNER_TEMP/pw" playwright
+            NODE_PATH="$RUNNER_TEMP/pw/node_modules" node docs/benchmarks/screenshots.cjs site/index.html site/shots "${shots[@]}"
+          fi
+
+      # Deploys the preview, or removes it when the pull request closes; the comment below links it.
+      - uses: rossjrw/pr-preview-action@v1
+        with:
+          source-dir: site
+          comment: false
+
+      - name: Write the comment
+        if: github.event.action != 'closed'
+        env:
+          NAMES: ${{ steps.shots.outputs.names }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          {
+            echo "### Benchmarks"
+            echo
+            echo "[Open the page]($PREVIEW): main's newest run of each kind against this pull request's."
+            for name in $NAMES; do
+              echo
+              echo "[![$name](${PREVIEW}shots/$name.png?${SHA:0:7})](${PREVIEW}?view=${name})"
+            done
+          } > "$RUNNER_TEMP/comment.md"
+
+      - uses: marocchino/sticky-pull-request-comment@v2
+        if: github.event.action != 'closed'
+        with:
+          header: benchmarks
+          path: ${{ runner.temp }}/comment.md
