@@ -3,11 +3,13 @@ package app.dodb.smd.monitor.hub;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -38,6 +40,7 @@ public final class SaturationCapacity {
         var output = Path.of(args.length > 0 ? args[0] : "build/saturation-capacity");
         var fill = args.length > 1 && !args[1].isBlank() ? args[1] : FILL;
         SaturationRun.nameRun();
+        clearEarlierClimbs(output);
         var scenario = SaturationScenario.selected(SCENARIO).getFirst();
         var ladder = scenario.rates();
         var climber = new Climber(scenario, output, fill, Instant.now());
@@ -63,6 +66,20 @@ public final class SaturationCapacity {
             previous = limit.getAsInt();
         }
         write(output, limits);
+    }
+
+    // A frontier starts afresh: an earlier run's climbs would be taken for this one's.
+    private static void clearEarlierClimbs(Path output) throws IOException {
+        Files.createDirectories(output);
+        try (var entries = Files.list(output)) {
+            for (var entry : entries.filter(path -> path.getFileName().toString().startsWith("v-") || path.getFileName().toString().equals("capacity.json")).toList()) {
+                try (var files = Files.walk(entry)) {
+                    for (var file : files.sorted(Comparator.reverseOrder()).toList()) {
+                        Files.delete(file);
+                    }
+                }
+            }
+        }
     }
 
     private static void write(Path output, List<Limit> limits) throws Exception {

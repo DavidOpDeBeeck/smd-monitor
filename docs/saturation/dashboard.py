@@ -341,7 +341,7 @@ def add_capacity(data, capacity_dir, name):
             usable = next((each for each in result.get('usability', []) if each['rate'] == rate), None)
             if usable:
                 point.update(frameLagP99Ms=usable['frameLagP99Millis'], answerP99Ms=usable['answerP99Millis'], freshWorst=usable['freshWorst'])
-        point['stoppedBy'] = stopped_by(results[-1], viewers)
+        point['stoppedBy'] = stopped_by(results, viewers, rate)
         points.append(point)
     run_id = capacity['run']
     kept = data['capacity']
@@ -354,13 +354,21 @@ def add_capacity(data, capacity_dir, name):
     return dict(data, capacity=rows), {'run': run_id, 'label': label, 'points': len(points), 'replaced': run_id in orders}
 
 
-# What ended a climb: the first step whose UIs were not usable, or, without viewers or where ingest failed first, the step that failed.
-def stopped_by(result, viewers):
+# What stopped the climbs of one number of viewers above the limit: the lowest rate at which a climb failed, its UIs not usable or, without viewers
+# or where ingest failed first, ingest; a climb again from a lower rate stops below the first climb's failure, or passes every rate it offers.
+def stopped_by(results, viewers, limit):
+    stops = sorted(stop for stop in (first_stop(result, viewers) for result in results) if stop and (limit is None or stop[0] > limit))
+    return stops[0][1] if stops else 'the highest rate offered'
+
+
+def first_stop(result, viewers):
     unusable = next((each for each in result.get('usability', []) if not each['usable']), None)
-    if viewers and unusable:
-        return f"{unusable['rate']:,} spans/s: " + ', '.join(unusable['shortfalls'])
     failed = next((step for step in result['steps'] if step['verdict'] != 'KEEPS_UP'), None)
-    return f"{failed['rate']:,} spans/s: ingest {failed['verdict'].lower().replace('_', ' ')}" if failed else 'the highest rate offered'
+    if viewers and unusable and (not failed or unusable['rate'] <= failed['rate']):
+        return unusable['rate'], f"{unusable['rate']:,} spans/s: " + ', '.join(unusable['shortfalls'])
+    if failed:
+        return failed['rate'], f"{failed['rate']:,} spans/s: ingest {failed['verdict'].lower().replace('_', ' ')}"
+    return None
 
 
 # A run is labelled by its name when it has one, and by its number otherwise, followed by when it started and the commit it ran.
