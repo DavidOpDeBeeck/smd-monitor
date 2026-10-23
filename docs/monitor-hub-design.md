@@ -141,7 +141,7 @@ The hub keeps four kinds of state, each with its own lifetime and bound.
 | J4 | A link is found when its second side arrives, in either order, and counted once per child. The child keeps a parent summary: application, kind, type, group, and whether the parent delivered the same message. |
 | J5 | A slim child that expires unlinked is counted per application by reason: parent never received, or parent arrived after the horizon.                                                                            |
 | J6 | A trace is a connected component of retained specimens, merged by size as links arrive, of at most 10,000 invocations; beyond that a fragment starts. A guard handles link cycles.                              |
-| J7 | An epoch's specimen view holds immutable snapshots of the traces that changed, and copy-on-write chunks of 4,096 specimens in sequence order.                                                                   |
+| J7 | An epoch's specimen view holds immutable snapshots of the traces that changed, and copy-on-write chunks of 4,096 specimens in sequence order whose slots keep each one's application and failure.               |
 | J8 | Edges of a parent arriving after its slim children expired are not counted; they are reported.                                                                                                                  |
 
 ### Aggregates
@@ -460,7 +460,9 @@ Budgets still missed and work deferred, with the cause found and the levers to t
   acknowledges the epoch it applied, and the hub sends a client nothing new while its acknowledgement is more than a frame behind.
 - **Viewers take cores.** Each viewer of another view costs its query once per epoch, and every viewer its frames: at 128 viewers the hub used 6.6
   cores against 1.1 without, and the writer kept 71% of its capacity without viewers (the viewer ladder of 2026-10-23, with the viewers' JVM on the
-  same 16 threads). Levers: cheaper queries (`QueryBenchmark`, `TraceViewBenchmark`), fewer
-  queries at once while the writer is busy, and answers shared across scopes.
+  same 16 threads). Most of it is the queries: a query of one application costs nearly what one of the system does, as the trace list walks
+  every trace to find the application's, and the failures query works out every failed invocation's chain for each set of causes asked. Levers:
+  index the traces by application as J7 indexes the specimens, work out the failures' chains once per epoch for every query, and fewer
+  queries at once while the writer is busy.
 - **Shedding and the clock-ahead flag are covered by tests only.** The demo's in-process exporters never fill a queue share and share the hub's clock. Lever: a demo
   instance in another process that exports bursts, and one whose clock runs ahead.

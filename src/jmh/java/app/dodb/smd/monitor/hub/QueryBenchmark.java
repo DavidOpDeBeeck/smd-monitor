@@ -16,6 +16,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 // The main queries of the page in the system scope, against the budget of 50 ms p99 per query, over one epoch. See RelinkBenchmark for the first
@@ -34,6 +35,9 @@ public class QueryBenchmark {
     private SynchronousHub hub;
     private HubQueries queries;
     private Epoch epoch;
+    // Most pages look at one application, as the pages of SaturationPages do after the first four.
+    private TapeQuery tapeOfOne;
+    private TimelineQuery timelineOfOne;
     // The causes the Failures view shows first: the most frequent of the window.
     private List<FailureCause.Step> shown;
 
@@ -42,6 +46,9 @@ public class QueryBenchmark {
         hub = SteadyLoad.filled().hub();
         epoch = hub.epoch();
         epoch.tape(TAPE);
+        var one = new InvocationFilter(Optional.of(epoch.statistics().applications().getFirst().application()), Set.of(), TypeSelection.EVERY_TYPE, Set.of(), "");
+        tapeOfOne = new TapeQuery(one, Duration.ZERO, Optional.empty(), 100);
+        timelineOfOne = new TimelineQuery(one, Duration.ZERO, Duration.ofMinutes(1), 2_000);
         var counted = epoch.statistics().applications().stream()
             .flatMap(application -> application.failures().stream().map(failure -> Map.entry(failure,
                 new FailureCause.Step(application.application(), failure.failure().stage(), failure.failure().failureType()))))
@@ -73,6 +80,16 @@ public class QueryBenchmark {
     @Benchmark
     public TapePage tape() {
         return epoch.tape(TAPE);
+    }
+
+    @Benchmark
+    public TapePage tapeOfOneApplication() {
+        return epoch.tape(tapeOfOne);
+    }
+
+    @Benchmark
+    public TimelineWindow timelineOfOneApplication() {
+        return epoch.timeline(timelineOfOne);
     }
 
     @Benchmark
