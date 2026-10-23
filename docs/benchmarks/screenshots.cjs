@@ -1,6 +1,6 @@
 // Screenshots views of the benchmarks page, each named and chosen by its query string, as the proof a pull request shows.
 //
-// Usage: NODE_PATH=<dir>/node_modules node dashboard_screenshots.cjs <page.html> <out-dir> <name>=<query> [<name>=<query> ...]
+// Usage: NODE_PATH=<dir>/node_modules node screenshots.cjs <page.html> <out-dir> <name>=<query> [<name>=<query> ...]
 // Example: ... build/benchmarks/page.html build/pr-shots change="view=change" busy="view=steps&scenario=budget-256mb&measure=busy"
 //
 // Each view is taken as a figure (figure=1): the title, the series, the chart and its key, 1,000 pixels wide, as a pull request shows it without
@@ -20,7 +20,7 @@ const FIGURE = { width: 1000, height: 600 };
 async function main() {
   const [page, outDir, ...shots] = process.argv.slice(2);
   if (!page || !outDir || shots.length === 0 || shots.some((shot) => !/^[\w-]+=/.test(shot))) {
-    console.error('Usage: node dashboard_screenshots.cjs <page.html> <out-dir> <name>=<query> [<name>=<query> ...]');
+    console.error('Usage: node screenshots.cjs <page.html> <out-dir> <name>=<query> [<name>=<query> ...]');
     process.exit(2);
   }
   fs.mkdirSync(outDir, { recursive: true });

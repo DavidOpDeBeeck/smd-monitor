@@ -1,6 +1,6 @@
 ---
 name: benchmark-bottleneck
-description: Autonomously find where the monitor hub's throughput stops and remove it. Reads the saturation results (build/saturation, docs/benchmarks/runs, JMH), ranks the bottlenecks, tries optimizations one at a time with short before/after probes, and for one that works records a full saturation run of the change in docs/benchmarks/runs against main's newest run, screenshots the benchmarks page as proof (improving the page when it does not show the gain plainly), and opens a concise pull request with the code, the run file, and the screenshots. Runs without asking for approval. Use when asked to analyse benchmark or saturation results, find a bottleneck, or make the hub faster.
+description: Autonomously find where the monitor hub's throughput stops and remove it. Reads the saturation results (build/saturation, docs/benchmarks/runs, JMH), ranks the bottlenecks, tries optimizations one at a time with short before/after probes, and for one that works records a full saturation run of the change in docs/benchmarks/runs against main's newest run, checks the benchmarks page shows the gain (improving the page when it does not), and opens a concise pull request with the code and the run file, whose preview of the page CI publishes. Runs without asking for approval. Use when asked to analyse benchmark or saturation results, find a bottleneck, or make the hub faster.
 ---
 
 # Find a bottleneck, remove it, and prove it
@@ -16,7 +16,7 @@ dependency that does not resolve, a push or pull request that is refused).
 | 1. Analyse | Nothing: reads the results that exist | Bottlenecks are ranked, each with a probe to measure it |
 | 2. Probe before | The target scenario and one or two check scenarios, on the base commit | The probe shows the bottleneck, and the profile agrees |
 | 3. Try a change | `./gradlew test`, then the same probes | A change improves the target and worsens no check, or the candidates run out |
-| 4. Prove it | `./gradlew saturation` on the change, about 13 minutes, and on main only when its newest run does not compare | The run is recorded in `docs/benchmarks/runs` and the screenshots show the gain against main's |
+| 4. Prove it | `./gradlew saturation` on the change, about 13 minutes, and on main only when its newest run does not compare | The run is recorded in `docs/benchmarks/runs` and the page shows the gain against main's |
 | 5. Pull request | `git push`, `gh pr create` | The pull request is open and the user is told |
 
 **Stop** after one pull request, or after five changes that did not improve anything, unless the arguments ask for more; then report what the journal holds.
@@ -194,17 +194,18 @@ Point `PLAYWRIGHT_BROWSERS_PATH` at the cache, or `CHROMIUM` at a Chromium execu
 install chromium-headless-shell` in the background. Then screenshot the page, choosing each view by its query string, with the slugs of main's run and the change's:
 
 ```bash
-PLAYWRIGHT_BROWSERS_PATH=<cache> NODE_PATH=<scratch>/pw/node_modules node .claude/skills/benchmark-bottleneck/dashboard_screenshots.cjs \
-  build/benchmarks/page.html docs/benchmarks/proof/<slug> \
+PLAYWRIGHT_BROWSERS_PATH=<cache> NODE_PATH=<scratch>/pw/node_modules node docs/benchmarks/screenshots.cjs \
+  build/benchmarks/page.html build/saturation-probe/shots \
   change="view=change&runs=<main's slug>,<slug>" \
   target="view=steps&scenario=<target>&measure=<measure that shows the mechanism>&runs=<main's slug>,<slug>"
 ```
 
-The script takes each view as a figure: the title, the runs, the chart and its key, 1,000 pixels wide so a pull request shows it unscaled. It fails on a page
-without data or with a script error, and grows the window so a view's every row is in the image. Show two figures: `change` (every scenario's change in writer
+The script takes each view as a figure: the title, the runs, the chart and its key, 1,000 pixels wide. It fails on a page without data or with a script
+error, and grows the window so a view's every row is in the image. The screenshots check the page before the pull request; they are not committed. CI
+publishes the page of the pull request as a preview, comments a link to it, and shows the views of the kinds of runs it adds. Check two figures: `change` (every scenario's change in writer
 capacity, labelled) and `steps` for the target, with the measure that shows how the change works (such as `writerBusy`, `capacity`, `busy`,
 `shedUnretained`, `gcMsPerS`); its strips under the chart give the verdict at each rate, so the limits show too. Add `view=sweep-applications` only when the
-change moves that whole sweep. Look at each screenshot before using it (Read the PNG): it must show the two runs and the difference the pull request claims.
+change moves that whole sweep. Look at each screenshot (Read the PNG): it must show the two runs and the difference the pull request claims.
 
 ### Improve the page when it hides the gain
 
@@ -222,8 +223,7 @@ runs better, a bug. The page is `docs/benchmarks/page.html`, a template without 
   `capacity`, `viewers`, `jmh`, `about`, and one with `figure=0`) for the runs kept, so a change that breaks another view shows as the script failing. Look at them.
 - Commit it on the branch in a commit of its own, before the data, and say what it changed in one line of the pull request.
 
-Commit the run files and the screenshots on the branch in a commit of their own: `docs/benchmarks/runs/<date>-<slug>.*` and
-`docs/benchmarks/proof/<slug>/*.png`.
+Commit the run files on the branch in a commit of their own: `docs/benchmarks/runs/<date>-<slug>.*`.
 
 ## 5. Open the pull request
 
@@ -283,11 +283,12 @@ Every other scenario: the same limits, writer capacity within ±n%.
 **Runs.** Full saturation run on <machine>, recorded as `<slug>` and compared with main's `<main's slug>`.
 **Page.** <When the page changed: what it now shows.>
 
-![What changed between runs](https://github.com/<owner>/<repo>/blob/<commit>/docs/benchmarks/proof/<slug>/change.png?raw=true)
-![<Measure> at <target> rate by rate](https://github.com/<owner>/<repo>/blob/<commit>/docs/benchmarks/proof/<slug>/target.png?raw=true)
+**Preview.** [What changed](https://<owner>.github.io/<repo>/pr-preview/pr-<number>/?view=change) ·
+[<Measure> at <target> rate by rate](https://<owner>.github.io/<repo>/pr-preview/pr-<number>/?view=steps&scenario=<target>&measure=<measure>)
 ```
 
-Link the screenshots by the commit that added them, so the images stay as they were when the branch moves on.
+Fill in the pull request's number once it is open (`gh pr edit --body-file`); CI's comment shows the default views, and the links open the page on the
+views the tables come from.
 
 When `main` moves before the pull request is merged, rebase the branch onto `origin/main` and push with `--force-with-lease`; this branch is this
 skill's own. The run files do not conflict: each run is a file of its own. When `main` merged a run of the same kind meanwhile, it is the newer baseline:

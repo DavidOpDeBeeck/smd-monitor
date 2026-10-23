@@ -38,6 +38,15 @@ the throughput `docs/monitor.md` documents and records nothing.
 
 3. **Commit** the run files with the change. The page opens on the newest two runs of each kind: main's baseline and your change.
 
+## Seeing the results
+
+- **Main:** <https://davidopdebeeck.github.io/smd-monitor/>, published from main's run files whenever they change.
+- **A pull request:** CI publishes its page under `pr-preview/pr-<number>/` while it is open and comments the link, with the views of the kinds of
+  runs it adds. The page opens on main's newest run of each kind against the pull request's.
+- **Locally:** `./gradlew benchmarkPage`, then open `build/benchmarks/page.html`.
+
+The state of the page is in its query string, so a link opens a view: `?view=steps&scenario=applications-500&measure=writerBusy`.
+
 ## The rules
 
 - **A pull request adds one run per kind it affects**, measured on its own commit. Probes, profiles, and runs that did not work out stay in `build`.
