@@ -141,7 +141,7 @@ The hub keeps four kinds of state, each with its own lifetime and bound.
 | J4 | A link is found when its second side arrives, in either order, and counted once per child. The child keeps a parent summary: application, kind, type, group, and whether the parent delivered the same message. |
 | J5 | A slim child that expires unlinked is counted per application by reason: parent never received, or parent arrived after the horizon.                                                                            |
 | J6 | A trace is a connected component of retained specimens, merged by size as links arrive, of at most 10,000 invocations; beyond that a fragment starts. A guard handles link cycles.                              |
-| J7 | An epoch's specimen view holds immutable snapshots of the traces that changed, and copy-on-write chunks of 4,096 specimens in sequence order whose slots keep each one's application and failure.               |
+| J7 | An epoch's specimen view holds immutable snapshots of the traces that changed, and copy-on-write chunks of 4,096 specimens in sequence order whose slots keep each one's application and failure. Only the newest chunk takes specimens, so the copy of any other shares its IDs, applications, and failures and copies only its specimens and their traces. |
 | J8 | Edges of a parent arriving after its slim children expired are not counted; they are reported.                                                                                                                  |
 
 ### Aggregates
@@ -271,7 +271,7 @@ every 5 s in shuffled batches of up to 512. Each fork first fills the hub's whol
 | < 50 ms p99       | Query: tape, traces, failures of 20 causes, timeline    | `QueryBenchmark`            | 20.6, 12.1, 96.6, 9.8 ms                    | missed for failures |
 | < 1 core          | One second of writer work                               | `WriterBenchmark`           | 105 ms p50, 203 ms p99                      | met                 |
 | < 1 s             | Writing an epoch's delta, on the publisher              | `FrameBenchmark.delta`      | 211 ms p50, 323 ms p99                      | met                 |
-| Within the budget | Heap of the hub after a collection                      | `HeapBenchmark`             | 1,660 MB of 2,048 MB; 1,681 MB accounted    | met                 |
+| Within the budget | Heap of the hub after a collection                      | `HeapBenchmark`             | 1,831 MB of 2,048 MB; 1,719 MB accounted    | met                 |
 | Below 50%         | An application's busiest second against its queue share | `WriterBenchmark`           | 631 spans, 11% of 5,741                     | met                 |
 
 The traces figure predates passing over the traces that cannot make the page before allocating for them. On 2026-10-21, with the settings of
