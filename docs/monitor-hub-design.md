@@ -271,7 +271,7 @@ every 5 s in shuffled batches of up to 512. Each fork first fills the hub's whol
 | < 50 ms p99       | Query: tape, traces, failures of 20 causes, timeline    | `QueryBenchmark`            | 20.6, 12.1, 96.6, 9.8 ms                    | missed for failures |
 | < 1 core          | One second of writer work                               | `WriterBenchmark`           | 105 ms p50, 203 ms p99                      | met                 |
 | < 1 s             | Writing an epoch's delta, on the publisher              | `FrameBenchmark.delta`      | 211 ms p50, 323 ms p99                      | met                 |
-| Within the budget | Heap of the hub after a collection                      | `HeapBenchmark`             | 1,660 MB of 2,048 MB; 1,681 MB accounted    | met                 |
+| Within the budget | Heap of the hub after a collection                      | `HeapBenchmark`             | 1,831 MB of 2,048 MB; 1,719 MB accounted    | met                 |
 | Below 50%         | An application's busiest second against its queue share | `WriterBenchmark`           | 631 spans, 11% of 5,741                     | met                 |
 
 The traces figure predates passing over the traces that cannot make the page before allocating for them. On 2026-10-21, with the settings of
