@@ -1,4 +1,4 @@
-import { hashHue, isTypeKey, KINDS, parseTypeKey } from './format';
+import { ago, hashHue, isTypeKey, KINDS, parseTypeKey, plural } from './format';
 import { matchScore } from './search';
 import type { ApplicationState } from './state';
 import { ratePerSecond, sumSeries } from './throughput';
@@ -76,6 +76,16 @@ export function applicationRows(applications: Iterable<ApplicationState>, now: n
 export function applicationHealth(row: { reporting: number; instances: readonly unknown[] }): ApplicationHealth {
     if (row.reporting === 0) return 'silent';
     return row.reporting === row.instances.length ? 'reporting' : 'partial';
+}
+
+// How an application's instances report, in a few words: how many there are while all report, how many of them report while some are silent,
+// and when the latest span came once all are; once every instance retired, the hub lists none.
+export function instancesSummary(row: ApplicationRow): string {
+    const listed = row.instances.length;
+    if (listed === 0) return 'None listed';
+    if (row.reporting === listed) return `${listed} ${plural(listed, 'instance')}`;
+    if (row.reporting > 0) return `${row.reporting} of ${listed} reporting`;
+    return `Silent · last span ${ago(Math.min(...row.instances.map(instance => instance.sinceReportMillis)))}`;
 }
 
 export function matchApplications(rows: readonly ApplicationRow[], query: string): ApplicationRow[] {
