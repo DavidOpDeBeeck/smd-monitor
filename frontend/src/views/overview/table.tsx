@@ -29,7 +29,7 @@ export function Row(props: { onSelect: () => void; title?: string; reorder?: str
             data-reorder={props.reorder}
             title={props.title}
             onClick={() => props.onSelect()}
-            class={cx('group/row cursor-pointer border-b transition-colors last:border-b-0', props.selected ? 'bg-accent/10' : 'hover:bg-surface-2')}
+            class={cx('cursor-pointer border-b transition-colors last:border-b-0', props.selected ? 'bg-accent/10' : 'hover:bg-surface-2')}
         >
             {props.children}
         </tr>

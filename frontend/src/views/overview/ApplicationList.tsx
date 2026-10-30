@@ -1,13 +1,12 @@
 import { Key } from '@solid-primitives/keyed';
 import { Show } from 'solid-js';
-import { DetailsIcon } from '../../components/DetailsIcon';
 import { Dot } from '../../components/Dot';
 import { InstanceFlags } from '../../components/InstanceFlags';
 import { Panel } from '../../components/Panel';
 import { Sparkline } from '../../components/Sparkline';
 import { Tweened } from '../../components/tween';
 import { HEALTH_TONE } from '../../components/tones';
-import { useMonitorApp } from '../../app/monitor-app';
+import { selectedApplication, useMonitorApp } from '../../app/monitor-app';
 import { applicationHealth, instancesSummary, type ApplicationRow, type InstanceRow } from '../../lib/applications';
 import { cx } from '../../lib/cx';
 import { ago, bytes, capitalized, lastPeriod, perSecond, shortHistorySpan, wholeCount } from '../../lib/format';
@@ -20,11 +19,11 @@ const SPARK_WIDTH = 160;
 export function ApplicationList(props: { rows: readonly ApplicationRow[]; endsAt: number }) {
     const app = useMonitorApp();
     const last = () => lastPeriod(app.store.view().windowSeconds);
-    // The other columns take 792px, so the application's name keeps 176px at least; a narrower stage scrolls the table instead.
+    // The other columns take 752px, so the application's name keeps 176px at least; a narrower stage scrolls the table instead.
     return (
         <Panel title="Applications" note={last()}>
             <div class="overflow-x-auto">
-                <div class="min-w-[968px]">
+                <div class="min-w-[928px]">
                     <Table
                         header={
                             <>
@@ -50,9 +49,6 @@ export function ApplicationList(props: { rows: readonly ApplicationRow[]; endsAt
                                 <HeaderCell class="w-[176px] pl-4 text-left" title={`Dispatches and failures per second over the ${last()}`}>
                                     {capitalized(last())}
                                 </HeaderCell>
-                                <th scope="col" class="w-10">
-                                    <span class="sr-only">Details</span>
-                                </th>
                             </>
                         }
                     >
@@ -101,15 +97,15 @@ function InstanceSummary(props: { row: ApplicationRow }) {
     );
 }
 
-// Selecting an application narrows the scope to it; its details button opens it in the inspector instead.
+// Selecting an application opens it in the inspector, as selecting a row of any table does; the inspector narrows the scope to it.
 function ApplicationListRow(props: { row: ApplicationRow; endsAt: number }) {
     const app = useMonitorApp();
     const health = () => HEALTH_TONE[applicationHealth(props.row)];
     const scale = () => Math.max(1, ...props.row.dispatchSeconds, ...props.row.failureSeconds);
-    const narrow = () => app.setScope(props.row.name);
+    const select = () => app.select({ type: 'application', name: props.row.name });
     return (
-        <Row onSelect={narrow} title={`Narrow the scope to ${props.row.name}`}>
-            <NameCell onSelect={narrow}>
+        <Row onSelect={select} selected={selectedApplication(app.selection()) === props.row.name}>
+            <NameCell onSelect={select} label={`Application ${props.row.name}`}>
                 <Dot class={health().dot} />
                 <span class="truncate font-semibold">{props.row.name}</span>
             </NameCell>
@@ -128,7 +124,7 @@ function ApplicationListRow(props: { row: ApplicationRow; endsAt: number }) {
             <td class={cx(NUMBER_CELL, 'text-muted')}>
                 <Tweened value={props.row.heapBytes} format={bytes} />
             </td>
-            <td class="pr-2 pl-4">
+            <td class="pr-1 pl-4">
                 <div class="pointer-events-none relative h-[22px]">
                     <Sparkline
                         values={props.row.dispatchSeconds}
@@ -154,20 +150,6 @@ function ApplicationListRow(props: { row: ApplicationRow; endsAt: number }) {
                         />
                     </Show>
                 </div>
-            </td>
-            <td class="text-right">
-                <button
-                    type="button"
-                    aria-label={`Open ${props.row.name} in the inspector`}
-                    title={`Open ${props.row.name} in the inspector`}
-                    onClick={event => {
-                        event.stopPropagation();
-                        app.select({ type: 'application', name: props.row.name });
-                    }}
-                    class="inline-grid size-7 place-items-center rounded-md text-faint opacity-60 transition-[opacity,color,background-color] group-hover/row:opacity-100 hover:bg-sunken hover:text-fg focus-visible:opacity-100 pointer-coarse:opacity-100"
-                >
-                    <DetailsIcon />
-                </button>
             </td>
         </Row>
     );
