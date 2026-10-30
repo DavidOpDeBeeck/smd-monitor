@@ -36,6 +36,7 @@ import type {
     WireTypeFigure,
     WireTypeFigures,
     WireTypeLink,
+    WireUpstream,
 } from './wire';
 
 export interface Totals {
@@ -119,6 +120,8 @@ export interface ApplicationState {
     handlings: ReadonlyMap<HandlingKey, HandlingStatistics>;
     // Into this application's types from a parent type of another application.
     crossings: readonly Link[];
+    // The other applications whose messages caused its invocations over the history, its handlings of their events included.
+    upstream: readonly WireUpstream[];
     other: OtherCounts;
     // The seconds of the window from this moment on may still grow, as the application's spans arrive that late.
     provisionalFrom: number;
@@ -386,6 +389,7 @@ function applicationState(application: WireApplication, health: WireApplicationH
         groups,
         handlings: new Map(groups.flatMap(group => group.handlings.map(handling => [handling.key, handling]))),
         crossings: application.crossings.map(crossing => linkOf(crossing.link, crossing.parentApplication)),
+        upstream: application.upstream,
         other: otherCounts(application.other),
         provisionalFrom: application.provisionalFromEpochSecond * 1000,
         totals: {

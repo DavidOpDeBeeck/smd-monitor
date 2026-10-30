@@ -276,7 +276,9 @@ opens Flow on a type.
 - **Failure rate**: the share of invocations started, dispatches and handlings together, that failed.
 - **p95 latency** per kind. In the system scope this is the highest of any application's, since percentiles cannot be summed.
 - **Event delay**: how long after its publication returned a processing group started handling an event, p95. It grows when groups fall behind and names the slowest.
-- The **applications** (system scope) with their instances, rate, failures, and memory; or **upstream** and **downstream** applications (application scope).
+- The **applications** (system scope) with their instances, rate, failures, and memory; or **upstream** and **downstream** applications (application scope):
+  those whose messages caused its invocations and those where its messages caused invocations, a processing group handling another application's event
+  included.
 - The **Activity** chart: commands, queries, events, and failures per second over the history, each row on its own scale.
 - **Message types**: each type's rate, failed share, and a latency band (p50 to p95, a tick at p50, a ring at p99), sortable and filterable. It shows the
   first 100 in its order, busiest first by default, and 100 more at a time.

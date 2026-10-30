@@ -115,7 +115,7 @@ class FrameViewTest {
         assertThat(frame.get("health").get("applications").get(0).propertyNames()).containsExactly("name", "reasons", "shedding", "countingBytes", "join",
             "specimens", "retained", "completeSinceMillis", "oldestRetainedMillis", "effectiveHorizonSeconds", "slowestK", "failuresK");
         assertThat(frame.get("applications").get(0).propertyNames()).containsExactly("name", "failedReceived", "instances", "types", "groups",
-            "crossings", "dispatches", "handlings", "eventDelayP95Millis", "kinds", "enteredPerSecond", "failedPerSecond",
+            "crossings", "upstream", "dispatches", "handlings", "eventDelayP95Millis", "kinds", "enteredPerSecond", "failedPerSecond",
             "other", "provisionalFromEpochSecond");
         assertThat(frame.get("applications").get(0).get("instances").get(0).propertyNames()).containsExactly("name", "sessionId", "lastReportedAtMillis",
             "silent", "clockAhead", "exportLagMillis", "dispatches", "handlings");
@@ -123,6 +123,7 @@ class FrameViewTest {
             "handlingHistory", "edgeHistory", "failureHistory");
         assertThat(frame.get("applications").get(0).get("types").get(0).propertyNames()).containsExactly("kind", "name", "entryPoint", "retained");
         assertThat(frame.get("applications").get(0).get("crossings").get(0).propertyNames()).containsExactly("parentApplication", "link");
+        assertThat(frame.get("applications").get(0).get("upstream").get(0).propertyNames()).containsExactly("application", "history", "lastSecond");
     }
 
     @Test
@@ -143,6 +144,9 @@ class FrameViewTest {
         assertThat(crossing.get("link").get("child").get("name").asString()).isEqualTo(INVOICE.name());
         assertThat(crossing.get("link").get("history").asLong()).isEqualTo(1);
         assertThat(applications.get(1).get("crossings").isEmpty()).isTrue();
+        assertThat(applications.get(0).get("upstream").get(0).get("application").asString()).isEqualTo("tickets");
+        assertThat(applications.get(0).get("upstream").get(0).get("history").asLong()).isEqualTo(1);
+        assertThat(applications.get(1).get("upstream").isEmpty()).isTrue();
         assertThat(frame.get("health").get("applications").get(0).get("name").asString()).isEqualTo("billing");
         assertThat(frame.get("health").get("applications").get(0).get("retained").asInt()).isEqualTo(1);
     }

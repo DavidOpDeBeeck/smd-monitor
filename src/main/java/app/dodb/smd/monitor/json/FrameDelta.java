@@ -48,6 +48,7 @@ public final class FrameDelta {
         Map.entry("handlings", List.of(List.of("name"))),
         Map.entry("links", List.of(List.of("parent"), List.of("child"))),
         Map.entry("crossings", List.of(List.of("parentApplication"), List.of("link", "parent"), List.of("link", "child"))),
+        Map.entry("upstream", List.of(List.of("application"))),
         Map.entry("routes", List.of(List.of("publisher"), List.of("event"), List.of("processingGroup"))),
         Map.entry("sinkRoutes", List.of(List.of("event"), List.of("delivery"))),
         Map.entry("groupLinks", List.of(List.of("processingGroup"), List.of("child"))),

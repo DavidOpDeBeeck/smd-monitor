@@ -17,7 +17,7 @@ function NeighbourList(props: { label: string; title: string; neighbours: readon
                 <Key each={props.neighbours} by="name">
                     {neighbour => (
                         <LinkButton
-                            title={`Narrow the scope to ${neighbour().name}: ${count(neighbour().invocations)} linked dispatches over the last ${historySpan(app.store.view().historySeconds)}`}
+                            title={`Narrow the scope to ${neighbour().name}: ${count(neighbour().invocations)} linked invocations over the last ${historySpan(app.store.view().historySeconds)}`}
                             onClick={() => app.setScope(neighbour().name)}
                             class="font-semibold"
                         >
@@ -33,15 +33,23 @@ function NeighbourList(props: { label: string; title: string; neighbours: readon
     );
 }
 
-// The applications linked to the application in scope by arrows across applications, with their average rate over the history.
+// The applications linked to the application in scope by arrows and event routes across applications, with their average rate over the history.
 export function Neighbours(props: { application: string }) {
     const app = useMonitorApp();
     const neighbours = createMemo(() => neighbourApplications(app.store.view(), props.application));
     return (
         <Show when={neighbours().upstream.length > 0 || neighbours().downstream.length > 0}>
             <section aria-label="Linked applications" class="flex flex-wrap gap-x-8 gap-y-2 rounded-lg border bg-surface px-4 py-2.5 text-sm">
-                <NeighbourList label="Upstream" title="Applications whose messages caused messages of this application" neighbours={neighbours().upstream} />
-                <NeighbourList label="Downstream" title="Applications whose messages this application's messages caused" neighbours={neighbours().downstream} />
+                <NeighbourList
+                    label="Upstream"
+                    title="Applications whose messages caused invocations of this application, handlings of their events included"
+                    neighbours={neighbours().upstream}
+                />
+                <NeighbourList
+                    label="Downstream"
+                    title="Applications where this application's messages caused invocations, handlings of its events included"
+                    neighbours={neighbours().downstream}
+                />
             </section>
         </Show>
     );

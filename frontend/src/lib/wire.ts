@@ -142,6 +142,8 @@ export interface WireApplication {
     // Into this application's types from a parent type of another application. Its links within, routes, sink routes, and group links come
     // with the flow query (WireFlow).
     crossings: WireCrossing[];
+    // The other applications whose messages caused this application's invocations, its handlings of their events included, by name.
+    upstream: WireUpstream[];
     dispatches: WireBrief;
     handlings: WireBrief;
     // The p95 over every handling of the window that started after its publication returned, or null when none did.
@@ -247,6 +249,12 @@ export interface WireSinkRoute {
 export interface WireGroupLink {
     processingGroup: string;
     child: WireMessageType;
+    history: number;
+    lastSecond: number;
+}
+
+export interface WireUpstream {
+    application: string;
     history: number;
     lastSecond: number;
 }

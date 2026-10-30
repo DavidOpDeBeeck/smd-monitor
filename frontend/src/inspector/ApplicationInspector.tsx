@@ -21,7 +21,7 @@ function NeighbourRow(props: { neighbour: NeighbourApplication }) {
     return (
         <button
             type="button"
-            title={`${count(props.neighbour.invocations)} linked dispatches over the last ${shortHistorySpan(app.store.view().historySeconds)}`}
+            title={`${count(props.neighbour.invocations)} linked invocations over the last ${shortHistorySpan(app.store.view().historySeconds)}`}
             onClick={() => app.reveal({ type: 'application', name: props.neighbour.name })}
             class={RELATION}
         >
@@ -106,23 +106,23 @@ export function ApplicationInspector(props: { name: string }) {
                                 </Show>
                             </div>
                         </InspectorSection>
-                        <InspectorSection title="Upstream" note={`causes its messages · last ${shortHistorySpan(store.view().historySeconds)}`}>
+                        <InspectorSection title="Upstream" note={`causes its invocations · last ${shortHistorySpan(store.view().historySeconds)}`}>
                             <div class="grid gap-[5px]">
                                 <Key
                                     each={neighbours().upstream}
                                     by="name"
-                                    fallback={<EmptyLine class="text-left">No other application's messages caused its messages.</EmptyLine>}
+                                    fallback={<EmptyLine class="text-left">No other application's messages caused its invocations.</EmptyLine>}
                                 >
                                     {neighbour => <NeighbourRow neighbour={neighbour()} />}
                                 </Key>
                             </div>
                         </InspectorSection>
-                        <InspectorSection title="Downstream" note={`its messages cause · last ${shortHistorySpan(store.view().historySeconds)}`}>
+                        <InspectorSection title="Downstream" note={`its messages cause there · last ${shortHistorySpan(store.view().historySeconds)}`}>
                             <div class="grid gap-[5px]">
                                 <Key
                                     each={neighbours().downstream}
                                     by="name"
-                                    fallback={<EmptyLine class="text-left">Its messages caused no other application's messages.</EmptyLine>}
+                                    fallback={<EmptyLine class="text-left">Its messages caused no invocations of another application.</EmptyLine>}
                                 >
                                     {neighbour => <NeighbourRow neighbour={neighbour()} />}
                                 </Key>

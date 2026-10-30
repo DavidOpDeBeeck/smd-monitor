@@ -1,7 +1,8 @@
-import { parseTypeKey, perKind } from './format';
+import { perKind } from './format';
 import { EMPTY_TOTALS, NO_OTHER, type ApplicationState, type InstanceState, type MonitorState, type Totals } from './state';
 import { sumSeries } from './throughput';
-import type { Brief, GroupStatistics, HandlingKey, HandlingStatistics, Link, OtherCounts, TypeEntry, TypeKey } from './types';
+import type { Brief, GroupStatistics, HandlingKey, HandlingStatistics, OtherCounts, TypeEntry, TypeKey } from './types';
+import type { WireUpstream } from './wire';
 
 // What the page shows: the whole system when application is null, or else that one application.
 export interface ScopedState {
@@ -76,28 +77,25 @@ function combineOther(others: readonly OtherCounts[]): OtherCounts {
     };
 }
 
-// An application linked to another one, with the arrows between their types over the history.
+// An application linked to another one, with the invocations its messages caused in the other over the history.
 export interface NeighbourApplication {
     name: string;
     invocations: number;
     lastSecond: number;
 }
 
-// The applications whose types cause the application's, and those whose types the application's cause, busiest first.
+// The applications whose messages caused the application's invocations, and those whose invocations the application's messages caused, by
+// arrows between types and by routes of events to processing groups alike, busiest first.
 export function neighbourApplications(state: MonitorState, application: string): { upstream: NeighbourApplication[]; downstream: NeighbourApplication[] } {
-    const crossings = [...state.applications.values()].flatMap(each => each.crossings);
-    const applicationOf = (key: TypeKey) => parseTypeKey(key).application;
-    return {
-        upstream: neighbours(crossings.filter(link => applicationOf(link.child) === application).map(link => [applicationOf(link.parent), link])),
-        downstream: neighbours(crossings.filter(link => applicationOf(link.parent) === application).map(link => [applicationOf(link.child), link])),
-    };
+    const upstream = state.applications.get(application)?.upstream ?? [];
+    const downstream = [...state.applications.values()].flatMap(each =>
+        each.upstream.filter(link => link.application === application).map(link => ({ ...link, application: each.name })),
+    );
+    return { upstream: busiestFirst(upstream), downstream: busiestFirst(downstream) };
 }
 
-function neighbours(links: [string, Link][]): NeighbourApplication[] {
-    const byName = new Map<string, NeighbourApplication>();
-    for (const [name, link] of links) {
-        const neighbour = byName.get(name) ?? { name, invocations: 0, lastSecond: 0 };
-        byName.set(name, { name, invocations: neighbour.invocations + link.invocations, lastSecond: neighbour.lastSecond + link.lastSecond });
-    }
-    return [...byName.values()].sort((a, b) => b.invocations - a.invocations || a.name.localeCompare(b.name));
+function busiestFirst(links: readonly WireUpstream[]): NeighbourApplication[] {
+    return links
+        .map(link => ({ name: link.application, invocations: link.history, lastSecond: link.lastSecond }))
+        .sort((a, b) => b.invocations - a.invocations || a.name.localeCompare(b.name));
 }
