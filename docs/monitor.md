@@ -265,8 +265,8 @@ and parent IDs, class names, thread names, timing, status, and the failure's exc
 The page shows one **scope**: the whole **System**, which it opens on, or one application (**System › tickets**). Select **System** to widen it, or the scope, or press
 **A**, to pick another. Every view works in every scope, and changing scope keeps the view and the selection. Narrowing never hides what crosses into other
 applications: a trace keeps its other applications' messages, dimmed, and Flow keeps every application its flow reaches. An instance is not a scope; find its
-invocations by name in the filters of Traces and Live. The URL holds the scope, so links and the back button work: `?scope=tickets&type=tickets::command:OpenTicketCommand#/flow`
-opens Flow on a type.
+invocations by name in the filters of Traces and Live. The URL holds the scope, so links and the back button work. A link may also name a type as its application,
+its kind in capitals, and its class name: `?scope=tickets&type=tickets::COMMAND:com.example.tickets.OpenTicketCommand#/flow` opens Flow on that type.
 
 ### Views
 
