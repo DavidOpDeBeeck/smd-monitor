@@ -20,9 +20,10 @@ const NUMBER = 'px-3 text-right font-mono text-sm whitespace-nowrap tabular-nums
 export function ApplicationList(props: { rows: readonly ApplicationRow[]; endsAt: number }) {
     const app = useMonitorApp();
     const last = () => lastPeriod(app.store.view().windowSeconds);
+    // The other columns take 968px, so the application's name keeps 176px at least; a narrower stage scrolls the table instead.
     return (
         <div class="overflow-x-auto rounded-lg border bg-surface shadow-card">
-            <table class="w-full min-w-[1000px] table-fixed border-collapse">
+            <table class="w-full min-w-[1144px] table-fixed border-collapse">
                 <thead>
                     <tr class="border-b">
                         <Header class="pl-4 text-left">Application</Header>
