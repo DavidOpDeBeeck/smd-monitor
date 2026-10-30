@@ -142,6 +142,8 @@ export interface WireApplication {
     // Into this application's types from a parent type of another application. Its links within, routes, sink routes, and group links come
     // with the flow query (WireFlow).
     crossings: WireCrossing[];
+    // The other applications whose messages caused this application's invocations, its handlings of their events included, by name.
+    upstream: WireUpstream[];
     dispatches: WireBrief;
     handlings: WireBrief;
     // The p95 over every handling of the window that started after its publication returned, or null when none did.
@@ -158,6 +160,8 @@ export interface WireApplication {
 // The failure causes a view shows, in the order it asked for, out of the total that match: each a stage failing with one exception type, counted
 // once for every message it failed. The frame leaves them out, as a page shows only the first few.
 export interface WireCauses extends WireAnswer {
+    // The second the causes' seconds end at, that of the epoch the hub answered from.
+    endEpochSecond: number;
     total: number;
     causes: WireCause[];
 }
@@ -207,6 +211,8 @@ export interface WireTypeFigure extends WireType {
 
 // The figures of the message types a view shows, in the order it asked for, out of the total selected.
 export interface WireTypeFigures extends WireAnswer {
+    // The second the types' seconds end at, that of the epoch the hub answered from.
+    endEpochSecond: number;
     total: number;
     types: WireTypeFigure[];
 }
@@ -247,6 +253,12 @@ export interface WireSinkRoute {
 export interface WireGroupLink {
     processingGroup: string;
     child: WireMessageType;
+    history: number;
+    lastSecond: number;
+}
+
+export interface WireUpstream {
+    application: string;
     history: number;
     lastSecond: number;
 }
@@ -395,6 +407,8 @@ export interface WireMessageDetail extends WireAnswer {
 // most invocations first.
 // Its window and history are null, and its seconds empty, when its application did not report the type.
 export interface WireRetainedType extends WireAnswer {
+    // The second its seconds end at, that of the epoch the hub answered from.
+    endEpochSecond: number;
     window: WireStatistics | null;
     history: WireStatistics | null;
     retained: number;

@@ -10,6 +10,7 @@ import app.dodb.smd.monitor.hub.LinkStatistics;
 import app.dodb.smd.monitor.hub.OtherStatistics;
 import app.dodb.smd.monitor.hub.SinkRouteStatistics;
 import app.dodb.smd.monitor.hub.TypeStatistics;
+import app.dodb.smd.monitor.hub.UpstreamStatistics;
 import app.dodb.smd.monitor.hub.span.MessageKind;
 import app.dodb.smd.monitor.json.FrameView.BriefView;
 import app.dodb.smd.monitor.json.FrameView.InstanceView;
@@ -20,7 +21,8 @@ import java.util.List;
 
 import static app.dodb.smd.monitor.json.FrameView.p95Millis;
 
-// The statistics of an application in the frame. Its crossings are the links into it from a parent type of another application; its links
+// The statistics of an application in the frame. Its crossings are the links into it from a parent type of another application, and its
+// upstream the other applications whose messages caused its invocations, its routes from their events included; its links
 // within, routes, sink routes, and group links are only the flow view's and the live lanes', so the flow query answers them (FlowView). The
 // failed received
 // counts every failed invocation the hub received since it started; the event delay is the p95 over every handling of the window, or null
@@ -33,6 +35,7 @@ public record ApplicationView(String name,
                               List<TypeView> types,
                               List<GroupView> groups,
                               List<CrossingView> crossings,
+                              List<UpstreamView> upstream,
                               BriefView dispatches,
                               BriefView handlings,
                               Double eventDelayP95Millis,
@@ -49,7 +52,7 @@ public record ApplicationView(String name,
         return new ApplicationView(statistics.application().value(), statistics.failedReceived(),
             statistics.instances().stream().map(InstanceView::from).toList(), statistics.types().stream().map(TypeView::from).toList(),
             statistics.groups().stream().map(GroupView::from).toList(), statistics.crossings().stream().map(CrossingView::from).toList(),
-            BriefView.from(statistics.dispatches()),
+            statistics.upstream().stream().map(UpstreamView::from).toList(), BriefView.from(statistics.dispatches()),
             BriefView.from(statistics.handlings()), p95Millis(statistics.eventDelay()), kinds, statistics.enteredPerSecond(), statistics.failedPerSecond(),
             OtherView.from(statistics.other()),
             statistics.provisionalFrom().getEpochSecond());
@@ -91,6 +94,13 @@ public record ApplicationView(String name,
 
         static CrossingView from(CrossingStatistics crossing) {
             return new CrossingView(crossing.parentApplication().value(), LinkView.from(crossing.link()));
+        }
+    }
+
+    public record UpstreamView(String application, long history, long lastSecond) {
+
+        static UpstreamView from(UpstreamStatistics upstream) {
+            return new UpstreamView(upstream.application().value(), upstream.history(), upstream.lastSecond());
         }
     }
 

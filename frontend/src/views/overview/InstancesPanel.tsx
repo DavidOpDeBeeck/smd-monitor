@@ -18,7 +18,7 @@ export function InstancesPanel() {
     const last = () => lastPeriod(store.view().windowSeconds);
     return (
         <Show when={rows().length > 1}>
-            <Panel title="Instances" note={last()}>
+            <Panel title="Instances">
                 <Table
                     header={
                         <>

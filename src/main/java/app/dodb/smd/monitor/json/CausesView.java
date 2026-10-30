@@ -9,8 +9,9 @@ import java.util.List;
 import static java.util.Objects.requireNonNull;
 
 // The failure causes a view shows, in its order, out of the total that match: each a stage failing with one exception type, its failures counted
-// over the window and the history, and second by second over the window. The frame leaves the causes out, as a page shows only the first few.
-public record CausesView(String hubSession, long sequence, int total, List<CauseView> causes) {
+// over the window and the history, and second by second over the window up to the end second, that of the epoch it answers from. The frame leaves
+// the causes out, as a page shows only the first few.
+public record CausesView(String hubSession, long sequence, long endEpochSecond, int total, List<CauseView> causes) {
 
     public CausesView {
         requireNonNull(hubSession);

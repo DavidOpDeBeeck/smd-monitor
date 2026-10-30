@@ -20,12 +20,12 @@ import java.util.stream.Stream;
 // The failure types most frequent first, and the latest dispatches newest first. The window and the history hold every figure of the type over
 // each, which the frame leaves out; they are null when the application did not report the type, and its seconds are then empty. The links into the type and
 // out of it are those of its application and the crossings of every application, most invocations first; an event's handlings are those of its
-// application's processing groups.
-public record RetainedTypeView(String hubSession, long sequence, StatisticsView window, StatisticsView history, int retained,
+// application's processing groups. Its seconds end at the end second, that of the epoch it answers from.
+public record RetainedTypeView(String hubSession, long sequence, long endEpochSecond, StatisticsView window, StatisticsView history, int retained,
                                List<FailureTypeView> failureTypes, List<InvocationView> latest, List<TypeLinkView> incoming, List<TypeLinkView> outgoing,
                                List<TypeHandlingView> handlings, List<Long> startedPerSecond, List<Long> failedPerSecond) {
 
-    public static RetainedTypeView from(UUID hubSession, RetainedType type, Optional<Counts> history, ApplicationType selected,
+    public static RetainedTypeView from(UUID hubSession, long endEpochSecond, RetainedType type, Optional<Counts> history, ApplicationType selected,
                                        List<ApplicationStatistics> applications) {
         var links = applications.stream().flatMap(application -> Stream.concat(
                 application.links().stream().map(link -> TypeLinkView.from(application.application(), application.application(), link)),
@@ -37,7 +37,7 @@ public record RetainedTypeView(String hubSession, long sequence, StatisticsView 
         var counted = applications.stream().filter(each -> each.application().equals(selected.application()))
             .flatMap(each -> each.types().stream()).filter(each -> each.type().equals(selected.type()))
             .findFirst();
-        return new RetainedTypeView(hubSession.toString(), type.sequence(), counted.map(each -> StatisticsView.from(each.window())).orElse(null),
+        return new RetainedTypeView(hubSession.toString(), type.sequence(), endEpochSecond, counted.map(each -> StatisticsView.from(each.window())).orElse(null),
             history.map(StatisticsView::from).orElse(null), type.retained(),
             type.failureTypes().stream().map(count -> new FailureTypeView(count.failureType(), count.count())).toList(),
             type.latest().stream().map(InvocationView::from).toList(),

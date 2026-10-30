@@ -5,7 +5,7 @@ import { CopyButton, LinkButton } from '../components/controls';
 import { ActivityGlyph, Glyph } from '../components/Glyph';
 import { EYEBROW } from '../components/text';
 import { cx } from '../lib/cx';
-import { activityName, ago, count, duration, KIND_LABEL, parseTypeKey, shortName, STATUS_LABEL } from '../lib/format';
+import { activityName, ago, count, duration, KIND_LABEL, parseTypeKey, shortHistorySpan, shortName, STATUS_LABEL } from '../lib/format';
 import { failureTypeOf } from '../lib/model';
 import type { Activity, DispatchStatus, MessageKind, TypeKey } from '../lib/types';
 
@@ -68,7 +68,7 @@ export function TypeRelation(props: { typeKey: TypeKey; invocations: number; fro
     return (
         <button
             type="button"
-            title={`${KIND_LABEL[type().kind]} ${type().messageType} in ${type().application}`}
+            title={`${KIND_LABEL[type().kind]} ${type().messageType} in ${type().application} · ${count(props.invocations)} over the last ${shortHistorySpan(app.store.view().historySeconds)}`}
             onClick={() => app.reveal({ type: 'type', key: props.typeKey })}
             class={cx(RELATION, 'bg-surface-2 hover:border-accent')}
         >

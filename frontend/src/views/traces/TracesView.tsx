@@ -75,18 +75,25 @@ export function TracesView() {
     const listed = () => traces.filters.pinned || paged.loaded();
 
     const firstListed = () => filtered().find(item => item.summary.messages > 1) ?? filtered()[0];
+    // The detail follows the list. Once the list first answers, a selected trace it does not list gives way to its first; once the list of
+    // another scope, filter, or sort answers, its first trace is selected. A trace opened from another view stays, and so does the selection
+    // while the list refreshes. The answer held when the filters changed tells the list's new answer apart from the previous request's.
+    let following: { answer: WireTracePage | null; keep: boolean } | null = { answer: null, keep: true };
+    createEffect(on([app.scope, filters], () => (following = { answer: paged.answer(), keep: false }), { defer: true }));
     createEffect(() => {
-        if (traces.selected() !== null || !listed()) return;
-        const first = firstListed();
-        if (first) traces.setSelected(first.summary.root.sequence);
+        if (!listed()) return;
+        const first = firstListed()?.summary.root.sequence ?? null;
+        const selected = traces.selected();
+        if (following && (traces.filters.pinned || paged.answer() !== following.answer)) {
+            const keep = following.keep && filtered().some(item => item.summary.root.sequence === selected);
+            following = null;
+            if (!traces.opened() && !keep) {
+                traces.setSelected(first);
+                return;
+            }
+        }
+        if (selected === null && first !== null) traces.setSelected(first);
     });
-    createEffect(
-        on(listed, loaded => {
-            const selected = traces.selected();
-            if (!loaded || traces.opened() || selected === null || filtered().some(item => item.summary.root.sequence === selected)) return;
-            traces.setSelected(firstListed()?.summary.root.sequence ?? null);
-        }),
-    );
 
     // Any member finds its trace, so an opened invocation selects the root of its trace once the hub answers.
     const detail = createHubQuery<WireTraceDetail>(

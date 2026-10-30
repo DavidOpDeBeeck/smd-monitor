@@ -4,8 +4,10 @@ import app.dodb.smd.monitor.hub.span.ApplicationName;
 import app.dodb.smd.monitor.hub.span.MessageKind;
 
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 import static java.util.Objects.requireNonNull;
 
@@ -56,5 +58,22 @@ public record ApplicationStatistics(ApplicationName application,
         requireNonNull(failures);
         requireNonNull(other);
         requireNonNull(provisionalFrom);
+    }
+
+    // The other applications whose messages caused its invocations over the history, by name: through its crossings and the routes of their
+    // events to its processing groups, as applications integrated by events link only by routes.
+    public List<UpstreamStatistics> upstream() {
+        var byApplication = new TreeMap<ApplicationName, UpstreamStatistics>(Comparator.comparing(ApplicationName::value));
+        for (var crossing : crossings) {
+            byApplication.merge(crossing.parentApplication(), new UpstreamStatistics(crossing.parentApplication(), crossing.link().history(), crossing.link().lastSecond()),
+                UpstreamStatistics::plus);
+        }
+        for (var route : routes) {
+            var publisher = route.route().publisher();
+            if (!publisher.equals(application)) {
+                byApplication.merge(publisher, new UpstreamStatistics(publisher, route.history(), route.lastSecond()), UpstreamStatistics::plus);
+            }
+        }
+        return byApplication.values().stream().filter(upstream -> upstream.history() > 0).toList();
     }
 }

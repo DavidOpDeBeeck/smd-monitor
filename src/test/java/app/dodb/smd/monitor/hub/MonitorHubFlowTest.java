@@ -240,6 +240,47 @@ class MonitorHubFlowTest {
     }
 
     @Test
+    void upstream_handlingOfAnotherApplicationsEvent_namesThePublisher() {
+        var publication = tickets.dispatch(OPENED);
+        tickets.reportTo(hub, publication);
+
+        billing.reportTo(hub, billing.handle("ledger", publication));
+
+        assertThat(application(BILLING).upstream()).containsExactly(new UpstreamStatistics(TICKETS, 1, 0));
+        assertThat(application(TICKETS).upstream()).isEmpty();
+    }
+
+    @Test
+    void upstream_childOfAMessageInAnotherApplication_namesTheParentApplication() {
+        var open = tickets.dispatch(OPEN);
+        tickets.reportTo(hub, open);
+
+        billing.reportTo(hub, billing.dispatch(ASSIGN, open));
+
+        assertThat(application(BILLING).upstream()).containsExactly(new UpstreamStatistics(TICKETS, 1, 0));
+    }
+
+    @Test
+    void upstream_handlingOfItsOwnEvent_namesNoApplication() {
+        var publication = tickets.dispatch(OPENED);
+
+        tickets.reportTo(hub, publication, tickets.handle("ticket-view", publication));
+
+        assertThat(application(TICKETS).upstream()).isEmpty();
+    }
+
+    @Test
+    void upstream_crossingAndHandlingFromOneApplication_sumsThem() {
+        var open = tickets.dispatch(OPEN);
+        var publication = tickets.dispatch(OPENED);
+        tickets.reportTo(hub, open, publication);
+
+        billing.reportTo(hub, billing.dispatch(ASSIGN, open), billing.handle("ledger", publication));
+
+        assertThat(application(BILLING).upstream()).containsExactly(new UpstreamStatistics(TICKETS, 2, 0));
+    }
+
+    @Test
     void statistics_groupHandlingAnEventOfItsApplication_routesTheEventToTheGroup() {
         var publication = tickets.dispatch(OPENED);
 

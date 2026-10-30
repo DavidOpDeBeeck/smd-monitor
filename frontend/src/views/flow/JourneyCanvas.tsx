@@ -6,8 +6,8 @@ import { prefersReducedMotion } from '../../components/motion';
 import { cx } from '../../lib/cx';
 import { groupFigures, typeFigures } from '../../lib/flow-figures';
 import { lensApplication, type Lens, type LensGraph, type LensKey } from '../../lib/flow-lens';
-import { deliveryLabel, deliveryTitle, groupKey, isTypeKey, mediumShape, parseGroupKey, parseTypeKey, plural } from '../../lib/format';
-import { JOURNEY_HEAD, journeyPath, type Journey, type JourneyLane } from '../../lib/journey-layout';
+import { deliveryLabel, deliveryTitle, groupKey, isTypeKey, mediumShape, parseGroupKey, parseTypeKey } from '../../lib/format';
+import { JOURNEY_HEAD, journeyPath, type Journey } from '../../lib/journey-layout';
 import type { GroupKey, TypeKey } from '../../lib/types';
 import { GroupCard, MessageCard } from './JourneyCards';
 import { JourneyWires } from './JourneyWires';
@@ -33,7 +33,6 @@ export function JourneyCanvas(props: { lens: Lens; journey: Journey; graph: Lens
         const current = path();
         return current !== null && !current.ends.has(key);
     };
-    const cardsIn = (lane: JourneyLane) => props.journey.cards.filter(card => card.lane === lane.id);
 
     // From the first cause when everything up to the focus fits, or else with the focus a third of the way in, so what caused it stays in sight.
     const reveal = (smooth: boolean) => {
@@ -126,9 +125,6 @@ export function JourneyCanvas(props: { lens: Lens; journey: Journey; graph: Lens
                                             >
                                                 {application()}
                                             </button>
-                                            <span class="text-2xs text-faint">
-                                                {cardsIn(lane()).length} {plural(cardsIn(lane()).length, 'card')} in this flow
-                                            </span>
                                         </>
                                     )}
                                 </Show>

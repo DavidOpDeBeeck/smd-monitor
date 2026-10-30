@@ -62,7 +62,6 @@ function Tiles() {
                 <TileValue>
                     <Tweened value={summary().enteredPerSecond} format={value => `${perSecond(value)}/s`} />
                 </TileValue>
-                <TileDetail>root messages</TileDetail>
                 <Sparkline
                     values={totals().enteredPerSecond}
                     endsAt={end()}
@@ -119,7 +118,7 @@ function Tiles() {
             </Tile>
             <Show when={delay().asynchronous}>
                 <Tile
-                    label="Event delay"
+                    label="p95 event delay"
                     title={`How long after its publication returned a processing group started handling an event, p95 over the handlings of the ${last()} that started after it returned. It grows when groups fall behind.`}
                 >
                     <TileValue tone={delay().p95Millis !== null && delay().p95Millis! >= SLOW_DELAY_MILLIS ? 'text-warning' : undefined}>
@@ -140,7 +139,6 @@ function Tiles() {
                             )}
                         </Show>
                     </TileDetail>
-                    <span class="mt-1 text-xs text-faint">publication to handling, p95</span>
                 </Tile>
             </Show>
         </div>
@@ -151,7 +149,7 @@ function ActivityPanel() {
     const app = useMonitorApp();
     const chart = createMemo(() => activityRows(app.scoped().totals));
     return (
-        <Panel title="Activity" note={`per second, ${lastPeriod(app.store.view().historySeconds)}; each row on its own scale`}>
+        <Panel title="Activity" note={lastPeriod(app.store.view().historySeconds)}>
             <ThroughputChart
                 rows={chart()}
                 endsAt={app.store.end()}
@@ -164,13 +162,8 @@ function ActivityPanel() {
 
 function MessageTypes() {
     const app = useMonitorApp();
-    const last = () => lastPeriod(app.store.view().windowSeconds);
     return (
-        <Panel
-            title="Message types"
-            note={app.scope() === null ? `every application, ${last()}` : last()}
-            action={<TypeFilter selection={app.overview.types()} onChange={app.overview.setTypes} class="w-60" />}
-        >
+        <Panel title="Message types" action={<TypeFilter selection={app.overview.types()} onChange={app.overview.setTypes} class="w-60" />}>
             <TypeTable />
         </Panel>
     );

@@ -31,7 +31,7 @@ export function GroupsPanel() {
     );
     return (
         <Show when={sections().length > 0 || other().handlingHistory.started > 0}>
-            <Panel title="Processing groups" note={last()}>
+            <Panel title="Processing groups">
                 <Table
                     body={element => (body = element)}
                     header={

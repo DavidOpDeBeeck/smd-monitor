@@ -77,11 +77,7 @@ export function FailuresView() {
                     <BigNumber value={failed().toLocaleString()} label={`failed invocations, last ${shortHistorySpan(history())}`} />
                     <BigNumber value={total().toLocaleString()} label={plural(total(), 'cause')} />
                     <BigNumber value={lastFailure() === null ? '—' : ago(Math.max(0, store.secondNow() - lastFailure()!))} label="last failure" />
-                    <p class="basis-full text-sm text-muted">
-                        A cause is a stage, a dispatch or a handling, failing with one exception type. A failure counts at every message it failed, so one that
-                        propagated to its callers counts at each of them; the chains of the retained occurrences show where it was raised, as far as the
-                        retained traces tell. Exception messages and stack traces are not captured.
-                    </p>
+                    <p class="basis-full text-sm text-muted">Exception messages and stack traces are not recorded.</p>
                     <RetentionBoundary applications={app.scoped().applications} class="basis-full text-sm text-warning" />
                 </header>
                 <Show
@@ -106,9 +102,8 @@ export function FailuresView() {
                                                     cause={cause()}
                                                     examples={examples().get(cause().key)}
                                                     started={cause().started}
-                                                    end={store.end()}
+                                                    end={ranked().end ?? store.end()}
                                                     windowSeconds={store.view().windowSeconds}
-                                                    historySeconds={history()}
                                                     provisionalFrom={store.view().applications.get(cause().application)?.provisionalFrom ?? null}
                                                 />
                                             )}

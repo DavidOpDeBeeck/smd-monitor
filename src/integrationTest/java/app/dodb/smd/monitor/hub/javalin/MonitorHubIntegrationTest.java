@@ -251,7 +251,7 @@ class MonitorHubIntegrationTest {
         var response = query("/api/causes?order=ranked&limit=20");
 
         assertThat(response.statusCode()).isEqualTo(200);
-        assertThat(new ObjectMapper().readTree(response.body()).propertyNames()).containsExactly("hubSession", "sequence", "total", "causes");
+        assertThat(new ObjectMapper().readTree(response.body()).propertyNames()).containsExactly("hubSession", "sequence", "endEpochSecond", "total", "causes");
     }
 
     @Test

@@ -36,6 +36,7 @@ import type {
     WireTypeFigure,
     WireTypeFigures,
     WireTypeLink,
+    WireUpstream,
 } from './wire';
 
 export interface Totals {
@@ -119,6 +120,8 @@ export interface ApplicationState {
     handlings: ReadonlyMap<HandlingKey, HandlingStatistics>;
     // Into this application's types from a parent type of another application.
     crossings: readonly Link[];
+    // The other applications whose messages caused its invocations over the history, its handlings of their events included.
+    upstream: readonly WireUpstream[];
     other: OtherCounts;
     // The seconds of the window from this moment on may still grow, as the application's spans arrive that late.
     provisionalFrom: number;
@@ -267,15 +270,18 @@ export interface Causes {
     // That match the query, of which it answered the first.
     total: number;
     causes: readonly FailureCount[];
+    // Where their seconds end, which may be a frame behind or ahead of the view's; null before the query answered.
+    end: number | null;
 }
 
-export const NO_CAUSES: Causes = { total: 0, causes: [] };
+export const NO_CAUSES: Causes = { total: 0, causes: [], end: null };
 
 // The failure causes from the causes query's answer, in its order, or none before it answered.
 export function causes(answer: WireCauses | null): Causes {
     if (!answer) return NO_CAUSES;
     return {
         total: answer.total,
+        end: answer.endEpochSecond * 1000,
         causes: answer.causes.map(cause => {
             const type = typeKey(cause.application, cause.kind, cause.type);
             return {
@@ -300,9 +306,11 @@ export interface TypeFigures {
     // That the query selected, of which it answered the first.
     total: number;
     types: readonly TypeStatistics[];
+    // Where their seconds end, which may be a frame behind or ahead of the view's; null before the query answered.
+    end: number | null;
 }
 
-export const NO_TYPE_FIGURES: TypeFigures = { total: 0, types: [] };
+export const NO_TYPE_FIGURES: TypeFigures = { total: 0, types: [], end: null };
 
 // The figures of the types from the type figures query's answer, in its order, or none before it answered.
 export function typeFigures(answer: WireTypeFigures | null): TypeFigures {
@@ -310,6 +318,7 @@ export function typeFigures(answer: WireTypeFigures | null): TypeFigures {
     return {
         total: answer.total,
         types: answer.types.map(typeStatistics),
+        end: answer.endEpochSecond * 1000,
     };
 }
 
@@ -386,6 +395,7 @@ function applicationState(application: WireApplication, health: WireApplicationH
         groups,
         handlings: new Map(groups.flatMap(group => group.handlings.map(handling => [handling.key, handling]))),
         crossings: application.crossings.map(crossing => linkOf(crossing.link, crossing.parentApplication)),
+        upstream: application.upstream,
         other: otherCounts(application.other),
         provisionalFrom: application.provisionalFromEpochSecond * 1000,
         totals: {

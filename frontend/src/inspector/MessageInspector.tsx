@@ -211,11 +211,7 @@ export function MessageInspector(props: { sequence: number }) {
                         </div>
                         <InspectorSection
                             title="Children"
-                            note={
-                                detail().childCount > children().length
-                                    ? `first ${children().length} of ${detail().childCount} retained`
-                                    : `${detail().childCount} retained`
-                            }
+                            note={detail().childCount > children().length ? `first ${children().length} of ${detail().childCount}` : undefined}
                         >
                             <Key
                                 each={children()}

@@ -265,8 +265,8 @@ and parent IDs, class names, thread names, timing, status, and the failure's exc
 The page shows one **scope**: the whole **System**, which it opens on, or one application (**System › tickets**). Select **System** to widen it, or the scope, or press
 **A**, to pick another. Every view works in every scope, and changing scope keeps the view and the selection. Narrowing never hides what crosses into other
 applications: a trace keeps its other applications' messages, dimmed, and Flow keeps every application its flow reaches. An instance is not a scope; find its
-invocations by name in the filters of Traces and Live. The URL holds the scope, so links and the back button work: `?scope=tickets&type=tickets::command:OpenTicketCommand#/flow`
-opens Flow on a type.
+invocations by name in the filters of Traces and Live. The URL holds the scope, so links and the back button work. A link may also name a type as its application,
+its kind in capitals, and its class name: `?scope=tickets&type=tickets::COMMAND:com.example.tickets.OpenTicketCommand#/flow` opens Flow on that type.
 
 ### Views
 
@@ -275,8 +275,10 @@ opens Flow on a type.
 - **Entry points**: the rate of messages dispatched without a parent, the work arriving from outside.
 - **Failure rate**: the share of invocations started, dispatches and handlings together, that failed.
 - **p95 latency** per kind. In the system scope this is the highest of any application's, since percentiles cannot be summed.
-- **Event delay**: how long after its publication returned a processing group started handling an event, p95. It grows when groups fall behind and names the slowest.
-- The **applications** (system scope) with their instances, rate, failures, and memory; or **upstream** and **downstream** applications (application scope).
+- **p95 event delay**: how long after its publication returned a processing group started handling an event. It grows when groups fall behind and names the slowest.
+- The **applications** (system scope) with their instances, rate, failures, and memory; or the **linked applications** (application scope): on the left
+  those whose messages caused its invocations, on the right those where its messages caused invocations, a processing group handling another application's
+  event included. Each link is as thick as its rate over the history; select an application to move the scope there.
 - The **Activity** chart: commands, queries, events, and failures per second over the history, each row on its own scale.
 - **Message types**: each type's rate, failed share, and a latency band (p50 to p95, a tick at p50, a ring at p99), sortable and filterable. It shows the
   first 100 in its order, busiest first by default, and 100 more at a time.
@@ -303,7 +305,7 @@ invocations: a message that catches a child's failure and throws its own also sh
 60 s; and **Tape**, a log newest first that follows new messages until you scroll away. **Slower** filters by a minimum duration over a histogram. Lanes and
 Scatter leave out handlings, which would overlap their event.
 
-**Inspector**: select any card, row, bar, or dot to inspect a message type (activity, latency, causes and effects, recent invocations), an invocation (lineage,
+**Inspector**: select any card, row, bar, or dot to inspect a message type (activity and latency of the last minute, causes and effects over the history, recent invocations), an invocation (lineage,
 timing, thread, IDs, failure), or an application (instances, rate, upstream and downstream). It stays open across scopes.
 
 Retained lists load 100 entries at a time, up to 1,000, then say how many more match. Lanes and Scatter draw the latest 2,000 dispatches. While the pointer is held on

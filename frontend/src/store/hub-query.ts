@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, on, onCleanup, untrack, type Accessor } from 'solid-js';
+import { batch, createEffect, createMemo, createSignal, on, onCleanup, untrack, type Accessor } from 'solid-js';
 import { askHub, requestKey, withParams, type HubRequest } from '../lib/api';
 import { withFirstPage } from '../lib/paging';
 import { shareUnchanged } from '../lib/sharing';
@@ -185,13 +185,16 @@ export function createPagedList<T extends Answer, Item>(
                     : kind === 'top' && loaded() && !followed
                       ? withFirstPage(held, received, keyOf)
                       : received;
-            if (kind !== 'more') {
-                firstETag = result.eTag;
-                setAnswer(() => result.answer);
-                setLoaded(true);
-            }
-            setItems(shareUnchanged(held.items, listed.items, keyOf));
-            setNext(listed.next);
+            // Together, so whoever reads the list once it is loaded reads the items of its answer.
+            batch(() => {
+                if (kind !== 'more') {
+                    firstETag = result.eTag;
+                    setAnswer(() => result.answer);
+                    setLoaded(true);
+                }
+                setItems(shareUnchanged(held.items, listed.items, keyOf));
+                setNext(listed.next);
+            });
         } catch (failure) {
             if (!controller.signal.aborted) console.warn('SMD monitor query failed', failure);
         } finally {

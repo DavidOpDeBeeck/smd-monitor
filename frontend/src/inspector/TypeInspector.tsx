@@ -83,11 +83,21 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
         return wire ? statistics(wire) : null;
     });
     const startedPerSecond = () => retained()?.startedPerSecond ?? [];
+    // The seconds end where the answer's end, which reaches the page after the frame of its epoch: ending them at the frame's would move them a
+    // second back and forth with every frame.
+    const end = () => {
+        const answer = retained();
+        return answer ? answer.endEpochSecond * 1000 : store.end();
+    };
     const provisionalFrom = () => store.view().applications.get(type()?.application ?? '')?.provisionalFrom;
-    const completed = () => history()?.completed ?? 0;
+    const completed = () => windowed()?.completed ?? 0;
+    // Activity and latency cover the last minute, like the overview; what caused the type and what it caused count over the history.
+    const historyNote = () => `last ${shortHistorySpan(store.view().historySeconds)}`;
     const handlings = () => [...app.system().handlings.values()].filter(handling => handling.typeKey === props.typeKey);
     // Its failures second by second, which its query answers as only the inspector draws them.
     const failedPerSecond = () => retained()?.failedPerSecond ?? [];
+    // Its dispatches and failures on one scale, so a failure line never outgrows the dispatches it failed among.
+    const chartScale = createMemo(() => Math.max(1, ...startedPerSecond(), ...failedPerSecond()));
     // What each group's handling of the event counted, as the type's query answers it.
     const handlingHistories = createMemo(
         () => new Map((retained()?.handlings ?? []).map(handling => [handling.processingGroup, brief(handling.history)] as const)),
@@ -105,29 +115,27 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
             {type => (
                 <>
                     <InspectorHeading kind={type().kind} messageType={type().messageType} application={type().application} />
-                    <InspectorSection
-                        title="Activity"
-                        note={`last ${shortHistorySpan(store.view().historySeconds)} · chart and rate: last ${shortHistorySpan(store.view().windowSeconds)}`}
-                    >
+                    <InspectorSection title="Activity">
                         <Stats
                             stats={[
-                                { label: 'Calls', value: count(history()?.started ?? 0) },
+                                { label: 'Calls', value: count(windowed()?.started ?? 0) },
                                 { label: 'Rate', value: rate(ratePerSecond(windowed()?.started ?? 0, store.view().windowSeconds)) },
                                 {
                                     label: 'Failed',
-                                    value: count(history()?.failed ?? 0),
-                                    detail: history()?.failed ? percent(history()!.failed, completed()) : undefined,
-                                    tone: history()?.failed ? 'text-failed' : '',
+                                    value: count(windowed()?.failed ?? 0),
+                                    detail: windowed()?.failed ? percent(windowed()!.failed, completed()) : undefined,
+                                    tone: windowed()?.failed ? 'text-failed' : '',
                                 },
                             ]}
                         />
                         <div class="relative h-10">
                             <Sparkline
                                 values={startedPerSecond()}
-                                endsAt={store.end()}
+                                endsAt={end()}
                                 provisionalFrom={provisionalFrom()}
                                 width={320}
                                 height={40}
+                                scale={chartScale()}
                                 class="absolute inset-0 h-10 w-full"
                                 lineClass={cx('stroke-[1.5]', KIND_TONE[type().kind].spark)}
                                 areaClass={KIND_TONE[type().kind].sparkArea}
@@ -135,9 +143,10 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
                             <Show when={failedPerSecond().some(Boolean)}>
                                 <Sparkline
                                     values={failedPerSecond()}
-                                    endsAt={store.end()}
+                                    endsAt={end()}
                                     width={320}
                                     height={40}
+                                    scale={chartScale()}
                                     class="absolute inset-0 h-10 w-full"
                                     lineClass="stroke-failed stroke-[1.5]"
                                 />
@@ -149,27 +158,26 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
                                     {entry => (
                                         <li class="flex items-baseline justify-between gap-2 font-mono text-sm text-failed" title={entry().failureType}>
                                             <span class="truncate">✕ {shortName(entry().failureType)}</span>
-                                            <span class="text-muted">×{count(entry().count)} retained</span>
+                                            <span class="text-muted" title="Among the retained invocations">
+                                                ×{count(entry().count)}
+                                            </span>
                                         </li>
                                     )}
                                 </Key>
                             </ul>
                         </Show>
                     </InspectorSection>
-                    <InspectorSection
-                        title="Latency"
-                        note={completed() ? `avg ${duration(history()?.averageMillis)} · ${count(completed())} completed` : undefined}
-                    >
+                    <InspectorSection title="Latency">
                         <Stats
                             stats={[
-                                { label: 'p50', value: duration(history()?.p50Millis) },
-                                { label: 'p95', value: duration(history()?.p95Millis) },
-                                { label: 'p99', value: duration(history()?.p99Millis) },
-                                { label: 'Max', value: duration(history()?.maxMillis) },
+                                { label: 'p50', value: duration(windowed()?.p50Millis) },
+                                { label: 'p95', value: duration(windowed()?.p95Millis) },
+                                { label: 'p99', value: duration(windowed()?.p99Millis) },
+                                { label: 'Max', value: duration(windowed()?.maxMillis) },
                             ]}
                         />
                     </InspectorSection>
-                    <InspectorSection title="Caused by" note={`last ${shortHistorySpan(store.view().historySeconds)}`}>
+                    <InspectorSection title="Caused by" note={historyNote()}>
                         <div class="grid gap-[5px]">
                             <Show when={type().entryPoint}>
                                 <StaticRelation mark="→" label="Entry point (no parent)" invocations={history()?.entered ?? 0} />
@@ -180,7 +188,7 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
                         </div>
                     </InspectorSection>
                     <Show when={outgoing().length > 0}>
-                        <InspectorSection title="Causes">
+                        <InspectorSection title="Causes" note={historyNote()}>
                             <div class="grid gap-[5px]">
                                 <Key each={outgoing()} by="child">
                                     {link => <TypeRelation typeKey={link().child} invocations={link().invocations} from={type().application} />}
@@ -189,7 +197,7 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
                         </InspectorSection>
                     </Show>
                     <Show when={handlings().length > 0}>
-                        <InspectorSection title="Handled by" note={`processing groups, last ${shortHistorySpan(store.view().historySeconds)}`}>
+                        <InspectorSection title="Handled by" note={historyNote()}>
                             <div class="grid gap-[5px]">
                                 <Key each={handlings()} by="key">
                                     {handling => (
@@ -202,7 +210,7 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
                             </div>
                         </InspectorSection>
                     </Show>
-                    <InspectorSection title="Recent invocations" note="retained">
+                    <InspectorSection title="Recent invocations">
                         <Key
                             each={latest()}
                             by="sequence"
