@@ -136,7 +136,7 @@ function spreadSummary(row: TypeRow, spread: LatencySpread, last: string) {
     return `${count(completed)} completed in the ${last}: p50 ${duration(spread.p50Millis)}, p95 ${duration(spread.p95Millis)}, p99 ${duration(spread.p99Millis)}, slowest ${duration(spread.maxMillis)}`;
 }
 
-function TypeTableRow(props: { row: TypeRow; scale: number; latencyScale: LatencyScale | null; selected: boolean; system: boolean }) {
+function TypeTableRow(props: { row: TypeRow; end: number; scale: number; latencyScale: LatencyScale | null; selected: boolean; system: boolean }) {
     const app = useMonitorApp();
     const type = () => props.row.statistics;
     const select = () => app.select({ type: 'type', key: type().key });
@@ -169,7 +169,7 @@ function TypeTableRow(props: { row: TypeRow; scale: number; latencyScale: Latenc
             <td class={cx('px-2', HIDDEN_BELOW_4XL)}>
                 <Sparkline
                     values={type().startedPerSecond}
-                    endsAt={app.store.end()}
+                    endsAt={props.end}
                     provisionalFrom={app.store.view().applications.get(type().application)?.provisionalFrom}
                     width={96}
                     height={22}
@@ -313,6 +313,7 @@ export function TypeTable() {
                     {row => (
                         <TypeTableRow
                             row={row()}
+                            end={figures().end ?? app.store.end()}
                             scale={scale()}
                             latencyScale={spreadScale()}
                             selected={selectedTypeKey(app.selection()) === row().statistics.key}

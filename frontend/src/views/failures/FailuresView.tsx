@@ -106,7 +106,7 @@ export function FailuresView() {
                                                     cause={cause()}
                                                     examples={examples().get(cause().key)}
                                                     started={cause().started}
-                                                    end={store.end()}
+                                                    end={ranked().end ?? store.end()}
                                                     windowSeconds={store.view().windowSeconds}
                                                     historySeconds={history()}
                                                     provisionalFrom={store.view().applications.get(cause().application)?.provisionalFrom ?? null}

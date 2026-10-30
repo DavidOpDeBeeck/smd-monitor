@@ -10,8 +10,9 @@ import java.util.List;
 import static java.util.Objects.requireNonNull;
 
 // The figures of the message types a view shows, in its order, out of the total selected: each type's counts and latency over the window, its
-// counts over the history, its dispatches the hub still retains, and its dispatches second by second over the window.
-public record TypeFiguresView(String hubSession, long sequence, int total, List<TypeFigureView> types) {
+// counts over the history, its dispatches the hub still retains, and its dispatches second by second over the window up to the end second, that
+// of the epoch it answers from.
+public record TypeFiguresView(String hubSession, long sequence, long endEpochSecond, int total, List<TypeFigureView> types) {
 
     public TypeFiguresView {
         requireNonNull(hubSession);

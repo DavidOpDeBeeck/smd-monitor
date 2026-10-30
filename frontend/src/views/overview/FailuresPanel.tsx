@@ -25,7 +25,8 @@ export function FailuresPanel() {
     const ranked = createHubQuery<WireCauses>(store, () => hubRequest('causes', { scope: app.scope(), order: 'recent', limit: RECENT_CAUSES }), {
         kept: true,
     });
-    const recent = createMemo(() => causes(ranked.answer()).causes);
+    const answered = createMemo(() => causes(ranked.answer()));
+    const recent = () => answered().causes;
     const keys = createMemo(() => recent().map(cause => cause.key));
     const query = createHubQuery<WireFailureCauses>(store, () => (keys().length ? hubRequest('failures', { cause: keys() }) : null), { kept: true });
     const latest = createMemo(() => new Map((query.answer()?.causes ?? []).map(causeExamples).map(examples => [examples.key, examples.latest[0]])));
@@ -60,7 +61,7 @@ export function FailuresPanel() {
                 >
                     {cause => {
                         const example = () => latest().get(cause().key);
-                        const at = () => lastOccurrence(cause(), store.end());
+                        const at = () => lastOccurrence(cause(), answered().end ?? store.end());
                         return (
                             <button
                                 type="button"

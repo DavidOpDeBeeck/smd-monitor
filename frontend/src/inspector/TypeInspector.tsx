@@ -83,11 +83,19 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
         return wire ? statistics(wire) : null;
     });
     const startedPerSecond = () => retained()?.startedPerSecond ?? [];
+    // The seconds end where the answer's end, which reaches the page after the frame of its epoch: ending them at the frame's would move them a
+    // second back and forth with every frame.
+    const end = () => {
+        const answer = retained();
+        return answer ? answer.endEpochSecond * 1000 : store.end();
+    };
     const provisionalFrom = () => store.view().applications.get(type()?.application ?? '')?.provisionalFrom;
     const completed = () => history()?.completed ?? 0;
     const handlings = () => [...app.system().handlings.values()].filter(handling => handling.typeKey === props.typeKey);
     // Its failures second by second, which its query answers as only the inspector draws them.
     const failedPerSecond = () => retained()?.failedPerSecond ?? [];
+    // Its dispatches and failures on one scale, so a failure line never outgrows the dispatches it failed among.
+    const chartScale = createMemo(() => Math.max(1, ...startedPerSecond(), ...failedPerSecond()));
     // What each group's handling of the event counted, as the type's query answers it.
     const handlingHistories = createMemo(
         () => new Map((retained()?.handlings ?? []).map(handling => [handling.processingGroup, brief(handling.history)] as const)),
@@ -124,10 +132,11 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
                         <div class="relative h-10">
                             <Sparkline
                                 values={startedPerSecond()}
-                                endsAt={store.end()}
+                                endsAt={end()}
                                 provisionalFrom={provisionalFrom()}
                                 width={320}
                                 height={40}
+                                scale={chartScale()}
                                 class="absolute inset-0 h-10 w-full"
                                 lineClass={cx('stroke-[1.5]', KIND_TONE[type().kind].spark)}
                                 areaClass={KIND_TONE[type().kind].sparkArea}
@@ -135,9 +144,10 @@ export function TypeInspector(props: { typeKey: TypeKey }) {
                             <Show when={failedPerSecond().some(Boolean)}>
                                 <Sparkline
                                     values={failedPerSecond()}
-                                    endsAt={store.end()}
+                                    endsAt={end()}
                                     width={320}
                                     height={40}
+                                    scale={chartScale()}
                                     class="absolute inset-0 h-10 w-full"
                                     lineClass="stroke-failed stroke-[1.5]"
                                 />

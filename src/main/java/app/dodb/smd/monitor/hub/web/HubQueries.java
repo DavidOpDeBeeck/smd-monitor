@@ -120,7 +120,7 @@ public final class HubQueries {
 
     public QueryAnswer type(String type) {
         var selected = QueryNames.type(required("type", type));
-        return answer(List.of("types", selected), epoch -> versioned(RetainedTypeView.from(epoch.session(), epoch.type(selected), epoch.history(selected),
+        return answer(List.of("types", selected), epoch -> versioned(RetainedTypeView.from(epoch.session(), endEpochSecond(epoch), epoch.type(selected), epoch.history(selected),
             selected, epoch.statistics().applications())));
     }
 
@@ -148,7 +148,7 @@ public final class HubQueries {
                     .thenComparing(ranked -> ranked.type().type().kind())
                     .thenComparing(ranked -> ranked.type().type().name()))
                 .toList();
-            return versioned(new TypeFiguresView(epoch.session().toString(), epoch.sequence(), selected.size(),
+            return versioned(new TypeFiguresView(epoch.session().toString(), epoch.sequence(), endEpochSecond(epoch), selected.size(),
                 selected.stream().limit(count).map(ranked -> TypeFiguresView.TypeFigureView.from(ranked.application(), ranked.type())).toList()));
         });
     }
@@ -177,7 +177,7 @@ public final class HubQueries {
                     .thenComparing(each -> each.failure().failure().stage().type().name())
                     .thenComparing(each -> each.failure().failure().failureType()))
                 .toList();
-            return versioned(new CausesView(epoch.session().toString(), epoch.sequence(), counted.size(),
+            return versioned(new CausesView(epoch.session().toString(), epoch.sequence(), endEpochSecond(epoch), counted.size(),
                 counted.stream().limit(count).map(each -> CausesView.CauseView.from(each.application(), each.failure())).toList()));
         });
     }
@@ -210,12 +210,19 @@ public final class HubQueries {
         return QueryAnswer.json(mapper.writeValueAsString(view));
     }
 
+    // The second the per-second series of an answer end at, which the page scrolls them to, as it does the frame's.
+    private static long endEpochSecond(Epoch epoch) {
+        return epoch.statistics().end().getEpochSecond();
+    }
+
     // An answer the page may keep and ask again for with its ETag: a hash of its content but the sequence it names, which moves whenever the hub
-    // retains anything, so an answer asked again names the same ETag while what it holds did not change.
+    // retains anything, and the second its series end at, which moves every epoch, so an answer asked again names the same ETag while what it holds
+    // did not change. Series equal after moving on are flat, and a flat series draws the same whichever second it ends at.
     private QueryAnswer versioned(Object view) {
         ObjectNode content = mapper.valueToTree(view);
         var body = mapper.writeValueAsString(content);
         content.remove("sequence");
+        content.remove("endEpochSecond");
         return QueryAnswer.versioned(body, hash(mapper.writeValueAsString(content)));
     }
 

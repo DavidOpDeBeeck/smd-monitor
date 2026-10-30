@@ -270,15 +270,18 @@ export interface Causes {
     // That match the query, of which it answered the first.
     total: number;
     causes: readonly FailureCount[];
+    // Where their seconds end, which may be a frame behind or ahead of the view's; null before the query answered.
+    end: number | null;
 }
 
-export const NO_CAUSES: Causes = { total: 0, causes: [] };
+export const NO_CAUSES: Causes = { total: 0, causes: [], end: null };
 
 // The failure causes from the causes query's answer, in its order, or none before it answered.
 export function causes(answer: WireCauses | null): Causes {
     if (!answer) return NO_CAUSES;
     return {
         total: answer.total,
+        end: answer.endEpochSecond * 1000,
         causes: answer.causes.map(cause => {
             const type = typeKey(cause.application, cause.kind, cause.type);
             return {
@@ -303,9 +306,11 @@ export interface TypeFigures {
     // That the query selected, of which it answered the first.
     total: number;
     types: readonly TypeStatistics[];
+    // Where their seconds end, which may be a frame behind or ahead of the view's; null before the query answered.
+    end: number | null;
 }
 
-export const NO_TYPE_FIGURES: TypeFigures = { total: 0, types: [] };
+export const NO_TYPE_FIGURES: TypeFigures = { total: 0, types: [], end: null };
 
 // The figures of the types from the type figures query's answer, in its order, or none before it answered.
 export function typeFigures(answer: WireTypeFigures | null): TypeFigures {
@@ -313,6 +318,7 @@ export function typeFigures(answer: WireTypeFigures | null): TypeFigures {
     return {
         total: answer.total,
         types: answer.types.map(typeStatistics),
+        end: answer.endEpochSecond * 1000,
     };
 }
 

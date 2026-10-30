@@ -19,8 +19,11 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -354,6 +357,34 @@ class HubQueriesTest {
         assertThat(answer.get("causes").get(0).get("type").asString()).isEqualTo("CloseTicket");
     }
 
+    @Test
+    void type_anyAnswer_namesTheSecondItsSeriesEndAt() {
+        receive(dispatch("0000000000000001", "OpenTicket"));
+
+        var answer = mapper.readTree(queries.type("tickets::COMMAND:OpenTicket").body());
+
+        assertThat(answer.get("endEpochSecond").asLong()).isEqualTo(hub.statistics().end().getEpochSecond());
+    }
+
+    @Test
+    void causes_askedAgainASecondLaterWhileNothingFailed_answersNotModified() {
+        var clock = new SteppedClock(Instant.now());
+        var stepped = new SynchronousHub(HubConfig.withDefaults().build(), clock);
+        var steppedQueries = new HubQueries(stepped.hub(), 8);
+        stepped.receive(new SpanBatch(TICKETS, new InstanceName("tickets-1"), new SessionId("session"),
+            List.of(failed("0000000000000001", new Stage.Dispatch(new MessageType(MessageKind.COMMAND, "OpenTicket")), clock.instant().minusSeconds(120))),
+            List.of()));
+        stepped.epoch();
+        var first = steppedQueries.causes(null, "ranked", null);
+        clock.advance(Duration.ofSeconds(1));
+        stepped.epoch();
+
+        var again = steppedQueries.causes(null, "ranked", null);
+
+        assertThat(again.unlessHeld(first.eTag()).status()).isEqualTo(304);
+        assertThat(mapper.readTree(again.body()).get("endEpochSecond").asLong()).isEqualTo(mapper.readTree(first.body()).get("endEpochSecond").asLong() + 1);
+    }
+
     // The overview lists what fails now, the failures view what failed over the history.
     @Test
     void causes_failedOnlyBeforeTheWindow_answersItRankedButNotRecent() {
@@ -481,6 +512,34 @@ class HubQueriesTest {
         assertThatThrownBy(() -> queries.typeFigures(null, List.of(), List.of(), "busiest", null))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessage("The query parameter sort must be rate, failed, failures, p50, p95, p99, or name; got 'busiest'");
+    }
+
+    private static final class SteppedClock extends Clock {
+
+        private Instant now;
+
+        SteppedClock(Instant now) {
+            this.now = now;
+        }
+
+        void advance(Duration duration) {
+            now = now.plus(duration);
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return now;
+        }
     }
 
     private void receive(MessageSpan span) {
