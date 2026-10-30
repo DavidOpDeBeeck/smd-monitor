@@ -414,6 +414,9 @@ For live reloading, run the demo and the Vite dev server, then open <http://loca
 cd frontend && npm run dev
 ```
 
+The README's screenshots are of the demo. After it has run five minutes, `docs/screenshots/capture.cjs` retakes them in light and dark with Playwright; its header
+says how.
+
 | Directory                                   | Contents                                                                                                                                                                               |
 |---------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `src/lib`                                   | Framework-free TypeScript: the wire contract (`wire.ts`, mirroring `app.dodb.smd.monitor.json`), the snapshot and delta mirror (`mirror.ts`), queries (`api.ts`), and the views' logic |

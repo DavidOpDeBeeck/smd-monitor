@@ -126,7 +126,7 @@ dependencies {
 }
 
 tasks.register<JavaExec>("demo") {
-    description = "Runs a monitor hub with a ticket service and a billing service exporting their spans to it"
+    description = "Runs a monitor hub with a web shop of four applications exporting their spans to it"
     group = "application"
     classpath = demo.runtimeClasspath
     mainClass.set("app.dodb.smd.monitor.hub.demo.HubDemo")

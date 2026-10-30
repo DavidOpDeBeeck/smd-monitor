@@ -11,7 +11,7 @@ OpenTelemetry backend.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-dark.png">
-  <img alt="The Overview of the demo web shop: entry points, failure rate, latency, and event delay, its four applications, five minutes of activity, and every message type with its latency" src="docs/screenshots/overview-light.png">
+  <img alt="The Overview of the demo web shop: entry points, failure rate, p95 latency per kind, and event delay, its four applications with their rates and failures, five minutes of activity, and every message type with its latency band" src="docs/screenshots/overview-light.png">
 </picture>
 
 ## Try it
@@ -25,11 +25,20 @@ storefront takes orders on two instances, and inventory, payments, and shipping 
 
 ## A look around
 
+The page has five views, for the whole system or one application. **Overview**, above, sums up the last minute. Narrowed to one application, it also shows how
+that application is linked to the others: upstream the applications whose messages cause its invocations, downstream those its messages cause invocations in,
+each link as thick as its rate.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/application-dark.png">
+  <img alt="The Overview narrowed to payments: inventory upstream and shipping and storefront downstream, linked by their rates, above payments' activity and message types" src="docs/screenshots/application-light.png">
+</picture>
+
 **Flow** follows a message across applications and the topics between them: what caused it, what it led to, and how each step fares.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/flow-dark.png">
-  <img alt="The Flow view around AuthorizePaymentCommand: a reserved order arrives from inventory over a topic, and its captured or declined payment goes on to shipping and storefront" src="docs/screenshots/flow-light.png">
+  <img alt="The Flow view around AuthorizePaymentCommand: a reserved order arrives from inventory over a topic, and its captured or declined payment goes over another topic to fulfilment in shipping and payment follow-up in storefront" src="docs/screenshots/flow-light.png">
 </picture>
 
 **Traces** lays out a retained trace as a waterfall, with the application, instance, and thread of every message and handling: here a declined payment,
@@ -37,22 +46,33 @@ which storefront compensates by cancelling the order and inventory by releasing 
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/traces-dark.png">
-  <img alt="The Traces view showing a PlaceOrderCommand trace across storefront, inventory, and payments as a waterfall, ending in a cancelled order" src="docs/screenshots/traces-light.png">
+  <img alt="The Traces view showing a PlaceOrderCommand trace across storefront, inventory, and payments as a waterfall, in which a declined payment cancels the order and releases its stock" src="docs/screenshots/traces-light.png">
 </picture>
 
 **Failures** groups failures by cause and shows the chain from the entry point to where each was raised.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/failures-dark.png">
-  <img alt="The Failures view listing out-of-stock and payment gateway timeout causes per application, with their chains and failure rates per message type and group" src="docs/screenshots/failures-light.png">
+  <img alt="The Failures view listing out-of-stock and payment gateway timeout causes per application, with their chains and latest traces, and the failure rates per message type and processing group" src="docs/screenshots/failures-light.png">
 </picture>
 
 **Live** shows every invocation of the last seconds or minutes as it happens.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/live-dark.png">
-  <img alt="The Live view showing the invocations of every message type in lanes over the last 30 seconds" src="docs/screenshots/live-light.png">
+  <img alt="The Live view showing the invocations of every message type in lanes over the last 30 seconds, grouped by application" src="docs/screenshots/live-light.png">
 </picture>
+
+Select any card, row, bar, or dot to **inspect** it: a message type's activity, failures, and latency, what causes it and what it causes, and its latest
+invocations; an invocation's lineage and timing; or an application's instances and links.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/inspector-dark.png">
+  <img alt="The inspector open on AuthorizePaymentCommand beside the Overview's message types: its rate, failures by exception, latency percentiles, causes, effects, and recent invocations" src="docs/screenshots/inspector-light.png">
+</picture>
+
+[Using the monitor](docs/monitor.md#using-the-monitor) describes every view, and [What the figures mean](docs/monitor.md#what-the-figures-mean) what each
+figure counts.
 
 ## Run the hub
 
