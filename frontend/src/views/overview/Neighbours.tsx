@@ -107,7 +107,7 @@ export function Neighbours(props: { application: string }) {
     const layout = createMemo(() => neighbourhood(neighbours().upstream, neighbours().downstream));
     return (
         <Show when={neighbours().upstream.length > 0 || neighbours().downstream.length > 0}>
-            <Panel title="Linked applications" note={`average rate · last ${shortHistorySpan(app.store.view().historySeconds)}`}>
+            <Panel title="Linked applications" note={`last ${shortHistorySpan(app.store.view().historySeconds)}`}>
                 <div aria-label="Linked applications" class="overflow-x-auto">
                     <div class={`${COLUMNS} min-w-[640px] gap-y-2`}>
                         <span class={EYEBROW} title="Applications whose messages caused invocations of this application, handlings of their events included">

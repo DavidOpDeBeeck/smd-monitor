@@ -9,7 +9,7 @@ import { Sparkline } from '../components/Sparkline';
 import { HEALTH_TONE, reportingTone } from '../components/tones';
 import { applicationHealth, applicationRows } from '../lib/applications';
 import { cx } from '../lib/cx';
-import { count, duration, lastPeriod, lastSpanAgo, percent, plural, rate, shortHistorySpan } from '../lib/format';
+import { count, duration, lastSpanAgo, percent, plural, rate, shortHistorySpan } from '../lib/format';
 import { neighbourApplications, type NeighbourApplication } from '../lib/scope';
 import { InspectorSection, Stats } from './parts';
 
@@ -68,7 +68,7 @@ export function ApplicationInspector(props: { name: string }) {
                                 <TextButton onClick={() => app.setScope(props.name)}>Narrow the scope to it</TextButton>
                             </Show>
                         </div>
-                        <InspectorSection title="Activity" note={lastPeriod(store.view().windowSeconds)}>
+                        <InspectorSection title="Activity">
                             <Stats
                                 stats={[
                                     { label: 'Rate', value: rate(row().dispatchesPerSecond) },
@@ -106,7 +106,7 @@ export function ApplicationInspector(props: { name: string }) {
                                 </Show>
                             </div>
                         </InspectorSection>
-                        <InspectorSection title="Upstream" note={`causes its invocations · last ${shortHistorySpan(store.view().historySeconds)}`}>
+                        <InspectorSection title="Upstream">
                             <div class="grid gap-[5px]">
                                 <Key
                                     each={neighbours().upstream}
@@ -117,7 +117,7 @@ export function ApplicationInspector(props: { name: string }) {
                                 </Key>
                             </div>
                         </InspectorSection>
-                        <InspectorSection title="Downstream" note={`its messages cause there · last ${shortHistorySpan(store.view().historySeconds)}`}>
+                        <InspectorSection title="Downstream">
                             <div class="grid gap-[5px]">
                                 <Key
                                     each={neighbours().downstream}
@@ -128,7 +128,7 @@ export function ApplicationInspector(props: { name: string }) {
                                 </Key>
                             </div>
                         </InspectorSection>
-                        <InspectorSection title="Instances" note="reported in the last 10 minutes">
+                        <InspectorSection title="Instances">
                             <Key each={row().instances} by="sessionId" fallback={<EmptyLine class="text-left">No instance reported.</EmptyLine>}>
                                 {instance => (
                                     <button

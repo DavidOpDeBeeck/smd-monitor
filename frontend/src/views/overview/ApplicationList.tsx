@@ -21,7 +21,7 @@ export function ApplicationList(props: { rows: readonly ApplicationRow[]; endsAt
     const last = () => lastPeriod(app.store.view().windowSeconds);
     // The other columns take 752px, so the application's name keeps 176px at least; a narrower stage scrolls the table instead.
     return (
-        <Panel title="Applications" note={last()}>
+        <Panel title="Applications">
             <div class="overflow-x-auto">
                 <div class="min-w-[928px]">
                     <Table

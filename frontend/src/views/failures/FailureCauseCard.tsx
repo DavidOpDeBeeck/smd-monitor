@@ -8,7 +8,7 @@ import { Sparkline } from '../../components/Sparkline';
 import { Tweened } from '../../components/tween';
 import { cx } from '../../lib/cx';
 import { raisedHere, type CauseExamples, type FailureChain } from '../../lib/failures';
-import { ago, clock, KIND_LABEL, lastPeriod, percent, shortHistorySpan, shortName, wholeCount } from '../../lib/format';
+import { ago, clock, KIND_LABEL, lastPeriod, percent, shortName, wholeCount } from '../../lib/format';
 import type { FailureCount } from '../../lib/types';
 
 function Chain(props: { chain: FailureChain; showCount: boolean }) {
@@ -69,7 +69,6 @@ export function FailureCauseCard(props: {
     started: number;
     end: number;
     windowSeconds: number;
-    historySeconds: number;
     provisionalFrom: number | null;
 }) {
     const app = useMonitorApp();
@@ -104,8 +103,7 @@ export function FailureCauseCard(props: {
                 </Show>
                 <Show when={props.started > 0}>
                     {' '}
-                    · {percent(props.cause.history, props.started)} of its {props.started.toLocaleString()} {props.cause.handling ? 'handlings' : 'dispatches'}{' '}
-                    over the last {shortHistorySpan(props.historySeconds)}
+                    · {percent(props.cause.history, props.started)} of {props.started.toLocaleString()} {props.cause.handling ? 'handlings' : 'dispatches'}
                 </Show>
             </p>
             <Sparkline
@@ -118,10 +116,6 @@ export function FailureCauseCard(props: {
                 lineClass="stroke-failed stroke-[1.5]"
                 areaClass="fill-failed/12"
             />
-            <div class="mt-0.5 flex justify-between text-xs text-faint">
-                <span>{last()} ago</span>
-                <span>now</span>
-            </div>
             <Show when={props.examples} fallback={<p class="mt-2 text-xs text-faint">Asking the hub for its retained occurrences…</p>}>
                 {examples => (
                     <Show
@@ -129,10 +123,6 @@ export function FailureCauseCard(props: {
                         fallback={<p class="mt-2 text-xs text-muted">The hub retains none of its occurrences; its counts remain.</p>}
                     >
                         <div class="mt-2.5 rounded-md bg-sunken px-2.5 py-2">
-                            <h4 class="mb-1 text-xs text-muted">
-                                From the entry point to where the failure was raised, in its {examples().retained.toLocaleString()} retained{' '}
-                                {examples().retained === 1 ? 'occurrence' : 'occurrences'}:
-                            </h4>
                             <ul class="grid gap-1">
                                 <Key each={examples().chains} by="key">
                                     {chain => <Chain chain={chain()} showCount={examples().chains.length > 1} />}

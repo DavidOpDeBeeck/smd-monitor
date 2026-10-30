@@ -208,17 +208,6 @@ export function Waterfall(props: { detail: TraceDetail }) {
                     <i class="w-[22px] border-t-[1.5px] border-dotted border-accent/45" />
                     wait: started after its parent returned
                 </span>
-                <span>
-                    Each application, instance, and thread has a colour of its own:{' '}
-                    <span class="rounded-[5px] px-1.5 py-px font-medium hue-chip" style={{ '--hue': '200' }}>
-                        full
-                    </span>{' '}
-                    where it differs from the parent's,{' '}
-                    <span class="rounded-[5px] px-1.5 py-px font-medium hue-chip opacity-40" style={{ '--hue': '200' }}>
-                        faded
-                    </span>{' '}
-                    where it matches.
-                </span>
             </p>
         </div>
     );

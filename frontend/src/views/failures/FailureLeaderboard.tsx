@@ -6,7 +6,7 @@ import { Panel } from '../../components/Panel';
 import { SECTION_TITLE } from '../../components/text';
 import { cx } from '../../lib/cx';
 import { hubRequest } from '../../lib/api';
-import { count, historySpan, percent, shortName } from '../../lib/format';
+import { count, percent, shortHistorySpan, shortName } from '../../lib/format';
 import { typeFigures } from '../../lib/state';
 import type { TypeKey } from '../../lib/types';
 import type { WireTypeFigures } from '../../lib/wire';
@@ -58,10 +58,7 @@ export function FailureLeaderboard() {
             .sort((a, b) => b.history.failed - a.history.failed),
     );
     return (
-        <Panel title="Failed invocations per message type" class="self-start">
-            <p class="mb-2 text-xs text-muted">
-                Over the last {historySpan(app.store.view().historySeconds)}, including evicted invocations. A failure counts at every message it failed.
-            </p>
+        <Panel title="Failed invocations per message type" note={`last ${shortHistorySpan(app.store.view().historySeconds)}`} class="self-start">
             <Key each={failedTypes()} by="key">
                 {type => (
                     <FailureRateRow
@@ -81,7 +78,6 @@ export function FailureLeaderboard() {
             </Key>
             <Show when={failedHandlings().length > 0}>
                 <h3 class={cx('mt-4', SECTION_TITLE)}>Failed handlings per processing group</h3>
-                <p class="mt-1 mb-2 text-xs text-muted">An asynchronous group's failure does not fail the publication of its event.</p>
                 <Key each={failedHandlings()} by="key">
                     {handling => (
                         <FailureRateRow

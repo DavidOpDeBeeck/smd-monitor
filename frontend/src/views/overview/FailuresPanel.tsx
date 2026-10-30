@@ -42,7 +42,6 @@ export function FailuresPanel() {
     return (
         <Panel
             title={`Failures, ${last()}`}
-            note="by stage and exception type"
             action={
                 <LinkButton class="text-xs font-semibold" onClick={() => app.show('failures')}>
                     All failures →
