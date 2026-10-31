@@ -30,7 +30,7 @@ export function Brand() {
         <a class="flex items-center gap-2.5 text-md whitespace-nowrap" href="." onClick={goHome} aria-label="SMD Monitor home">
             <LogoMark class="h-[17px] w-auto" transmitting={offline()} />
             <span class="text-lg leading-none">
-                <strong class="font-extrabold tracking-[-.4px]">smd</strong> <span class="font-medium text-muted">monitor</span>
+                <strong class="font-extrabold tracking-[-.4px]">smd</strong> <span class="font-medium text-muted max-sm:hidden">monitor</span>
             </span>
         </a>
     );
@@ -56,7 +56,12 @@ export function ViewTabs() {
         document.getElementById(`view-tab-${next}`)?.focus();
     };
     return (
-        <nav class="group/tabs flex gap-0.5 rounded-[9px] bg-sunken p-[3px] max-sm:w-full" role="tablist" aria-label="Views" onKeyDown={keydown}>
+        <nav
+            class="group/tabs flex gap-0.5 rounded-[9px] bg-sunken p-[3px] max-md:col-span-full max-md:row-start-2"
+            role="tablist"
+            aria-label="Views"
+            onKeyDown={keydown}
+        >
             <For each={app.views}>
                 {(view, index) => (
                     <button
@@ -67,7 +72,7 @@ export function ViewTabs() {
                         aria-selected={app.view() === view}
                         tabIndex={app.view() === view ? 0 : -1}
                         onClick={() => app.show(view)}
-                        class="flex items-center gap-[7px] rounded-md px-2.5 py-[5px] font-medium text-muted hover:text-fg aria-selected:bg-surface aria-selected:text-fg aria-selected:shadow-card max-sm:flex-1 max-sm:justify-center max-sm:px-1"
+                        class="flex items-center gap-[7px] rounded-md px-2.5 py-[5px] font-medium text-muted hover:text-fg aria-selected:bg-surface aria-selected:text-fg aria-selected:shadow-card max-md:flex-1 max-md:justify-center max-md:px-1"
                     >
                         {VIEW_LABEL[view]}
                         <Show when={FILTERED[view]?.()}>

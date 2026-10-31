@@ -61,11 +61,11 @@ export function TopBar() {
     const store = app.store;
     const status = () => CONNECTION[store.status()];
     return (
-        <header class={cx(HEADER, 'gap-5 max-md:flex-wrap max-md:gap-2.5')}>
+        <header class={cx(HEADER, 'gap-5 max-md:grid max-md:grid-cols-[auto_minmax(0,1fr)_auto] max-md:gap-x-3 max-md:gap-y-2 max-sm:gap-x-2')}>
             <Brand />
             <ScopeControl />
             <ViewTabs />
-            <div class="ml-auto flex items-center gap-2.5 max-md:ml-0 max-md:w-full">
+            <div class="ml-auto flex items-center gap-2.5 max-sm:gap-1.5">
                 <button
                     type="button"
                     aria-pressed={store.paused()}
@@ -87,7 +87,15 @@ export function TopBar() {
                     </span>
                     <kbd class="max-lg:hidden">Space</kbd>
                 </button>
-                <TextButton aria-label="Search (Ctrl K)" onClick={() => app.openPalette()} class="text-muted">
+                <TextButton
+                    aria-label="Search (Ctrl K)"
+                    onClick={() => app.openPalette()}
+                    class="text-muted max-md:size-[30px] max-md:justify-center max-md:p-0"
+                >
+                    <svg aria-hidden="true" viewBox="0 0 14 14" class="size-3.5 fill-none stroke-current stroke-[1.6] md:hidden" stroke-linecap="round">
+                        <circle cx="6" cy="6" r="4.25" />
+                        <path d="m9.25 9.25 3.25 3.25" />
+                    </svg>
                     <span class="max-md:hidden">Jump to…</span>
                     <kbd class="max-lg:hidden">Ctrl K</kbd>
                 </TextButton>
