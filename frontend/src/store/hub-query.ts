@@ -2,6 +2,7 @@ import { batch, createEffect, createMemo, createSignal, on, onCleanup, untrack, 
 import { askHub, requestKey, withParams, type HubRequest } from '../lib/api';
 import { withFirstPage } from '../lib/paging';
 import { shareUnchanged } from '../lib/sharing';
+import type { MonitorState } from '../lib/state';
 import type { MonitorStore } from './monitor-store';
 
 interface Answer {
@@ -29,14 +30,14 @@ function createAsked(store: MonitorStore, request: Accessor<HubRequest | null>) 
     );
 }
 
-// Runs again whenever the view's sequence moves while the page is visible: a hidden page asks nothing, and asks once it shows again, if the
-// sequence moved meanwhile. While paused, the sequence stays.
-function onEveryEpoch(store: MonitorStore, again: () => void) {
-    let seen = untrack(() => store.view().sequence);
-    const sequence = createMemo(() => (store.visible() ? store.view().sequence : null));
+// Runs again whenever what the view marks moves while the page is visible: a hidden page asks nothing, and asks once it shows again, if the
+// mark moved meanwhile. While paused, the view stays.
+function onEveryMove(store: MonitorStore, mark: (view: MonitorState) => string | number, again: () => void) {
+    let seen = untrack(() => mark(store.view()));
+    const current = createMemo(() => (store.visible() ? mark(store.view()) : null));
     createEffect(
         on(
-            sequence,
+            current,
             current => {
                 if (current === null || current === seen) return;
                 seen = current;
@@ -47,7 +48,12 @@ function onEveryEpoch(store: MonitorStore, again: () => void) {
     );
 }
 
-// What the hub answers to the request, asked again whenever the view's sequence moves: while paused, the answer stays. An answer the hub names
+// The retained invocations change as the sequence moves; the figures and the seconds of an answer also as its end moves, every frame, even
+// while nothing arrives: a quiet application's last activity leaves its window.
+const retainedMark = (view: MonitorState) => view.sequence;
+const figuresMark = (view: MonitorState) => `${view.sequence}|${view.end}`;
+
+// What the hub answers to the request, asked again with every frame: while paused, the answer stays. An answer the hub names
 // with an ETag stays the same object until its content changes. A request that changes clears the answer, or keeps the previous one until the
 // next arrives when kept; null asks nothing. One request runs at a time, and the latest wish follows it.
 export function createHubQuery<T extends Answer>(store: MonitorStore, request: Accessor<HubRequest | null>, options: { kept?: boolean } = {}) {
@@ -112,7 +118,7 @@ export function createHubQuery<T extends Answer>(store: MonitorStore, request: A
             },
         ),
     );
-    onEveryEpoch(store, () => void ask());
+    onEveryMove(store, figuresMark, () => void ask());
     onCleanup(() => running?.abort());
 
     return {
@@ -227,7 +233,7 @@ export function createPagedList<T extends Answer, Item>(
             },
         ),
     );
-    onEveryEpoch(store, () => void load('top'));
+    onEveryMove(store, retainedMark, () => void load('top'));
     onCleanup(() => running?.abort());
 
     return {
