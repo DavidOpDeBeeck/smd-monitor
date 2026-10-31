@@ -62,16 +62,18 @@ function Tiles() {
                 <TileValue>
                     <Tweened value={summary().enteredPerSecond} format={value => `${perSecond(value)}/s`} />
                 </TileValue>
-                <Sparkline
-                    values={totals().enteredPerSecond}
-                    endsAt={end()}
-                    provisionalFrom={app.scoped().provisionalFrom}
-                    width={240}
-                    height={28}
-                    class="mt-2 block h-7 w-full"
-                    lineClass="stroke-muted stroke-[1.25]"
-                    areaClass="fill-muted/12"
-                />
+                <div class="mt-auto pt-2">
+                    <Sparkline
+                        values={totals().enteredPerSecond}
+                        endsAt={end()}
+                        provisionalFrom={app.scoped().provisionalFrom}
+                        width={240}
+                        height={28}
+                        class="block h-7 w-full"
+                        lineClass="stroke-muted stroke-[1.25]"
+                        areaClass="fill-muted/12"
+                    />
+                </div>
             </Tile>
             <Tile
                 label="Failure rate"
@@ -83,16 +85,18 @@ function Tiles() {
                 <TileDetail>
                     <Tweened value={summary().failed} format={wholeCount} /> failed
                 </TileDetail>
-                <Sparkline
-                    values={failedSpark()}
-                    endsAt={end()}
-                    provisionalFrom={app.scoped().provisionalFrom}
-                    width={240}
-                    height={28}
-                    class="mt-2 block h-7 w-full"
-                    lineClass="stroke-failed stroke-[1.25]"
-                    areaClass="fill-failed/12"
-                />
+                <div class="mt-auto pt-2">
+                    <Sparkline
+                        values={failedSpark()}
+                        endsAt={end()}
+                        provisionalFrom={app.scoped().provisionalFrom}
+                        width={240}
+                        height={28}
+                        class="block h-7 w-full"
+                        lineClass="stroke-failed stroke-[1.25]"
+                        areaClass="fill-failed/12"
+                    />
+                </div>
             </Tile>
             <Tile
                 label="p95 latency"
