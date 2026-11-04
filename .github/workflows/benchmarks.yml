@@ -68,6 +68,8 @@ jobs:
           for kind in $kinds; do
             case $kind in
               saturation) shots+=("change=view=change" "overview=view=overview") ;;
+              # Whether open UIs stay live, and what they cost the hub and the viewers' machine; the link opens every panel.
+              viewers) shots+=("viewers=view=viewers&panels=freshWorst,frameLagP99Ms,processCores,viewerCores") ;;
               *) shots+=("$kind=view=$kind") ;;
             esac
           done

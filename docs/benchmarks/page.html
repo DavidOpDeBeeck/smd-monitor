@@ -133,7 +133,7 @@
   .fact { display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border-radius: 6px; font-size: 12.5px; color: var(--muted); line-height: 1.35; }
   .fact[data-key]:hover { background: var(--panel); color: var(--fg); }
   .fact b { color: var(--fg); font-weight: 600; white-space: nowrap; }
-  .fact .dot { width: 9px; height: 9px; }
+  .point-icon { width: 11px; height: 11px; display: inline-block; flex: none; overflow: visible; vertical-align: -1px; }
   .stage-chart.fit { flex: 0 1 auto; }
   .stage-chart { flex: 1 1 auto; min-height: 0; overflow: auto; position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
   .stage-table { flex: 1 1 auto; min-height: 0; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
@@ -186,7 +186,7 @@
     padding: 8px 12px; font-size: 12.5px; white-space: nowrap; z-index: 6; display: grid; gap: 3px; }
   .tip-head { color: var(--muted); font-weight: 600; margin-bottom: 2px; }
   .tip-row { display: grid; grid-template-columns: 14px auto 1fr; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; }
-  .tip-row .swatch { grid-column: 1; }
+  .tip-row .point-icon { grid-column: 1; }
   .tip-row b { font-weight: 600; grid-column: 2; }
   .tip-row span { grid-column: 3; color: var(--muted); }
   /* Controls: a button, a select, and a segmented choice share one height, border, and radius, so any strip of them lines up. */
@@ -397,6 +397,11 @@
   const DEFAULT_RUNS = 2;
   // Each run keeps one of these colors; past eight, the picker refuses more runs at once rather than reuse a color.
   const SERIES = ['--series-1', '--series-2', '--series-3', '--series-4', '--series-5', '--series-6', '--series-7', '--series-8'];
+  // Each color comes with its own shape for the points, so lines that overlap or whose colors read alike, such as the second and the fourth, stay
+  // apart; a mark finds its shape from its color, and any other color is a circle.
+  const SHAPES = ['circle', 'square', 'triangle', 'diamond', 'triangle-down', 'cross', 'star', 'hexagon'];
+  const SHAPE_OF = new Map(SERIES.map((name, index) => [`var(${name})`, SHAPES[index]]));
+  const shapeOf = (color) => SHAPE_OF.get(color) || 'circle';
   const MAX_PICKED = SERIES.length;
   const VERDICTS = {
     KEEPS_UP: { label: 'Keeps up', short: 'Keeps up', tone: 'ok' },
@@ -619,6 +624,9 @@
   const viewerCaps = [...new Set(viewerRows.filter((row) => row.viewers > 0).map((row) => row.cap))].sort((a, b) => a - b);
   const viewerPicks = [...[...viewerRuns].reverse().map((run) => [`run-${run.slug}`, `${run.name}: every query cap`]),
     ...viewerCaps.map((cap) => [`cap-${cap}`, `Query cap ${cap}: every viewer run picked`])];
+  // The page opens comparing the newest two viewer runs at a query cap both measured, like every other view; on the newest run's caps otherwise.
+  const comparedCap = viewerRuns.length < 2 ? undefined
+    : viewerCaps.find((cap) => viewerRuns.slice(-2).every((run) => run.rows.some((row) => row.viewers > 0 && row.cap === cap)));
 
   // The frontiers of span rate and open UIs (SaturationCapacity): for each number of viewers the highest rate at which the hub kept up and, with
   // viewers, their UIs stayed usable; a point without a rate is the first number of viewers that no rate served.
@@ -665,7 +673,7 @@
     seconds: { allowed: Object.keys(SECONDS), fallback: 'processed' },
     clients: { allowed: Object.keys(CLIENTS), fallback: 'fast' },
     scenario: { allowed: scenarios.map((scenario) => scenario.scenario), fallback: 'reference' },
-    vpick: { allowed: viewerPicks.map(([key]) => key), fallback: viewerPicks.length ? viewerPicks[0][0] : '' },
+    vpick: { allowed: viewerPicks.map(([key]) => key), fallback: comparedCap !== undefined ? `cap-${comparedCap}` : viewerPicks.length ? viewerPicks[0][0] : '' },
   };
   const query = new URLSearchParams(location.search);
   // The verdict ladder became the strips under the rate-by-rate chart; a link to it opens that chart.
@@ -674,6 +682,8 @@
   state.runs = (query.get('runs') || '').split(',').filter(Boolean);
   state.run = query.get('run') || null;
   state.step = Number(query.get('step')) || null;
+  // The panels the open UIs' view shows, such as panels=freshWorst,processCores for a figure of a few; every panel without.
+  state.panels = (query.get('panels') || '').split(',').filter((key) => VIEWER_MEASURES.some((measure) => measure.key === key));
   const figure = query.get('figure') === '1';
   document.documentElement.classList.toggle('figure', figure);
   let allRunsShown = false;
@@ -684,6 +694,7 @@
     if (state.runs.length) next.set('runs', state.runs.join(','));
     if (state.run) next.set('run', state.run);
     if (state.step) next.set('step', state.step);
+    if (state.panels.length) next.set('panels', state.panels.join(','));
     if (figure) next.set('figure', '1');
     try {
       history.replaceState(null, '', `${location.pathname}${next.size ? `?${next}` : ''}`);
@@ -802,7 +813,37 @@
     const box = svg.getBoundingClientRect();
     return [((event.clientX - box.left) * width) / box.width, ((event.clientY - box.top) * height) / box.height];
   };
-  const dot = (svg, cx, cy, color, r = 4, key) => el(svg, 'circle', { cx, cy, r, fill: color, stroke: 'var(--panel)', 'stroke-width': 2, 'data-key': key });
+  // The outline of a point of a shape around cx, cy, as much area as a circle of radius r, so no shape looks heavier than another.
+  const polygon = (cx, cy, corners) => `M${corners.map(([x, y]) => `${(cx + x).toFixed(2)},${(cy + y).toFixed(2)}`).join('L')}Z`;
+  const around = (count, radius, turn = 0) => Array.from({ length: count }, (_, index) => {
+    const angle = turn + (index * 2 * Math.PI) / count;
+    return [radius(index) * Math.sin(angle), -radius(index) * Math.cos(angle)];
+  });
+  const shapePath = (shape, cx, cy, r) => {
+    switch (shape) {
+      case 'square': { const h = 0.886 * r; return polygon(cx, cy, [[-h, -h], [h, -h], [h, h], [-h, h]]); }
+      case 'diamond': return polygon(cx, cy, around(4, () => 1.253 * r));
+      case 'triangle': return polygon(cx, cy, around(3, () => 1.555 * r));
+      case 'triangle-down': return polygon(cx, cy, around(3, () => 1.555 * r, Math.PI));
+      case 'cross': { const [e, t] = [1.061 * r, 0.477 * r];
+        return polygon(cx, cy, [[-t, -e], [t, -e], [t, -t], [e, -t], [e, t], [t, t], [t, e], [-t, e], [-t, t], [-e, t], [-e, -t], [-t, -t]]); }
+      case 'star': return polygon(cx, cy, around(10, (index) => (index % 2 ? 0.731 : 1.462) * r));
+      case 'hexagon': return polygon(cx, cy, around(6, () => 1.1 * r));
+      default: return `M${(cx - r).toFixed(2)},${cy.toFixed(2)}a${r},${r} 0 1,0 ${2 * r},0a${r},${r} 0 1,0 ${-2 * r},0Z`;
+    }
+  };
+  // A point in the shape of its series' color; filled with a ring of the panel, or hollow in that color.
+  const seriesMark = (svg, cx, cy, color, r, key, hollow = false) => el(svg, 'path', { d: shapePath(shapeOf(color), cx, cy, r),
+    fill: hollow ? 'var(--panel)' : color, stroke: hollow ? color : 'var(--panel)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'data-key': key });
+  const dot = (svg, cx, cy, color, r = 4, key) => seriesMark(svg, cx, cy, color, r, key);
+  // A series' point beside its name in a fact, a table, or a tooltip.
+  const pointIcon = (color) => {
+    const icon = document.createElementNS(SVG, 'svg');
+    icon.setAttribute('class', 'point-icon');
+    icon.setAttribute('viewBox', '-6 -6 12 12');
+    el(icon, 'path', { d: shapePath(shapeOf(color), 0, 0, 4.2), fill: color });
+    return icon;
+  };
   const axisTitle = (svg, x, y, text) => el(svg, 'text', { class: 'title', x, y, 'text-anchor': 'end' }, text);
 
   // Tooltips, legends, facts, and tables.
@@ -819,12 +860,7 @@
     for (const row of rows) {
       const line = document.createElement('div');
       line.className = 'tip-row';
-      if (row.color) {
-        const swatch = document.createElement('i');
-        swatch.className = 'swatch';
-        swatch.style.background = row.color;
-        line.append(swatch);
-      }
+      if (row.color) line.append(pointIcon(row.color));
       line.append(Object.assign(document.createElement('b'), { textContent: row.value }), Object.assign(document.createElement('span'), { textContent: row.name }));
       tip.append(line);
     }
@@ -857,10 +893,7 @@
       const fact = document.createElement('span');
       fact.className = 'fact';
       if (item.title) fact.title = item.title;
-      const mark = document.createElement('i');
-      mark.className = 'dot';
-      mark.style.background = item.color;
-      fact.append(mark, Object.assign(document.createElement('b'), { textContent: item.name }), document.createTextNode(item.text));
+      fact.append(pointIcon(item.color), Object.assign(document.createElement('b'), { textContent: item.name }), document.createTextNode(item.text));
       if (present(item.key)) {
         fact.dataset.key = item.key;
         fact.addEventListener('mouseenter', () => {
@@ -874,6 +907,10 @@
   };
   const emptyLine = (element, text) => element.replaceChildren(Object.assign(document.createElement('div'), { className: 'empty-line', textContent: text }));
   const dotIn = (cell, tone, color) => {
+    if (color && !tone) {
+      cell.prepend(pointIcon(color), ' ');
+      return;
+    }
     const mark = document.createElement('i');
     mark.className = tone ? `dot tone-${tone}` : 'dot';
     if (color) mark.style.background = color;
@@ -1085,7 +1122,7 @@
     const TONES = { ok: ['var(--ok)', 0.3], warn: ['var(--warn)', 0.85], bad: ['var(--bad)', 0.85], muted: ['var(--reference)', 0.5] };
     series.forEach((each, index) => {
       const top = height - margin.bottom + stripsTop + index * (stripHeight + stripGap);
-      el(svg, 'circle', { cx: margin.left - 9, cy: top + stripHeight / 2, r: 4, fill: each.color, 'data-key': each.key });
+      el(svg, 'path', { d: shapePath(shapeOf(each.color), margin.left - 9, top + stripHeight / 2, 4), fill: each.color, 'data-key': each.key });
       for (const point of each.values) {
         const [from, to] = edges[xs.indexOf(point.x)];
         const [fill, opacity] = TONES[verdict(point.raw.verdict).tone];
@@ -1833,8 +1870,7 @@
         'stroke-linejoin': 'round', 'data-key': each.key });
       for (const point of mine) {
         const kept = point.row.verdict === 'KEEPS_UP';
-        const mark = el(svg, 'circle', { cx: at(point), cy: y(Math.min(point.y, yMax)), r: kept ? 4.5 : 4, fill: kept ? each.color : 'var(--panel)',
-          stroke: kept ? 'var(--panel)' : each.color, 'stroke-width': 2, 'data-key': each.key });
+        const mark = seriesMark(svg, at(point), y(Math.min(point.y, yMax)), each.color, kept ? 4.5 : 4, each.key, !kept);
         el(mark, 'title', {}, `${each.name}, ${count(point.x)} viewers: ${measure.format(point.y)}; ingest ${verdict(point.row.verdict).label.toLowerCase()}`);
       }
     });
@@ -1868,8 +1904,7 @@
         'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'data-key': run.run });
       for (const row of run.rows) {
         const usable = present(row.rate);
-        const mark = el(svg, 'circle', { cx: x(at(row.viewers)), cy: yOf(row), r: usable ? 4.5 : 4, fill: usable ? run.color : 'var(--panel)',
-          stroke: usable ? 'var(--panel)' : run.color, 'stroke-width': 2, 'data-key': run.run });
+        const mark = seriesMark(svg, x(at(row.viewers)), yOf(row), run.color, usable ? 4.5 : 4, run.run, !usable);
         el(mark, 'title', {}, `${run.name}, ${row.viewers ? `${count(row.viewers)} UIs` : 'no UIs'}: `
           + `${usable ? `up to ${count(row.rate)} spans/s` : 'no rate usable'}; stopped at ${row.stoppedBy}`);
       }
@@ -1926,8 +1961,9 @@
     }));
     legend(stage.legend, [{ name: 'Filled: ingest keeps up', color: 'var(--muted)' }, { name: 'Hollow: ingest falls behind or sheds', block: 'key-hollow' }]);
     stage.chart.replaceChildren();
+    const shown = state.panels.length ? VIEWER_MEASURES.filter((measure) => state.panels.includes(measure.key)) : VIEWER_MEASURES;
     const groups = Object.assign(document.createElement('div'), { className: 'viewer-groups' });
-    for (const [group, measures] of groupsInOrder(VIEWER_MEASURES, (measure) => measure.group)) {
+    for (const [group, measures] of groupsInOrder(shown, (measure) => measure.group)) {
       const box = document.createElement('section');
       box.append(Object.assign(document.createElement('h3'), { className: 'viewer-group-title', textContent: group }));
       const grid = Object.assign(document.createElement('div'), { className: 'viewer-grid' });
@@ -1942,7 +1978,7 @@
       }
     }
     stage.chart.append(groups);
-    for (const measure of VIEWER_MEASURES) {
+    for (const measure of shown) {
       if (series.some((each) => each.rows.some((row) => present(row[measure.key])))) viewerChart(measure.panel, measure, series);
       else measure.panel.closest('.viewer-panel').hidden = true;
     }
