@@ -16,8 +16,9 @@ import static java.util.Objects.requireNonNull;
 // a client first needs it, and shared by every client. The publisher and the threads of connecting clients read it at once.
 public final class PublishedFrame {
 
-    // The frames before it a client may have received and still receive the changes since: a client that skipped up to three frames.
-    static final int BASES = 4;
+    // The frames before it a client may have received and still receive the changes since: only the one just before, so a client that skipped a
+    // frame receives the snapshot.
+    static final int BASES = 1;
 
     private final Frame frame;
     // The frames published before it, newest first, at most BASES.

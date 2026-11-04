@@ -19,10 +19,9 @@ import static java.util.Objects.requireNonNull;
 // messages are written at most once per epoch and shared. Every client receives the statistics of the whole system; the page applies its scope.
 public final class FramePublisher implements AutoCloseable {
 
-    // The frame interval (W1): an epoch, a second, for up to 16 clients, and one more for each 16 more, at most 5. Each client re-sends its
-    // queries after every frame, so the interval spaces out the frames and the queries alike. Past 15 seconds the page would take the hub for gone.
+    // The frame interval (W1): an epoch, a second, however many clients. Each client re-sends its queries after every frame.
     static final int CLIENTS_PER_EPOCH = 16;
-    static final int MAX_INTERVAL = 5;
+    static final int MAX_INTERVAL = 1;
     private static final Logger LOGGER = LoggerFactory.getLogger(FramePublisher.class);
     // Before a client received a frame.
     private static final long NONE = -1;
