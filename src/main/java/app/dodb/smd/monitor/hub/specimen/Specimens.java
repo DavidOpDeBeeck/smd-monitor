@@ -495,7 +495,7 @@ public final class Specimens {
         if (!chunk.shared) {
             return chunk;
         }
-        var copy = chunk.copy();
+        var copy = chunk.copy(index == chunks.size() - 1);
         chunks.set(index, copy);
         return copy;
     }

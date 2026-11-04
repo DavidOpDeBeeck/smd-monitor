@@ -40,7 +40,11 @@ final class SpecimenChunk {
         this.latestCompletedNanos = latestCompletedNanos;
     }
 
-    SpecimenChunk copy() {
+    // Only the newest chunk still takes specimens; the IDs, applications, and failed bits of any other never change, so its copy shares them.
+    SpecimenChunk copy(boolean newest) {
+        if (!newest) {
+            return new SpecimenChunk(ids, Arrays.copyOf(specimens, SIZE), Arrays.copyOf(traces, SIZE), applications, failed, size, live, latestCompletedNanos);
+        }
         return new SpecimenChunk(Arrays.copyOf(ids, SIZE), Arrays.copyOf(specimens, SIZE), Arrays.copyOf(traces, SIZE), Arrays.copyOf(applications, SIZE),
             failed.clone(), size, live, latestCompletedNanos);
     }

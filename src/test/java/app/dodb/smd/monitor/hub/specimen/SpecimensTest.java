@@ -85,6 +85,30 @@ class SpecimensTest {
     }
 
     @Test
+    void tick_specimenOfAnOlderChunkDroppedAfterAnEpoch_leavesThePublishedViewAsItWas() {
+        var oldest = retain(OPEN, NOW.minusSeconds(120), Duration.ofMillis(1));
+        var failed = retain(BILLING, ASSIGN, NOW, Duration.ofMillis(1), Optional.empty(), STORM);
+        for (var index = 0; index < SpecimenChunk.SIZE - 1; index++) {
+            retain(OPEN, NOW, Duration.ofMillis(1));
+        }
+        var before = tick();
+
+        specimens.fit(singleTraces(SpecimenChunk.SIZE));
+
+        var after = tick();
+        assertThat(before.specimen(oldest.id().value())).isPresent();
+        assertThat(after.specimen(oldest.id().value())).isEmpty();
+        for (var view : List.of(before, after)) {
+            var failures = new ArrayList<Long>();
+            view.forEachFailed(specimen -> failures.add(specimen.id()));
+            var billing = new ArrayList<Long>();
+            view.forEach(Optional.of(BILLING), specimen -> billing.add(specimen.id()));
+            assertThat(failures).containsExactly(failed.id().value());
+            assertThat(billing).containsExactly(failed.id().value());
+        }
+    }
+
+    @Test
     void parentFound_parentRetained_mergesTheTracesUnderTheParentsRoot() {
         var parent = retain(OPEN, NOW, Duration.ofMillis(5));
         var child = retain(TICKETS, ASSIGN, NOW, Duration.ofMillis(1), Optional.of(parent.span()), null);
