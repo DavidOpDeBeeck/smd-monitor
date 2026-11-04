@@ -318,6 +318,34 @@ class MonitorHubQueriesTest {
     }
 
     @Test
+    void failures_askedOfOneEpochAgainForOtherCauses_answersEachAsAskedFirst() {
+        var open = failed(tickets.dispatch(OPEN), 2);
+        tickets.reportTo(hub, open, failed(tickets.dispatch(ASSIGN, open), 1), failed(tickets.dispatch(OPENED), 1));
+        var epoch = hub.epoch();
+        var assignFirst = hub.epoch().failures(List.of(step(ASSIGN)));
+
+        var opened = epoch.failures(List.of(step(OPENED)));
+        var assign = epoch.failures(List.of(step(ASSIGN), step(OPEN)));
+
+        assertThat(opened.causes()).extracting(FailureCause::cause, FailureCause::retained).containsExactly(tuple(step(OPENED), 1));
+        assertThat(assign.causes()).extracting(FailureCause::cause, FailureCause::retained).containsExactly(tuple(step(ASSIGN), 1), tuple(step(OPEN), 1));
+        assertThat(assign.causes().getFirst()).isEqualTo(assignFirst.causes().getFirst());
+    }
+
+    @Test
+    void failures_ofALaterEpoch_countsTheFailuresRetainedSinceWhileTheEarlierAnswersAsBefore() {
+        tickets.reportTo(hub, failed(tickets.dispatch(OPEN), 1));
+        var earlier = hub.epoch();
+        earlier.failures(List.of(step(OPEN)));
+        tickets.reportTo(hub, failed(tickets.dispatch(OPEN), 1));
+
+        var later = hub.epoch().failures(List.of(step(OPEN)));
+
+        assertThat(later.causes()).singleElement().satisfies(cause -> assertThat(cause.retained()).isEqualTo(2));
+        assertThat(earlier.failures(List.of(step(OPEN))).causes()).singleElement().satisfies(cause -> assertThat(cause.retained()).isEqualTo(1));
+    }
+
+    @Test
     void failures_moreCausesThanTheLimit_rejectsWithContext() {
         var causes = Collections.nCopies(Epoch.MAX_CAUSES + 1, step(OPEN));
 

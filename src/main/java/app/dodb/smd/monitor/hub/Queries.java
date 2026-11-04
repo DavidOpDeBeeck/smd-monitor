@@ -1,7 +1,6 @@
 package app.dodb.smd.monitor.hub;
 
 import app.dodb.smd.monitor.hub.span.ApplicationName;
-import app.dodb.smd.monitor.hub.span.Stage;
 import app.dodb.smd.monitor.hub.specimen.Specimen;
 import app.dodb.smd.monitor.hub.specimen.SpecimenView;
 import app.dodb.smd.monitor.hub.specimen.TraceSnapshot;
@@ -13,13 +12,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.Set;
@@ -33,6 +29,7 @@ final class Queries {
 
     private final long sequence;
     private final SpecimenView view;
+    private volatile FailureChains failureChains;
 
     Queries(long sequence, SpecimenView view) {
         this.sequence = sequence;
@@ -140,58 +137,26 @@ final class Queries {
         }));
     }
 
-    // The retained occurrences of the asked failure causes, in the order asked (F1). A failed parent most likely propagated the failure of its
-    // failed child that completed last (FailureChains), so an occurrence's chain runs from the entry point its failure reached, through the
-    // parents it propagated to, down to the invocation that raised it, which no failed retained child failed.
+    // The retained occurrences of the asked failure causes, in the order asked (F1).
     Failures failures(List<FailureCause.Step> asked) {
-        var failed = new ArrayList<Specimen>();
-        view.forEachFailed(failed::add);
-        // In ascending sequence, as the view walks them, so a failed parent is found among them by its ID.
-        var failedIds = failed.stream().mapToLong(Specimen::id).toArray();
-        // The failed child whose failure each failed parent most likely propagated: the one that completed last.
-        var propagatedFrom = new Specimen[failed.size()];
-        for (var specimen : failed) {
-            var parent = failedParentOf(specimen, failedIds);
-            if (parent >= 0 && (propagatedFrom[parent] == null || specimen.completedAtNanos() > propagatedFrom[parent].completedAtNanos())) {
-                propagatedFrom[parent] = specimen;
+        var chains = failureChains();
+        return new Failures(sequence, asked.stream().distinct().map(chains::cause).toList());
+    }
+
+    // The first failures query of the epoch walks its failed specimens, and every other reads what it found: each would otherwise walk every
+    // failed specimen of the hub. The specimens never change, so neither does what it found; it lives as long as the epoch.
+    private FailureChains failureChains() {
+        var chains = failureChains;
+        if (chains == null) {
+            synchronized (this) {
+                chains = failureChains;
+                if (chains == null) {
+                    chains = FailureChains.of(view);
+                    failureChains = chains;
+                }
             }
         }
-        var steps = new Steps();
-        var causes = asked.stream().distinct().map(step -> steps.ask(step).cause).toList();
-        // In ascending sequence, the walk below meets every occurrence oldest first; the chains end at their raising invocation.
-        var below = new ArrayList<Steps.Found>();
-        var above = new ArrayList<Steps.Found>();
-        for (var index = 0; index < failed.size(); index++) {
-            var specimen = failed.get(index);
-            var found = steps.of(specimen);
-            if (found.cause == null) {
-                continue;
-            }
-            below.clear();
-            var raising = propagatedFrom[index];
-            while (raising != null && below.size() <= failed.size()) {
-                below.add(steps.of(raising));
-                raising = propagatedFrom[Arrays.binarySearch(failedIds, raising.id())];
-            }
-            above.clear();
-            var current = specimen;
-            var parent = failedParentOf(specimen, failedIds);
-            while (parent >= 0 && propagatedFrom[parent] == current && above.size() <= failed.size()) {
-                current = failed.get(parent);
-                above.add(steps.of(current));
-                parent = failedParentOf(current, failedIds);
-            }
-            var chain = new Steps.Found[above.size() + 1 + below.size()];
-            for (var step = 0; step < above.size(); step++) {
-                chain[step] = above.get(above.size() - 1 - step);
-            }
-            chain[above.size()] = found;
-            for (var step = 0; step < below.size(); step++) {
-                chain[above.size() + 1 + step] = below.get(step);
-            }
-            found.cause.occurred(specimen, new ChainKey(chain));
-        }
-        return new Failures(sequence, causes.stream().map(CauseBuilder::build).toList());
+        return chains;
     }
 
     TimelineWindow timeline(TimelineQuery query, Instant now) {
@@ -283,16 +248,6 @@ final class Queries {
         return new RetainedInvocation(specimen.invocation(), specimen.parent(), parentOf(specimen).isPresent());
     }
 
-    // The index of the specimen's parent among the failed, or -1 when its parent did not fail or is not retained.
-    private static int failedParentOf(Specimen specimen, long[] failedIds) {
-        var parent = specimen.parent();
-        if (parent.isEmpty()) {
-            return -1;
-        }
-        var index = Arrays.binarySearch(failedIds, parent.get().parent().value());
-        return index < 0 ? -1 : index;
-    }
-
     private Optional<Specimen> parentOf(Specimen specimen) {
         return specimen.parent().flatMap(parent -> view.specimen(parent.parent().value()));
     }
@@ -372,109 +327,6 @@ final class Queries {
         @Override
         public int compareTo(Candidate other) {
             return below(value, root, other.value, other.root) ? -1 : below(other.value, other.root, value, root) ? 1 : 0;
-        }
-    }
-
-    // One instance of each step a failures query finds, looked up by the stage and failure type its specimens share, so a chain compares its steps by
-    // identity. A query owns its steps.
-    private static final class Steps {
-
-        private final Map<Stage, Map<String, Found>> byStage = new IdentityHashMap<>();
-        private final Map<FailureCause.Step, Found> distinct = new HashMap<>();
-
-        // The step of an asked cause, which collects its occurrences.
-        private Found ask(FailureCause.Step step) {
-            var found = distinct.computeIfAbsent(step, Found::new);
-            found.cause = new CauseBuilder(step);
-            return found;
-        }
-
-        private Found of(Specimen failed) {
-            var failureType = failed.failureType().orElseThrow();
-            return byStage.computeIfAbsent(failed.stage(), ignored -> new IdentityHashMap<>())
-                .computeIfAbsent(failureType, ignored -> distinct.computeIfAbsent(new FailureCause.Step(failed.application(), failed.stage(), failureType),
-                    Found::new));
-        }
-
-        private static final class Found {
-
-            private final FailureCause.Step step;
-            private CauseBuilder cause;
-
-            private Found(FailureCause.Step step) {
-                this.step = step;
-            }
-        }
-    }
-
-    // The steps of a chain, from the entry point to the invocation that raised; equal when they hold the same steps.
-    private static final class ChainKey {
-
-        private final Steps.Found[] steps;
-        private final int hash;
-
-        private ChainKey(Steps.Found[] steps) {
-            this.steps = steps;
-            var hash = 1;
-            for (var step : steps) {
-                hash = 31 * hash + System.identityHashCode(step);
-            }
-            this.hash = hash;
-        }
-
-        private List<FailureCause.Step> steps() {
-            return Arrays.stream(steps).map(found -> found.step).toList();
-        }
-
-        @Override
-        public boolean equals(Object other) {
-            if (!(other instanceof ChainKey key) || key.hash != hash || key.steps.length != steps.length) {
-                return false;
-            }
-            for (var index = 0; index < steps.length; index++) {
-                if (key.steps[index] != steps[index]) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        @Override
-        public int hashCode() {
-            return hash;
-        }
-    }
-
-    private static final class CauseBuilder {
-
-        private final FailureCause.Step cause;
-        // The latest occurrences, oldest first.
-        private final ArrayDeque<Specimen> latest = new ArrayDeque<>();
-        // In the order they first occurred.
-        private final Map<ChainKey, Integer> chains = new LinkedHashMap<>();
-        private int retained;
-
-        private CauseBuilder(FailureCause.Step cause) {
-            this.cause = cause;
-        }
-
-        // In ascending sequence.
-        private void occurred(Specimen specimen, ChainKey chain) {
-            retained++;
-            latest.addLast(specimen);
-            if (latest.size() > FailureCause.LATEST) {
-                latest.pollFirst();
-            }
-            chains.merge(chain, 1, Integer::sum);
-        }
-
-        private FailureCause build() {
-            var sorted = chains.entrySet().stream()
-                .sorted(comparingByValue(Collections.reverseOrder()))
-                .limit(FailureCause.CHAINS)
-                .map(entry -> new FailureCause.Chain(entry.getKey().steps(), entry.getValue()))
-                .toList();
-            return new FailureCause(cause, retained, latest.reversed().stream().map(Specimen::invocation).toList(), sorted);
         }
     }
 }
