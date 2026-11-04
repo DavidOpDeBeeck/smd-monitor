@@ -133,7 +133,7 @@
   .fact { display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border-radius: 6px; font-size: 12.5px; color: var(--muted); line-height: 1.35; }
   .fact[data-key]:hover { background: var(--panel); color: var(--fg); }
   .fact b { color: var(--fg); font-weight: 600; white-space: nowrap; }
-  .fact .dot { width: 9px; height: 9px; }
+  .point-icon { width: 11px; height: 11px; display: inline-block; flex: none; overflow: visible; vertical-align: -1px; }
   .stage-chart.fit { flex: 0 1 auto; }
   .stage-chart { flex: 1 1 auto; min-height: 0; overflow: auto; position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
   .stage-table { flex: 1 1 auto; min-height: 0; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
@@ -166,10 +166,10 @@
   /* The viewer ladder: a panel per measure, in two groups. */
   .viewer-groups { display: grid; gap: 18px; }
   .viewer-group-title { font-size: 13px; font-weight: 600; color: var(--fg); margin: 0 0 8px; }
-  .viewer-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+  .viewer-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
   .viewer-panel { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px 4px; min-width: 0; position: relative; }
   .viewer-panel h4 { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--fg); }
-  .viewer-panel p { margin: 2px 0 4px; font-size: 11.5px; color: var(--muted); line-height: 1.35; min-height: 31px; }
+  .viewer-panel p { margin: 2px 0 4px; font-size: 11.5px; color: var(--muted); line-height: 1.35; }
   /* Small multiples: one panel per run, sharing their scales. */
   .multiples { display: grid; gap: 14px; }
   .multiple { display: grid; gap: 2px; min-width: 0; }
@@ -186,7 +186,7 @@
     padding: 8px 12px; font-size: 12.5px; white-space: nowrap; z-index: 6; display: grid; gap: 3px; }
   .tip-head { color: var(--muted); font-weight: 600; margin-bottom: 2px; }
   .tip-row { display: grid; grid-template-columns: 14px auto 1fr; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; }
-  .tip-row .swatch { grid-column: 1; }
+  .tip-row .point-icon { grid-column: 1; }
   .tip-row b { font-weight: 600; grid-column: 2; }
   .tip-row span { grid-column: 3; color: var(--muted); }
   /* Controls: a button, a select, and a segmented choice share one height, border, and radius, so any strip of them lines up. */
@@ -356,13 +356,12 @@
         </div>
         <div class="card">
           <h3>The runs</h3>
-          <p class="note">One run per change and kind, as docs/benchmarks/README.md describes. A saturation run climbs one ladder of rates for every scenario it ran,
-            so its limits compare with any other run's on one scale. A commit marked with an asterisk ran with uncommitted changes.</p>
+          <p class="note">One run per change and kind. Every saturation run climbs the same rates, so their limits compare. An asterisk marks uncommitted changes.</p>
           <table id="runs-table"><thead></thead><tbody></tbody></table>
         </div>
         <div class="card">
           <h3>The scenarios</h3>
-          <p class="note">The reference shape, four sweeps that each change one thing of it, and the deployment profile the documentation sizes the hub for.</p>
+          <p class="note">The reference, four sweeps that each change one thing, and the deployment profile.</p>
           <table class="setup" id="scenarios-table"><thead></thead><tbody></tbody></table>
         </div>
         <div class="card">
@@ -397,6 +396,11 @@
   const DEFAULT_RUNS = 2;
   // Each run keeps one of these colors; past eight, the picker refuses more runs at once rather than reuse a color.
   const SERIES = ['--series-1', '--series-2', '--series-3', '--series-4', '--series-5', '--series-6', '--series-7', '--series-8'];
+  // Each color comes with its own shape for the points, so lines that overlap or whose colors read alike, such as the second and the fourth, stay
+  // apart; a mark finds its shape from its color, and any other color is a circle.
+  const SHAPES = ['circle', 'square', 'triangle', 'diamond', 'triangle-down', 'cross', 'star', 'hexagon'];
+  const SHAPE_OF = new Map(SERIES.map((name, index) => [`var(${name})`, SHAPES[index]]));
+  const shapeOf = (color) => SHAPE_OF.get(color) || 'circle';
   const MAX_PICKED = SERIES.length;
   const VERDICTS = {
     KEEPS_UP: { label: 'Keeps up', short: 'Keeps up', tone: 'ok' },
@@ -407,18 +411,18 @@
     GENERATOR_BOUND: { label: 'Load generator bound', short: 'Generator', tone: 'muted' },
   };
   const LIMITS = {
-    keepsUp: { label: 'keeps up with, nothing shed', short: 'keeps up with', what: 'the highest rate a run kept up with, nothing shed' },
-    holds: { label: 'holds without refusing', short: 'holds without refusing', what: 'the highest rate a run held without refusing spans, shedding what it had to' },
-    failsAt: { label: 'first fails at', short: 'first fails at', what: 'the first rate a run failed at, falling behind or refusing' },
+    keepsUp: { label: 'keeps up with, nothing shed', short: 'keeps up with', what: 'the highest rate with nothing shed' },
+    holds: { label: 'holds without refusing', short: 'holds without refusing', what: 'the highest rate without refusing spans' },
+    failsAt: { label: 'first fails at', short: 'first fails at', what: 'the first rate that fell behind or refused' },
   };
   const SWEEP_LABELS = { reference: 'Reference', applications: 'Applications', instances: 'Instances per application', types: 'Message types per application',
     budget: 'Memory budget', profile: 'Deployment profiles' };
   const SWEEPS = {
-    applications: { title: 'Applications', field: 'applications', format: (value) => count(value), unit: 'applications', what: 'how the limit falls as services are added' },
+    applications: { title: 'Applications', field: 'applications', format: (value) => count(value), unit: 'applications', what: 'how the limit falls as applications are added' },
     instances: { title: 'Instances per application', field: 'instances', format: (value) => count(value), unit: 'instances each',
-      what: 'whether more replicas of the same services cost anything' },
+      what: 'whether more instances of an application cost more' },
     types: { title: 'Message types', field: 'typesPerApplication', format: (value) => count(value), unit: 'types each',
-      what: 'whether key cardinality matters; a quarter as many processing groups as types' },
+      what: 'whether more message types cost more' },
     budget: { title: 'Memory budget', field: 'memoryMb', format: (value) => (value >= 1024 ? `${value / 1024} GB` : `${value} MB`), unit: '', what: 'what memory buys' },
   };
 
@@ -465,79 +469,79 @@
   const capacityOf = (row) => (row.writerCpu > 0 && row.processed > 0 ? row.processed / row.writerCpu : null);
   // Every measure of a step, as the steps file names it or derived from it, with its unit; a few have a line worth drawing beside the data.
   const MEASURES = {
-    processed: { group: 'Throughput', label: 'Processed per second', format: count, what: 'Spans the hub processed each second of the step, once it settled.' },
-    offered: { group: 'Throughput', label: 'Offered per second', format: count, what: 'Spans the generators offered each second of the step.' },
-    busy: { group: 'Given up', label: 'Refused', format: share, max: 1, what: 'Share of offered spans refused with a full queue.' },
-    shedUnretained: { group: 'Given up', label: 'Not retained', format: share, max: 1, what: 'Share of processed spans counted but not retained.' },
-    shedUnjoined: { group: 'Given up', label: 'Not linked', format: share, max: 1, what: 'Share of processed spans counted but not linked to their trace.' },
-    queueMax: { group: 'Given up', label: 'Queue, most waiting', format: count, what: 'The most spans waiting in the intake queues at once during the step.' },
-    queueEnd: { group: 'Given up', label: 'Queue at the end', format: count, what: 'Spans waiting in the intake queues when the step ended.' },
+    processed: { group: 'Throughput', label: 'Processed per second', format: count, what: 'Spans processed each second.' },
+    offered: { group: 'Throughput', label: 'Offered per second', format: count, what: 'Spans sent each second.' },
+    busy: { group: 'Given up', label: 'Refused', format: share, max: 1, what: 'Spans refused because a queue was full.' },
+    shedUnretained: { group: 'Given up', label: 'Not retained', format: share, max: 1, what: 'Spans counted but not kept.' },
+    shedUnjoined: { group: 'Given up', label: 'Not linked', format: share, max: 1, what: 'Spans counted but not linked to their trace.' },
+    queueMax: { group: 'Given up', label: 'Queue, most waiting', format: count, what: 'Most spans waiting in the queues at once.' },
+    queueEnd: { group: 'Given up', label: 'Queue at the end', format: count, what: 'Spans still waiting when the step ended.' },
     queueSpans: { group: 'Given up', label: 'Queue capacity', format: count, value: (row) => queueSpansOf(row.run, row.scenario),
-      what: 'The most spans the intake queues hold, as the run’s budget sizes them; queues that count their room in bytes hold this many when each batch’s spans share their names.' },
+      what: 'How many spans the queues hold, sized by the memory budget.' },
     writerBusy: { group: 'Writer', label: 'Writer busy', format: share, max: 1, references: [{ y: 0.9, label: 'falls behind above 90%' }],
-      what: 'Share of each second the single writer thread was busy, not waiting for a batch.' },
-    writerBusyMax: { group: 'Writer', label: 'Writer busy, worst second', format: share, max: 1, what: 'The busiest second of the step for the writer thread.' },
+      what: 'Share of each second the writer was busy.' },
+    writerBusyMax: { group: 'Writer', label: 'Writer busy, worst second', format: share, max: 1, what: 'The writer’s busiest second.' },
     writerCpu: { group: 'Writer', label: 'Writer on a core', format: share, max: 1,
-      what: 'Share of each second the writer thread ran on a core. Its gap to Writer busy is collection pauses and waiting for a core.' },
+      what: 'Share of each second the writer ran on a core. The gap to Writer busy is garbage collection and waiting for a core.' },
     capacity: { group: 'Writer', label: 'Writer capacity', format: compact, value: capacityOf,
-      what: 'Spans processed per second of the writer thread on a core: the rate a writer always on a core would process. Higher is better.' },
-    processCores: { group: 'Writer', label: 'Process cores', format: cores, what: 'Cores the whole hub process used on average, the writer and the submitting threads.' },
+      what: 'Spans per second of writer CPU. Higher is better.' },
+    processCores: { group: 'Writer', label: 'Process cores', format: cores, what: 'Cores the whole hub used.' },
     gcMsPerS: { group: 'Memory', label: 'Collection time per second', format: millis, what: 'Milliseconds of each second spent in garbage collection.' },
     heapMb: { group: 'Memory', label: 'Heap, most used', format: megabytes, what: 'The most heap in use during the step.' },
-    accountedMb: { group: 'Memory', label: 'Accounted', format: megabytes, what: 'Bytes the hub accounts for against its budget.' },
-    retained: { group: 'Memory', label: 'Retained spans', format: count, what: 'Spans the hub retained as specimens.' },
+    accountedMb: { group: 'Memory', label: 'Accounted', format: megabytes, what: 'Memory the hub counts against its budget.' },
+    retained: { group: 'Memory', label: 'Retained spans', format: count, what: 'Spans the hub keeps to show.' },
     horizonS: { group: 'Memory', label: 'Link horizon', format: secondsOf, configured: () => 60,
-      what: 'How far apart a child and its parent may arrive and still link, as far as the budget allows. It shrinks before throughput does.' },
+      what: 'How far apart a span and its parent may arrive and still link. Shrinks before throughput does.' },
     historyS: { group: 'Memory', label: 'Counted history', format: secondsOf, configured: (scenario) => scenario.historyS,
-      what: 'How much history the counts still cover, as far as the budget allows. It shrinks before throughput does.' },
-    tickLateMs: { group: 'Publishing', label: 'Tick late, p99', format: millis, what: 'How late the tick ran after its due time.' },
+      what: 'How much history the counts cover. Shrinks before throughput does.' },
+    tickLateMs: { group: 'Publishing', label: 'Tick late, p99', format: millis, what: 'How late the tick ran.' },
     epochLagMs: { group: 'Publishing', label: 'Epoch lag, p99', format: millis, references: [{ y: 1000, label: 'one second' }],
-      what: 'How long after its tick an epoch was published. Past one second a page misses frames.' },
+      what: 'Time from the tick to the published epoch. Over one second, pages miss frames.' },
     frameMs: { group: 'Publishing', label: 'Frame, median', format: millis, references: [{ y: 1000, label: 'one second' }],
-      what: 'How long the publisher took to write a frame’s delta. Past one second a page misses frames.' },
-    frameMaxMs: { group: 'Publishing', label: 'Frame, slowest', format: millis, what: 'The slowest frame of the step.' },
-    deltaKb: { group: 'Publishing', label: 'Frame delta, median', format: kilobytes, what: 'The size of a frame’s delta.' },
+      what: 'Time to write a frame. Over one second, pages miss frames.' },
+    frameMaxMs: { group: 'Publishing', label: 'Frame, slowest', format: millis, what: 'The slowest frame.' },
+    deltaKb: { group: 'Publishing', label: 'Frame delta, median', format: kilobytes, what: 'Size of a frame’s changes.' },
     exportP50Ms: { group: 'End to end', label: 'OTLP answer, median', format: millis,
-      what: 'How long the OTLP server took to answer an export: reading, decoding, and admitting its spans. Only runs over OTLP/HTTP (-PsaturationTransport) have it.' },
+      what: 'Time to answer an OTLP export. Only runs over OTLP/HTTP have it.' },
     exportP99Ms: { group: 'End to end', label: 'OTLP answer, p99', format: millis,
-      what: 'The slowest hundredth of the OTLP server’s answers. Only runs over OTLP/HTTP (-PsaturationTransport) have it.' },
+      what: 'The slowest 1% of OTLP answers. Only runs over OTLP/HTTP have it.' },
   };
   // The viewer ladder (SaturationViewerLadder): one rate offered while open UIs read the frames and ask their views, at each number of viewers and
   // query cap. Each point is a run of its own; the baseline has no viewers.
   const VIEWER_MEASURES = [
-    { key: 'answered', group: 'What the viewers get', label: 'Queries answered', format: share, max: 1,
-      what: 'Share of the viewers’ refreshes the hub answered; the rest it refused (429) or let time out.' },
-    { key: 'freshWorst', group: 'What the viewers get', label: 'Worst viewer, frames fresh', format: share, max: 1,
-      what: 'For the least lucky viewer, the share of the frames published after which its view refreshed.' },
-    { key: 'freshMedian', group: 'What the viewers get', label: 'Median viewer, frames fresh', format: share, max: 1,
-      what: 'For the viewer in the middle, the share of the frames published after which its view refreshed.' },
-    { key: 'answerP99Ms', group: 'What the viewers get', label: 'Query answer, p99', format: millis, references: [{ y: 50, label: '50 ms budget' }],
-      what: 'Answered queries only, from asking to the last byte read.' },
-    { key: 'framesReceived', group: 'What the viewers get', label: 'Live frames received', format: share, max: 1,
-      what: 'Share of the frames the viewers read; a viewer still reading one skips the next, and then reads the changes since, or a snapshot once far behind.' },
-    { key: 'frameLagP99Ms', group: 'What the viewers get', label: 'Live frame lag, p99', format: (value) => lagFormat(value), references: [{ y: 1000, label: 'one second' }],
-      what: 'From the end of a second to a viewer reading its frame.' },
-    { key: 'capacityShare', group: 'What it costs the hub', label: 'Writer capacity against no viewers', format: share,
-      references: [{ y: 1, label: 'no viewers' }], what: 'Spans the writer processes per second on a core, against the run without viewers.' },
-    { key: 'processCores', group: 'What it costs the hub', label: 'Hub cores', format: cores, baseline: true,
-      what: 'Cores the hub’s JVM used: ingest, the writer, frames and their compression, and queries.' },
-    { key: 'heapMb', group: 'What it costs the hub', label: 'Heap, most used', format: megabytes, baseline: true, what: 'The most heap in use during the step.' },
-    { key: 'gcMsPerS', group: 'What it costs the hub', label: 'Collection time per second', format: millis, baseline: true,
+    { key: 'answered', group: 'What viewers get', label: 'Queries answered', format: share, max: 1,
+      what: 'Share of the viewers’ queries the hub answered.' },
+    { key: 'freshWorst', group: 'What viewers get', label: 'Worst viewer, frames fresh', format: share, max: 1,
+      what: 'For the unluckiest viewer: the share of frames after which its view refreshed.' },
+    { key: 'freshMedian', group: 'What viewers get', label: 'Median viewer, frames fresh', format: share, max: 1,
+      what: 'For a typical viewer: the share of frames after which its view refreshed.' },
+    { key: 'answerP99Ms', group: 'What viewers get', label: 'Query answer, p99', format: millis, references: [{ y: 50, label: '50 ms budget' }],
+      what: 'Time to answer a viewer’s query.' },
+    { key: 'framesReceived', group: 'What viewers get', label: 'Live frames received', format: share, max: 1,
+      what: 'Share of the live frames the viewers read.' },
+    { key: 'frameLagP99Ms', group: 'What viewers get', label: 'Live frame lag, p99', format: (value) => lagFormat(value), references: [{ y: 1000, label: 'one second' }],
+      what: 'Time from the end of a second until a viewer reads its frame.' },
+    { key: 'capacityShare', group: 'What it costs', label: 'Writer capacity against no viewers', format: share,
+      references: [{ y: 1, label: 'no viewers' }], what: 'Writer speed, against the run without viewers.' },
+    { key: 'processCores', group: 'What it costs', label: 'Hub cores', format: cores, baseline: true,
+      what: 'Cores the hub used.' },
+    { key: 'heapMb', group: 'What it costs', label: 'Heap, most used', format: megabytes, baseline: true, what: 'The most heap in use during the step.' },
+    { key: 'gcMsPerS', group: 'What it costs', label: 'Collection time per second', format: millis, baseline: true,
       what: 'Milliseconds of each second spent in garbage collection.' },
-    { key: 'viewerCores', group: 'What it costs the hub', label: 'Viewers’ cores', format: cores,
-      what: 'Cores the viewers’ own JVM used on the same machine, taken from the hub’s; viewers on machines of their own would leave them to the hub.' },
+    { key: 'viewerCores', group: 'What it costs', label: 'Viewers’ cores', format: cores,
+      what: 'Cores the viewers used, on the same machine as the hub.' },
   ];
   // Every measure of a second, as the seconds file names it.
   const SECONDS = {
     processed: { label: 'Processed per second', format: count, also: { field: 'offered', label: 'Offered per second' },
-      what: 'Spans processed each second, against the rate each step offered.' },
-    queued: { label: 'Queued spans', format: count, capacity: true, what: 'Spans waiting in the intake queues at the end of each second, with their capacity.' },
-    busy: { label: 'Refused per second', format: count, what: 'Spans refused each second with a full queue.' },
-    shed: { label: 'Shed per second', format: count, what: 'Spans counted but not retained or not linked each second.' },
-    writerCpuMs: { label: 'Writer on a core', format: share, max: 1, value: (row) => row.writerCpuMs / 1000, what: 'Share of each second the writer thread ran on a core.' },
-    horizonS: { label: 'Link horizon', format: secondsOf, what: 'The link horizon the budget allowed at the end of each second.' },
-    historyS: { label: 'Counted history', format: secondsOf, what: 'The history the counts covered at the end of each second.' },
-    delivery: { label: 'Frame delivery', delivery: true, what: 'How long after each second its frame reached the clients, in the parts it took.' },
+      what: 'Spans processed each second, against the rate sent.' },
+    queued: { label: 'Queued spans', format: count, capacity: true, what: 'Spans waiting at the end of each second, and the queue size.' },
+    busy: { label: 'Refused per second', format: count, what: 'Spans refused each second.' },
+    shed: { label: 'Shed per second', format: count, what: 'Spans counted but not kept or linked, each second.' },
+    writerCpuMs: { label: 'Writer on a core', format: share, max: 1, value: (row) => row.writerCpuMs / 1000, what: 'Share of each second the writer ran on a core.' },
+    horizonS: { label: 'Link horizon', format: secondsOf, what: 'The link horizon at the end of each second.' },
+    historyS: { label: 'Counted history', format: secondsOf, what: 'The history the counts covered, each second.' },
+    delivery: { label: 'Frame delivery', delivery: true, what: 'Time from the end of each second until its frame arrived, by part.' },
   };
   // The parts of a frame's lag in the order they happen; they add up to the lag of the client in the middle of the fast or the slow clients. One
   // hue, light to dark, as the lag accumulates: the send, the part the hub's WebSocket adds, is the strongest.
@@ -619,6 +623,9 @@
   const viewerCaps = [...new Set(viewerRows.filter((row) => row.viewers > 0).map((row) => row.cap))].sort((a, b) => a - b);
   const viewerPicks = [...[...viewerRuns].reverse().map((run) => [`run-${run.slug}`, `${run.name}: every query cap`]),
     ...viewerCaps.map((cap) => [`cap-${cap}`, `Query cap ${cap}: every viewer run picked`])];
+  // The page opens comparing the newest two viewer runs at a query cap both measured, like every other view; on the newest run's caps otherwise.
+  const comparedCap = viewerRuns.length < 2 ? undefined
+    : viewerCaps.find((cap) => viewerRuns.slice(-2).every((run) => run.rows.some((row) => row.viewers > 0 && row.cap === cap)));
 
   // The frontiers of span rate and open UIs (SaturationCapacity): for each number of viewers the highest rate at which the hub kept up and, with
   // viewers, their UIs stayed usable; a point without a rate is the first number of viewers that no rate served.
@@ -665,7 +672,7 @@
     seconds: { allowed: Object.keys(SECONDS), fallback: 'processed' },
     clients: { allowed: Object.keys(CLIENTS), fallback: 'fast' },
     scenario: { allowed: scenarios.map((scenario) => scenario.scenario), fallback: 'reference' },
-    vpick: { allowed: viewerPicks.map(([key]) => key), fallback: viewerPicks.length ? viewerPicks[0][0] : '' },
+    vpick: { allowed: viewerPicks.map(([key]) => key), fallback: comparedCap !== undefined ? `cap-${comparedCap}` : viewerPicks.length ? viewerPicks[0][0] : '' },
   };
   const query = new URLSearchParams(location.search);
   // The verdict ladder became the strips under the rate-by-rate chart; a link to it opens that chart.
@@ -674,6 +681,8 @@
   state.runs = (query.get('runs') || '').split(',').filter(Boolean);
   state.run = query.get('run') || null;
   state.step = Number(query.get('step')) || null;
+  // The panels the open UIs' view shows, such as panels=freshWorst,processCores for a figure of a few; every panel without.
+  state.panels = (query.get('panels') || '').split(',').filter((key) => VIEWER_MEASURES.some((measure) => measure.key === key));
   const figure = query.get('figure') === '1';
   document.documentElement.classList.toggle('figure', figure);
   let allRunsShown = false;
@@ -684,6 +693,7 @@
     if (state.runs.length) next.set('runs', state.runs.join(','));
     if (state.run) next.set('run', state.run);
     if (state.step) next.set('step', state.step);
+    if (state.panels.length) next.set('panels', state.panels.join(','));
     if (figure) next.set('figure', '1');
     try {
       history.replaceState(null, '', `${location.pathname}${next.size ? `?${next}` : ''}`);
@@ -802,7 +812,37 @@
     const box = svg.getBoundingClientRect();
     return [((event.clientX - box.left) * width) / box.width, ((event.clientY - box.top) * height) / box.height];
   };
-  const dot = (svg, cx, cy, color, r = 4, key) => el(svg, 'circle', { cx, cy, r, fill: color, stroke: 'var(--panel)', 'stroke-width': 2, 'data-key': key });
+  // The outline of a point of a shape around cx, cy, as much area as a circle of radius r, so no shape looks heavier than another.
+  const polygon = (cx, cy, corners) => `M${corners.map(([x, y]) => `${(cx + x).toFixed(2)},${(cy + y).toFixed(2)}`).join('L')}Z`;
+  const around = (count, radius, turn = 0) => Array.from({ length: count }, (_, index) => {
+    const angle = turn + (index * 2 * Math.PI) / count;
+    return [radius(index) * Math.sin(angle), -radius(index) * Math.cos(angle)];
+  });
+  const shapePath = (shape, cx, cy, r) => {
+    switch (shape) {
+      case 'square': { const h = 0.886 * r; return polygon(cx, cy, [[-h, -h], [h, -h], [h, h], [-h, h]]); }
+      case 'diamond': return polygon(cx, cy, around(4, () => 1.253 * r));
+      case 'triangle': return polygon(cx, cy, around(3, () => 1.555 * r));
+      case 'triangle-down': return polygon(cx, cy, around(3, () => 1.555 * r, Math.PI));
+      case 'cross': { const [e, t] = [1.061 * r, 0.477 * r];
+        return polygon(cx, cy, [[-t, -e], [t, -e], [t, -t], [e, -t], [e, t], [t, t], [t, e], [-t, e], [-t, t], [-e, t], [-e, -t], [-t, -t]]); }
+      case 'star': return polygon(cx, cy, around(10, (index) => (index % 2 ? 0.731 : 1.462) * r));
+      case 'hexagon': return polygon(cx, cy, around(6, () => 1.1 * r));
+      default: return `M${(cx - r).toFixed(2)},${cy.toFixed(2)}a${r},${r} 0 1,0 ${2 * r},0a${r},${r} 0 1,0 ${-2 * r},0Z`;
+    }
+  };
+  // A point in the shape of its series' color; filled with a ring of the panel, or hollow in that color.
+  const seriesMark = (svg, cx, cy, color, r, key, hollow = false) => el(svg, 'path', { d: shapePath(shapeOf(color), cx, cy, r),
+    fill: hollow ? 'var(--panel)' : color, stroke: hollow ? color : 'var(--panel)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'data-key': key });
+  const dot = (svg, cx, cy, color, r = 4, key) => seriesMark(svg, cx, cy, color, r, key);
+  // A series' point beside its name in a fact, a table, or a tooltip.
+  const pointIcon = (color) => {
+    const icon = document.createElementNS(SVG, 'svg');
+    icon.setAttribute('class', 'point-icon');
+    icon.setAttribute('viewBox', '-6 -6 12 12');
+    el(icon, 'path', { d: shapePath(shapeOf(color), 0, 0, 4.2), fill: color });
+    return icon;
+  };
   const axisTitle = (svg, x, y, text) => el(svg, 'text', { class: 'title', x, y, 'text-anchor': 'end' }, text);
 
   // Tooltips, legends, facts, and tables.
@@ -819,12 +859,7 @@
     for (const row of rows) {
       const line = document.createElement('div');
       line.className = 'tip-row';
-      if (row.color) {
-        const swatch = document.createElement('i');
-        swatch.className = 'swatch';
-        swatch.style.background = row.color;
-        line.append(swatch);
-      }
+      if (row.color) line.append(pointIcon(row.color));
       line.append(Object.assign(document.createElement('b'), { textContent: row.value }), Object.assign(document.createElement('span'), { textContent: row.name }));
       tip.append(line);
     }
@@ -857,10 +892,7 @@
       const fact = document.createElement('span');
       fact.className = 'fact';
       if (item.title) fact.title = item.title;
-      const mark = document.createElement('i');
-      mark.className = 'dot';
-      mark.style.background = item.color;
-      fact.append(mark, Object.assign(document.createElement('b'), { textContent: item.name }), document.createTextNode(item.text));
+      fact.append(pointIcon(item.color), Object.assign(document.createElement('b'), { textContent: item.name }), document.createTextNode(item.text));
       if (present(item.key)) {
         fact.dataset.key = item.key;
         fact.addEventListener('mouseenter', () => {
@@ -874,6 +906,10 @@
   };
   const emptyLine = (element, text) => element.replaceChildren(Object.assign(document.createElement('div'), { className: 'empty-line', textContent: text }));
   const dotIn = (cell, tone, color) => {
+    if (color && !tone) {
+      cell.prepend(pointIcon(color), ' ');
+      return;
+    }
     const mark = document.createElement('i');
     mark.className = tone ? `dot tone-${tone}` : 'dot';
     if (color) mark.style.background = color;
@@ -1085,7 +1121,7 @@
     const TONES = { ok: ['var(--ok)', 0.3], warn: ['var(--warn)', 0.85], bad: ['var(--bad)', 0.85], muted: ['var(--reference)', 0.5] };
     series.forEach((each, index) => {
       const top = height - margin.bottom + stripsTop + index * (stripHeight + stripGap);
-      el(svg, 'circle', { cx: margin.left - 9, cy: top + stripHeight / 2, r: 4, fill: each.color, 'data-key': each.key });
+      el(svg, 'path', { d: shapePath(shapeOf(each.color), margin.left - 9, top + stripHeight / 2, 4), fill: each.color, 'data-key': each.key });
       for (const point of each.values) {
         const [from, to] = edges[xs.indexOf(point.x)];
         const [fill, opacity] = TONES[verdict(point.raw.verdict).tone];
@@ -1495,8 +1531,8 @@
   const renderAbout = () => {
     const bold = (text) => Object.assign(document.createElement('b'), { textContent: text });
     const latest = allRuns[allRuns.length - 1];
-    document.getElementById('runline').replaceChildren('Latest run: ', bold(latest.label), ` on ${latest.machine}. Every rate axis runs to the most a run offers, `,
-      bold(count(max)), ' spans per second.');
+    document.getElementById('runline').replaceChildren('Latest run: ', bold(latest.label), ` on ${latest.machine}. Rate axes go up to `,
+      bold(count(max)), ' spans/s.');
     // The applications sweep's ends, from the latest run that ran both.
     const swept = [...allRuns].reverse().find((run) => rowsOf(run.run).has('applications-5') && rowsOf(run.run).has('applications-500'));
     const lede = document.getElementById('lede');
@@ -1504,11 +1540,11 @@
       const rows = rowsOf(swept.run);
       const applications = (id) => (scenarioById.get(id) || {}).applications;
       lede.append(`In ${swept.name}, a hub watching `, bold(count(applications('applications-5'))), ' applications keeps up with ',
-        bold(orNone(rows.get('applications-5').keepsUp, count) || 'none'), ' spans per second, and one watching ', bold(count(applications('applications-500'))),
-        ' applications with ', bold(orNone(rows.get('applications-500').keepsUp, count) || 'none'),
-        ', everything else being equal. Each sweep changes one thing of the reference shape, so the difference between two of its points has one cause.');
+        bold(orNone(rows.get('applications-5').keepsUp, count) || 'none'), ' spans/s; one watching ', bold(count(applications('applications-500'))),
+        ', with ', bold(orNone(rows.get('applications-500').keepsUp, count) || 'none'),
+        '. Each sweep changes one thing of the reference, so a difference between its points has one cause.');
     } else {
-      lede.append('Each sweep changes one thing of the reference shape, so the difference between two of its points has one cause.');
+      lede.append('Each sweep changes one thing of the reference, so a difference between its points has one cause.');
     }
     const holds = (run) => (run.kind === 'saturation' ? `${count(rowsOf(run.run).size)} scenarios`
       : `${count(RUNS_OF[run.kind].find((each) => each.run === run.run).rows.length)} ${run.kind === 'jmh' ? 'benchmarks' : 'points'}`);
@@ -1562,7 +1598,7 @@
     const note = document.getElementById('runs-note');
     note.hidden = machines.length <= 1;
     note.classList.toggle('warn', machines.length > 1);
-    note.textContent = machines.length > 1 ? `The picked runs ran on different machines (${machines.join('; ')}), so their rates differ for that reason too.` : '';
+    note.textContent = machines.length > 1 ? `These runs ran on different machines (${machines.join('; ')}), so that alone changes their rates.` : '';
   };
 
   // Each picked run of a scenario against the earliest picked run that ran it.
@@ -1714,9 +1750,8 @@
     const runs = measured.map((each) => ({ ...each, rows: stepRowsOf(each.all, step) })).filter((each) => each.rows.length);
     const withClients = runs.filter((each) => each.rows.some((row) => row[clients.unread] >= 0));
     stage.title.textContent = `Frame delivery to the ${clients.label} · ${scenario.name}${zoomed ? ` · the step offering ${count(state.step)} spans/s` : ''}`;
-    stage.how.textContent = 'Each run serves its frames to clients that read every frame as it arrives, at full speed, and to slow ones that read at most a set '
-      + `rate of JSON, as a page behind a slow link. The bands are the parts of the lag of the ${clients.label}, which add `
-      + `up to it. ${zoomed ? 'One step; its first 5 s settle before it is measured.' : 'Every step in turn; click one to zoom in.'}`;
+    stage.how.textContent = 'Fast clients read every frame at once; slow ones read at a capped speed, like a page on a slow link. '
+      + `The bands add up to the lag of the ${clients.label}. ${zoomed ? 'One step, without its first 5 s.' : 'Every step; click one to zoom in.'}`;
     legend(stage.legend, withClients.length ? [...DELIVERY_PARTS.map((part) => ({ name: part.label, color: part.color })), { name: 'Next frame due' }] : []);
     facts(runs.map(({ run }) => ({ key: run.run, name: run.name, title: run.detail, color: run.color, text: ` ${limitsOf(rowsOf(run.run).get(scenario.scenario))}` })));
     document.getElementById('all-steps').hidden = !zoomed;
@@ -1760,7 +1795,7 @@
     const missing = picked.filter((run) => !timelines.some((each) => each.run === run));
     const zoomed = state.step && timelines.some((each) => each.rows.some((row) => row.rate === state.step));
     stage.title.textContent = `${measure.label} · ${scenario.name}${zoomed ? ` · the step offering ${count(state.step)} spans/s` : ''}`;
-    stage.how.textContent = `${measure.what} ${zoomed ? 'One step; its first 5 s settle before it is measured.' : 'Every step in turn; click one to zoom in.'}`;
+    stage.how.textContent = `${measure.what} ${zoomed ? 'One step, without its first 5 s.' : 'Every step; click one to zoom in.'}`;
     legend(stage.legend, measure.also ? [{ name: 'Rate offered at each step', block: 'key-muted' }] : []);
     facts(timelines.map(({ run }) => ({ key: run.run, name: run.name, title: run.detail, color: run.color, text: ` ${limitsOf(rowsOf(run.run).get(scenario.scenario))}` })));
     document.getElementById('all-steps').hidden = !zoomed;
@@ -1833,8 +1868,7 @@
         'stroke-linejoin': 'round', 'data-key': each.key });
       for (const point of mine) {
         const kept = point.row.verdict === 'KEEPS_UP';
-        const mark = el(svg, 'circle', { cx: at(point), cy: y(Math.min(point.y, yMax)), r: kept ? 4.5 : 4, fill: kept ? each.color : 'var(--panel)',
-          stroke: kept ? 'var(--panel)' : each.color, 'stroke-width': 2, 'data-key': each.key });
+        const mark = seriesMark(svg, at(point), y(Math.min(point.y, yMax)), each.color, kept ? 4.5 : 4, each.key, !kept);
         el(mark, 'title', {}, `${each.name}, ${count(point.x)} viewers: ${measure.format(point.y)}; ingest ${verdict(point.row.verdict).label.toLowerCase()}`);
       }
     });
@@ -1868,8 +1902,7 @@
         'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'data-key': run.run });
       for (const row of run.rows) {
         const usable = present(row.rate);
-        const mark = el(svg, 'circle', { cx: x(at(row.viewers)), cy: yOf(row), r: usable ? 4.5 : 4, fill: usable ? run.color : 'var(--panel)',
-          stroke: usable ? 'var(--panel)' : run.color, 'stroke-width': 2, 'data-key': run.run });
+        const mark = seriesMark(svg, x(at(row.viewers)), yOf(row), run.color, usable ? 4.5 : 4, run.run, !usable);
         el(mark, 'title', {}, `${run.name}, ${row.viewers ? `${count(row.viewers)} UIs` : 'no UIs'}: `
           + `${usable ? `up to ${count(row.rate)} spans/s` : 'no rate usable'}; stopped at ${row.stoppedBy}`);
       }
@@ -1877,16 +1910,14 @@
   };
 
   const renderFrontierView = (picked) => {
-    stage.title.textContent = 'Capacity · how many open UIs at which span rate';
+    stage.title.textContent = 'Capacity · open UIs against span rate';
     if (!frontierRuns.length) {
       stage.how.textContent = 'No capacity frontier was recorded yet: run ./gradlew saturationCapacity, then ./gradlew benchmarkRecord -PbenchmarkName="<name>".';
       emptyLine(stage.chart, 'No capacity frontier kept.');
       return;
     }
-    stage.how.textContent = 'Each point is the highest span rate at which the hub keeps up without shedding while that many open UIs, in a JVM of their own, read '
-      + 'the live frames and ask their view’s query. With UIs open it must also keep them usable: 99% of frames read within a second of the second '
-      + 'they close (p99), 99% of queries answered within a second (p99), and the least lucky UI fresh after 95% of frames. The viewers double '
-      + 'until no rate is usable, a hollow point on the bottom edge. Both axes are logarithmic, so doubling either reads alike.';
+    stage.how.textContent = 'Each point is the highest span rate the hub keeps up with while that many UIs stay usable: frames and answers within a '
+      + 'second (p99), and every UI fresh after 95% of frames. A hollow point means no rate worked. Both axes are log scale.';
     facts(picked.map((run) => {
       const served = run.rows.filter((row) => present(row.rate));
       const most = Math.max(...served.map((row) => row.viewers));
@@ -1894,7 +1925,7 @@
       return { key: run.run, name: run.name, color: run.color, title: run.label,
         text: ` ${none ? `${count(none.rate)} spans/s without UIs; ` : ''}up to ${count(most)} usable UIs` };
     }));
-    legend(stage.legend, [{ name: 'Filled: the highest usable rate', color: 'var(--muted)' }, { name: 'Hollow: no rate usable', block: 'key-hollow' }]);
+    legend(stage.legend, [{ name: 'Filled: highest usable rate', color: 'var(--muted)' }, { name: 'Hollow: no usable rate', block: 'key-hollow' }]);
     frontierChart(stage.chart, picked, chartHeight());
     const rows = picked.flatMap((run) => run.rows.map((row) => ({ ...row, line: run })));
     fillTable(stage.table, [
@@ -1910,7 +1941,7 @@
   };
 
   const renderViewersView = (picked) => {
-    stage.title.textContent = 'Open UIs · what the viewers get and what it costs';
+    stage.title.textContent = 'Open UIs · what viewers get and what they cost';
     if (!viewerRuns.length) {
       stage.how.textContent = 'No viewer ladder was recorded yet: run ./gradlew saturationViewers, then ./gradlew benchmarkRecord -PbenchmarkName="<name>".';
       emptyLine(stage.chart, 'No viewer ladder kept.');
@@ -1918,16 +1949,17 @@
     }
     const { runs: shownRuns, series } = viewerSeries(picked);
     const rate = shownRuns[0].rows[0].rate;
-    stage.how.textContent = `Each point is a run offering ${count(rate)} spans/s while that many open UIs, in a JVM of their own, read the live frames and ask `
-      + 'their view’s query whenever a newer frame arrives. A hollow point is a load at which ingest fell behind or shed.';
+    stage.how.textContent = `Each point is ${count(rate)} spans/s with that many UIs open, each reading live frames and querying. `
+      + 'A hollow point means ingest fell behind.';
     facts(series.map((each) => {
       const kept = each.rows.filter((row) => row.verdict === 'KEEPS_UP').map((row) => row.viewers);
-      return { key: each.key, name: each.name, color: each.color, text: kept.length ? ` ingest keeps up with up to ${count(Math.max(...kept))} viewers` : ' ingest never keeps up' };
+      return { key: each.key, name: each.name, color: each.color, text: kept.length ? ` keeps up with ${count(Math.max(...kept))} viewers` : ' never keeps up' };
     }));
-    legend(stage.legend, [{ name: 'Filled: ingest keeps up', color: 'var(--muted)' }, { name: 'Hollow: ingest falls behind or sheds', block: 'key-hollow' }]);
+    legend(stage.legend, [{ name: 'Filled: keeps up', color: 'var(--muted)' }, { name: 'Hollow: falls behind', block: 'key-hollow' }]);
     stage.chart.replaceChildren();
+    const shown = state.panels.length ? VIEWER_MEASURES.filter((measure) => state.panels.includes(measure.key)) : VIEWER_MEASURES;
     const groups = Object.assign(document.createElement('div'), { className: 'viewer-groups' });
-    for (const [group, measures] of groupsInOrder(VIEWER_MEASURES, (measure) => measure.group)) {
+    for (const [group, measures] of groupsInOrder(shown, (measure) => measure.group)) {
       const box = document.createElement('section');
       box.append(Object.assign(document.createElement('h3'), { className: 'viewer-group-title', textContent: group }));
       const grid = Object.assign(document.createElement('div'), { className: 'viewer-grid' });
@@ -1942,7 +1974,7 @@
       }
     }
     stage.chart.append(groups);
-    for (const measure of VIEWER_MEASURES) {
+    for (const measure of shown) {
       if (series.some((each) => each.rows.some((row) => present(row[measure.key])))) viewerChart(measure.panel, measure, series);
       else measure.panel.closest('.viewer-panel').hidden = true;
     }
@@ -1967,8 +1999,7 @@
       fillTable(stage.table, [{ label: 'Benchmark', text: true, value: () => 'No JMH run kept.' }], [{}]);
       return;
     }
-    stage.how.textContent = 'Time per operation in each picked run; a run that narrowed the benchmarks it ran leaves the others empty. The change compares the '
-      + 'last run picked with the first, by the median; a few percent between two runs of one commit is noise.';
+    stage.how.textContent = 'Time per operation. The change compares the last run with the first, by median; a few percent is noise.';
     const first = picked[0];
     const last = picked[picked.length - 1];
     const keys = [...new Set(picked.flatMap((run) => run.rows.map(jmhKey)))].sort();
@@ -2032,12 +2063,12 @@
     const limit = LIMITS[state.limit];
     if (about) {
       stage.title.textContent = 'How it was measured';
-      stage.how.textContent = 'What the runs are, what each scenario looks like, the machine and the load, and where the writer spends its time.';
+      stage.how.textContent = 'The runs, the scenarios, the machine, and the load.';
       return;
     }
     if (view.id === 'change') {
       stage.title.textContent = 'What changed · writer capacity';
-      stage.how.textContent = 'Spans processed per second of writer CPU, against the earliest run picked, at the rates both runs offered. Click a row for its rates.';
+      stage.how.textContent = 'Spans per second of writer CPU, against the first run picked. Click a row for its rates.';
       facts(capacityFacts(picked));
       stage.chart.classList.add('fit');
       if (picked.length < 2) emptyLine(stage.chart, `Pick a second run in the top bar to see its change against ${picked[0].name}.`);
@@ -2045,7 +2076,7 @@
       fillTable(stage.table, capacityColumns, capacityRows(picked), (row) => row.scenario);
     } else if (view.id === 'overview') {
       stage.title.textContent = `Limits per scenario · ${limit.short}`;
-      stage.how.textContent = `Each dot is ${limit.what}. Limits move in steps of the ladder, and runs of one commit can land a step apart.`;
+      stage.how.textContent = `Each dot is ${limit.what}. Limits move in steps, so two runs of one commit can differ by a step.`;
       facts(changeFacts(picked, state.limit));
       stage.chart.classList.add('fit');
       drawDots(stage.chart, picked, state.limit, 'rates');
@@ -2054,7 +2085,7 @@
       const sweep = SWEEPS[view.sweep];
       const members = membersOf(view.sweep);
       stage.title.textContent = `${view.title} · ${limit.label}`;
-      stage.how.textContent = `${sweep.what[0].toUpperCase()}${sweep.what.slice(1)}; everything else is the reference shape. Click a point for its rates.`;
+      stage.how.textContent = `${sweep.what[0].toUpperCase()}${sweep.what.slice(1)}; the rest is the reference. Click a point for its rates.`;
       const ranOf = (run) => members.filter((member) => rowsOf(run.run).has(member.scenario) && present(rowsOf(run.run).get(member.scenario)[state.limit]));
       facts(picked.map((run) => {
         const rows = rowsOf(run.run);
